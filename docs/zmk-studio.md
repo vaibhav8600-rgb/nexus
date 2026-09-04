@@ -65,6 +65,52 @@ no layout, which is why it composes with any keyboard.
 The `nexus_dongle_demo` shield declares a two-key layout purely so a standalone
 bring-up build is Studio-testable.
 
+### If your dongle shield predates Studio
+
+Expect this the first time you add NEXUS to an existing dongle:
+
+```
+ISSUE FOUND: Keyboards require additional configuration to allow for
+firmware with ZMK Studio enabled.
+```
+
+ZMK asserts it at compile time in `app/src/physical_layouts.c`:
+
+```c
+#define USE_PHY_LAYOUTS (DT_HAS_COMPAT_STATUS_OKAY(zmk_physical_layout)                          && !DT_HAS_CHOSEN(zmk_matrix_transform))
+BUILD_ASSERT(!IS_ENABLED(CONFIG_ZMK_STUDIO) || USE_PHY_LAYOUTS, ...)
+```
+
+Note the **two** conditions. Adding a layout is not enough - you must also stop
+choosing a matrix transform directly, which most pre-Studio dongle shields do.
+The transform is not lost; it moves onto the layout.
+
+Put the fix in `config/<your-nexus-shield>.overlay` rather than editing the
+dongle shield, so a second firmware built from the same shield without Studio
+keeps working. ZMK selects exactly one config-directory overlay by shield name
+and stops at the first match, so a file named for the NEXUS build is invisible
+to the other one.
+
+```dts
+/* config/nexus_dongle.overlay */
+#include <layouts/josefadamcik/sofle.dtsi>   /* your keyboard's stock layout */
+
+&josefadamcik_sofle_layout {
+    transform = <&default_transform>;        /* the transform you already had */
+};
+
+/ {
+    chosen {
+        /delete-property/ zmk,matrix-transform;
+    };
+};
+```
+
+The layout's key count must equal the transform's position count and the
+bindings per keymap layer. ZMK ships layouts for common boards under
+`app/dts/layouts/`; use the one your keyboard's own shield already includes
+rather than hand-writing key positions.
+
 ## Memory
 
 Studio costs flash and RAM, and it takes priority over anything visual
