@@ -547,13 +547,18 @@ static void v_memory(char *out, size_t len)
 	struct buf b = buf_init(out, len);
 
 	/*
-	 * NEXUS allocates nothing at runtime. The compositor band, the status
-	 * model, the menu value cache and the Tetris board are all static, so
-	 * the UI has no way to run out of memory at an awkward moment and no
-	 * free-heap number to report. Section 63 asks for "Free RAM"; on this
-	 * design the honest answer is that there is no UI heap to watch, and a
-	 * fabricated number would be worse than none. Watch the linker output
-	 * instead - CI prints it (Section 100).
+	 * The UI's own static footprint: the compositor band (5,760 B) plus
+	 * the menu value cache (224 B). A constant, not a live reading - the
+	 * row is called UI STATIC rather than UI RAM because "RAM" next to a
+	 * number invites reading it as free or used memory, and it is
+	 * neither.
+	 *
+	 * NEXUS allocates nothing at runtime: every buffer it owns is static,
+	 * so the UI has no way to run out of memory at an awkward moment and
+	 * no free-heap number to report. Section 63 asks for "Free RAM"; on
+	 * this design the honest answer is that there is no UI heap to watch,
+	 * and a fabricated number would be worse than none. For whole-image
+	 * figures watch the linker output, which CI prints (Section 100).
 	 */
 	put_u(&b, (uint32_t)(sizeof(g_val) + GFX_W * GFX_STRIP_H * 2U));
 	put(&b, "B");
@@ -589,7 +594,7 @@ static const struct row diag_rows[] = {
 	{ "HOST", v_host, NULL },
 	{ "L/R LINK", v_halves, NULL },
 	{ "L/R BATT", v_batteries, NULL },
-	{ "UI RAM", v_memory, NULL },
+	{ "UI STATIC", v_memory, NULL },
 	{ "UPTIME", v_uptime, NULL },
 	{ "BACK", NULL, a_back },
 #if IS_ENABLED(CONFIG_NEXUS_DEBUG)

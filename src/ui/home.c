@@ -271,10 +271,22 @@ static void draw_layer(const struct nexus_status *st)
 		name = fallback;
 	}
 
-	int avail = COL_RW - 2 * INNER;
+	/*
+	 * Capped at NEXUS_TXT_BODY, and this is the point of the cap: with a
+	 * ceiling of NEXUS_TXT_VALUE, names of four or five characters fitted
+	 * at scale 3 while DEFAULT (seven) had to drop to scale 2, so the
+	 * layer name visibly changed size as you moved around the keymap.
+	 * fit_scale exists to stop a long name leaving the card, not to give
+	 * short ones a bigger typeface than long ones.
+	 *
+	 * A 5px inset instead of INNER buys the eight characters that make
+	 * FUNCTION and DEFAULT render identically; only nine or more drop a
+	 * size, and at that length something has to give.
+	 */
+	int avail = COL_RW - 10;
 
-	gfx_text(COL_R + INNER, ROW1_Y + 19, name,
-		 fit_scale(name, avail, NEXUS_TXT_VALUE), t->value, GFX_OPAQUE);
+	gfx_text(COL_R + 5, ROW1_Y + 22, name,
+		 fit_scale(name, avail, NEXUS_TXT_BODY), t->value, GFX_OPAQUE);
 }
 
 static void draw_mods(const struct nexus_status *st)

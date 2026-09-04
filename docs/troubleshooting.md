@@ -33,6 +33,12 @@ The free fix is the panel's own scan order: change `mdac` in the overlay
 Drop `spi-max-frequency` from `32000000` to `16000000`. Long dupont jumpers do
 not carry 32 MHz.
 
+**The layer name changes size when I switch layers.**
+Fixed. The name is capped at `NEXUS_TXT_BODY`, so every layer name up to eight
+characters renders identically; `fit_scale()` only steps down beyond that, to
+keep a very long name inside its card. An earlier build capped it a size
+higher, which let four- and five-character names render larger than DEFAULT.
+
 ## Batteries
 
 **Both cards say `--` forever.**

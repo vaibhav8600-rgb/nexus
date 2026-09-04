@@ -148,11 +148,25 @@ def main():
     fits('LAYER caption', C['ROW1_Y'] + 6,
          C['ROW1_Y'] + 6 + text_h(C['NEXUS_TXT_CAPTION']),
          C['ROW1_Y'], C['ROW1_H'])
-    fits('layer value s3', C['ROW1_Y'] + 19,
-         C['ROW1_Y'] + 19 + text_h(C['NEXUS_TXT_VALUE']),
+    fits('layer name s2', C['ROW1_Y'] + 22,
+         C['ROW1_Y'] + 22 + text_h(C['NEXUS_TXT_BODY']),
          C['ROW1_Y'], C['ROW1_H'])
-    ok(C['ROW1_Y'] + 19 >= C['ROW1_Y'] + 6 + text_h(C['NEXUS_TXT_CAPTION']),
-       'layer value clears its caption')
+    ok(C['ROW1_Y'] + 22 >= C['ROW1_Y'] + 6 + text_h(C['NEXUS_TXT_CAPTION']),
+       'layer name clears its caption')
+
+    # every realistic layer name must render at the SAME size - a name that
+    # changes height as you switch layers is what this cap exists to stop
+    avail = C['COL_RW'] - 10
+    scales = set()
+    for nm in ('GAME', 'LOWER', 'RAISE', 'ADJUST', 'DEFAULT', 'FUNCTION'):
+        sc = next((x for x in (C['NEXUS_TXT_BODY'], 1)
+                   if text_w(nm, x) <= avail), 1)
+        scales.add(sc)
+    ok(len(scales) == 1,
+       'GAME/LOWER/RAISE/ADJUST/DEFAULT/FUNCTION all render at scale %s'
+       % sorted(scales))
+    ok('NEXUS_TXT_BODY), t->value' in src,
+       'layer name is capped at NEXUS_TXT_BODY, not VALUE')
 
     print('\nRow 2 - modifiers')
     gw = C['MOD_GLYPH_W'] * C['MOD_SCALE']

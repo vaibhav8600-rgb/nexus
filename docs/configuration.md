@@ -236,6 +236,17 @@ both cards read `--` forever, which is correct: unknown is not zero.
 
 ## Diagnostics
 
+**`UI STATIC`** is the UI's own compile-time footprint - the 5,760-byte
+compositor band plus the 224-byte menu value cache, 5,984 B in total. It is a
+constant, not a live reading, and it is neither free nor used memory.
+
+There is no free-RAM row because NEXUS has no heap to watch: every buffer it
+owns is static, so the UI cannot run out of memory at an awkward moment.
+Section 63 asks for "Free RAM"; on this design the honest answer is that the
+number would be about Zephyr's heap, not NEXUS's, and inventing one would be
+worse than none. For whole-image figures read the linker output, which CI
+prints.
+
 | Option | Default | |
 | --- | --- | --- |
 | `CONFIG_NEXUS_DEBUG` | `n` | Adds an FPS row to Diagnostics, counted from frames actually pushed to the panel. Pair with `CONFIG_NEXUS_LOG_LEVEL_DBG=y` for verbose logging. |
