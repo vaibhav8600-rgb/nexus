@@ -34,9 +34,13 @@ runnable and start being a firmware build.
 > tweak, that tweak belongs in this file.
 
 ```sh
-# One-time workspace setup
-mkdir nexus-ws && cd nexus-ws
-west init -l /path/to/nexus/.github/ci
+# One-time workspace setup. west takes topdir to be the PARENT of the manifest
+# directory, so the manifest has to sit directly under the workspace root -
+# pointing west straight at .github/ci puts topdir inside .github/ and every
+# later path misses.
+mkdir -p nexus-ws/manifest && cd nexus-ws
+cp /path/to/nexus/.github/ci/west.yml manifest/west.yml
+west init -l manifest
 west update
 west zephyr-export
 

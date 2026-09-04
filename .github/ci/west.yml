@@ -1,4 +1,11 @@
 # Minimal manifest for CI: pull ZMK, then add this checkout as an extra module.
+#
+# `self.path` must match the directory west init -l is pointed at, and that
+# directory has to sit directly under the intended workspace root - west takes
+# topdir to be the manifest directory's PARENT. The workflow copies this file
+# to <runner workspace>/manifest/west.yml for exactly that reason; pointing
+# west at .github/ci in place would put topdir inside .github/ and every later
+# path (the cache, `-s zmk/app`) would miss.
 manifest:
   remotes:
     - name: zmkfirmware
@@ -9,4 +16,4 @@ manifest:
       revision: main
       import: app/west.yml
   self:
-    path: config
+    path: manifest

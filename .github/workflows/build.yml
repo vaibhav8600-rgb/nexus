@@ -51,8 +51,17 @@ jobs:
           key: zmk-${{ hashFiles('nexus/.github/ci/west.yml') }}
           restore-keys: zmk-
 
+      # west takes topdir to be the PARENT of the manifest directory, so the
+      # manifest has to live directly under the workspace root. Copying it out
+      # of .github/ci is what keeps topdir at the runner workspace, which is
+      # what the cache paths above and `-s zmk/app` below both assume.
+      - name: Stage the west manifest
+        run: |
+          mkdir -p manifest
+          cp nexus/.github/ci/west.yml manifest/west.yml
+
       - name: West init
-        run: west init -l nexus/.github/ci
+        run: west init -l manifest
 
       - name: West update
         run: west update
