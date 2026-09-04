@@ -149,6 +149,28 @@ or remove the binding.
 
 ## Build
 
+**`attempt to assign the value ... to the undefined symbol NEXUS_...`**
+followed by `error: Aborting due to Kconfig warnings`.
+
+A `.conf` in your config repo sets a symbol this module no longer declares -
+usually one that was renamed or removed by a module update. Zephyr treats it
+as fatal, and the real cause sits a hundred lines above the CMake error, so it
+is worth checking directly:
+
+```
+python scripts/check_config.py ../your-config-repo/config
+```
+
+It prints the offending file and line and names the nearest symbol that does
+exist. Delete the line, or rename it, and the build proceeds.
+
+Note that this is *not* the same as the other Kconfig warnings a ZMK build
+prints - `NICE_VIEW_GEM_ANIMATION`, `ZMK_KSCAN_DEBOUNCE_*`, `EC11`,
+`Deprecated symbol KSCAN` and friends come from shields and modules that are
+present but not selected. They are noisy and harmless; an undefined *symbol*
+is the one that stops the build.
+
+
 **`CONFIG_NEXUS_SPLASH_IMAGE points at a missing file`.**
 The path is relative to your `config/` directory, not the repo root, and not
 the shield directory.

@@ -24,6 +24,22 @@ a C tool.
 that way -- the moment it needs `<zephyr/kernel.h>` the tests stop being
 runnable and start being a firmware build.
 
+## Before you push a Kconfig change
+
+Removing or renaming a `NEXUS_*` symbol is a breaking change for every config
+repo that sets it: Zephyr aborts the build on an assignment to an undefined
+symbol, so the firmware does not build at all until the stale line is deleted.
+
+```
+python scripts/check_config.py ../zmk-sofle-main/config
+```
+
+Run it against every config repo you know about after touching `Kconfig`.
+Adding a stub symbol that does nothing is not the graceful alternative it
+looks like - it silently accepts a setting that has no effect, which is worse
+than a build error that names the line.
+
+
 ## Local firmware build
 
 > **Verification status.** The command below is the same one
