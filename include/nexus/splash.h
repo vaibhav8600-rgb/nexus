@@ -23,6 +23,14 @@ struct nexus_splash_art {
 
 extern const struct nexus_splash_art nexus_splash_art;
 
+/**
+ * Which element the splash highlight is currently on, or -1 for none.
+ *
+ * Exposed so artwork can pulse in step with the wordmark instead of sitting
+ * still above a moving name. Generated art (scripts/png2c.py) ignores it.
+ */
+int nexus_splash_phase(void);
+
 #ifdef __cplusplus
 }
 #endif

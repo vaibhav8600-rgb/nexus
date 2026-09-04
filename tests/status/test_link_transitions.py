@@ -7,8 +7,13 @@ The rules that matter and are easy to get wrong:
   * the first transition per slot is silent (boot is not news, and it would
     collide with the splash fanfare)
   * left and right get different cues, after CONFIG_NEXUS_SPLIT_SWAP_SIDES
-  * a disconnect can only ever come from the silence timeout, because ZMK's
-    split central raises no events at all
+  * one slot-to-side mapping, so the chirp and the battery card agree
+  * a disconnect must not blank the battery - a half that just left still had
+    a charge a moment ago, and "--" is for a level never known (Section 26)
+
+Both directions now come from Zephyr connection callbacks (split_conn.c), not
+from a silence timeout. The timeout version announced a disconnect every time
+a sleeping half stopped reporting, which is what the random beeping was.
 
 Run: python tests/status/test_link_transitions.py
 """
@@ -18,20 +23,25 @@ import re
 import sys
 
 DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING = range(4)
+UNKNOWN = 0xFF
 
 
 class Model:
-    """Mirrors set_link() in src/status/status.c."""
+    """Mirrors set_link() / nexus_status_half_link() in src/status/status.c."""
 
     def __init__(self, swap_sides=False, sound_split=True):
         self.link = {True: DISCONNECTED, False: DISCONNECTED}  # keyed by is_left
-        self.announced = [False, False]                        # keyed by slot
+        self.batt = {True: UNKNOWN, False: UNKNOWN}
+        self.announced = [False, False]
         self.swap = swap_sides
         self.sound = sound_split
         self.chirps = []
 
+    def slot_is_left(self, slot):
+        return (slot == 0) != self.swap
+
     def set_link(self, slot, to):
-        left = (slot == 0) != self.swap
+        left = self.slot_is_left(slot)
         if self.link[left] == to:
             return
         was_up = self.link[left] == CONNECTED
@@ -43,12 +53,16 @@ class Model:
                 self.chirps.append("%s_%s" % (side, "CONNECT" if now_up else "DISCONNECT"))
             self.announced[slot] = True
 
-    # the two things that actually call it
-    def battery_report(self, slot):
+    # the three things that call it
+    def ble_connected(self, slot):
         self.set_link(slot, CONNECTED)
 
-    def silence_timeout(self, slot):
-        self.set_link(slot, RECONNECTING)
+    def ble_disconnected(self, slot):
+        self.set_link(slot, DISCONNECTED)
+
+    def battery_report(self, slot, level=80):
+        self.batt[self.slot_is_left(slot)] = level
+        self.set_link(slot, CONNECTED)
 
 
 def check(name, got, want):
@@ -62,54 +76,58 @@ def check(name, got, want):
 def main():
     bad = 0
 
-    # boot: both halves report in, nothing audible
+    # boot: both halves link up, nothing audible
     m = Model()
-    m.battery_report(0)
-    m.battery_report(1)
+    m.ble_connected(0)
+    m.ble_connected(1)
     bad += check("boot is silent", m.chirps, [])
 
-    # steady state: repeated reports are not transitions
+    # battery reports on a live link are not transitions
     for _ in range(5):
         m.battery_report(0)
         m.battery_report(1)
-    bad += check("repeat reports are silent", m.chirps, [])
+    bad += check("battery reports on a live link are silent", m.chirps, [])
 
-    # left goes quiet, then comes back
-    m.silence_timeout(0)
+    # a half really goes away
+    m.ble_disconnected(0)
     bad += check("left drop chirps once", m.chirps, ["L_DISCONNECT"])
-    m.silence_timeout(0)
-    bad += check("still-quiet does not re-chirp", m.chirps, ["L_DISCONNECT"])
-    m.battery_report(0)
+    m.ble_disconnected(0)
+    bad += check("a repeated disconnect does not re-chirp", m.chirps, ["L_DISCONNECT"])
+
+    # ...and the battery it last reported survives it
+    bad += check("drop keeps the last charge", m.batt[True], 80)
+
+    m.ble_connected(0)
     bad += check("left return chirps", m.chirps, ["L_DISCONNECT", "L_CONNECT"])
 
-    # right is independent and sounds different
-    m.silence_timeout(1)
+    # right is independent and audibly different
+    m.ble_disconnected(1)
     bad += check("right drop is its own cue", m.chirps[-1], "R_DISCONNECT")
 
-    # A half that has never been up cannot "disconnect". The sweep may demote
-    # it DISCONNECTED -> RECONNECTING, but that does not cross CONNECTED, so
-    # it is not a transition and must not consume the boot suppression - the
-    # half's real arrival afterwards is still boot, and still silent.
+    # a sleeping half that merely stops reporting must NOT chirp: nothing
+    # calls set_link at all, which is the whole point of the rewrite
     m = Model()
-    m.silence_timeout(0)
-    bad += check("timeout on a never-connected half is silent", m.chirps, [])
+    m.ble_connected(0)
     m.battery_report(0)
-    bad += check("its first arrival is still boot, still silent", m.chirps, [])
-    m.silence_timeout(0)
-    bad += check("the next real drop does chirp", m.chirps, ["L_DISCONNECT"])
+    before = list(m.chirps)
+    for _ in range(10):
+        pass  # ten battery intervals of silence, no events raised
+    bad += check("silence alone never chirps", m.chirps, before)
 
-    # swap_sides really swaps which cue plays
+    # swap_sides flips both the cue and the battery card together
     m = Model(swap_sides=True)
-    m.battery_report(0)
-    m.silence_timeout(0)
-    bad += check("swap_sides flips slot 0 to the right cue", m.chirps, ["R_DISCONNECT"])
+    m.battery_report(0, 55)
+    m.ble_disconnected(0)
+    bad += check("swap: slot 0 chirps as right", m.chirps, ["R_DISCONNECT"])
+    bad += check("swap: slot 0 charges the right card", m.batt[False], 55)
+    bad += check("swap: left card untouched", m.batt[True], UNKNOWN)
 
-    # sound off means no chirps but state still tracks
+    # sound off: state still tracks
     m = Model(sound_split=False)
-    m.battery_report(0)
-    m.silence_timeout(0)
+    m.ble_connected(0)
+    m.ble_disconnected(0)
     bad += check("sound off: no chirps", m.chirps, [])
-    bad += check("sound off: link still tracked", m.link[True], RECONNECTING)
+    bad += check("sound off: link still tracked", m.link[True], DISCONNECTED)
 
     # --- the C has to still match the model -------------------------------
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -120,7 +138,7 @@ def main():
         ("if (*link == to) {", "no-op guard on an unchanged state"),
         ("was_up != now_up", "chirps only across the CONNECTED boundary"),
         ("if (g_announced[slot])", "first transition per slot is silent"),
-        ("g_announced[slot] = true;", "the slot is marked announced"),
+        ("slot_is_left(slot)", "side comes from the one shared mapping"),
     ]:
         if frag not in body:
             print("  FAIL  set_link lost: %s" % why)
@@ -128,18 +146,33 @@ def main():
         else:
             print("  ok    set_link keeps: %s" % why)
 
-    # a disconnect must not blank the battery - that regression is why
-    # NEXUS_STATUS_STALE_MS exists separately (Section 26)
-    # the definition, not the forward declaration above it
-    sweep = src.split("static void stale_work_cb(struct k_work *work)\n{")[1].split("\n}")[0]
-    if "NEXUS_LINK_RECONNECTING" not in sweep:
-        print("  FAIL  sweep no longer demotes the link")
-        bad += 1
-    elif "LINK_TIMEOUT_MS" not in sweep or "STALE_MS" not in sweep:
-        print("  FAIL  sweep lost one of its two independent timeouts")
+    half = src.split("void nexus_status_half_link")[1].split("\n}\n")[0]
+    if "NEXUS_BATTERY_UNKNOWN" in half:
+        print("  FAIL  half_link blanks the battery on a drop")
         bad += 1
     else:
-        print("  ok    sweep keeps link and battery timeouts independent")
+        print("  ok    half_link leaves the battery alone")
+
+    conn = open(os.path.join(root, "src", "status", "split_conn.c"),
+                encoding="utf-8").read()
+    for frag, why in [
+        ("BT_CONN_CB_DEFINE", "registers Zephyr connection callbacks"),
+        ("BT_CONN_ROLE_CENTRAL", "only counts links where we are the central"),
+        ("bt_addr_le_cmp", "maps a peer address to a stable slot"),
+    ]:
+        if frag not in conn:
+            print("  FAIL  split_conn lost: %s" % why)
+            bad += 1
+        else:
+            print("  ok    split_conn keeps: %s" % why)
+
+    # the timeout that caused the random beeping must stay gone
+    if "LINK_TIMEOUT" in src or "LINK_TIMEOUT" in open(
+            os.path.join(root, "Kconfig"), encoding="utf-8").read():
+        print("  FAIL  silence-based link timeout is back")
+        bad += 1
+    else:
+        print("  ok    no silence-based link inference anywhere")
 
     print("\n%s" % ("FAILED (%d)" % bad if bad else "PASSED"))
     return 1 if bad else 0

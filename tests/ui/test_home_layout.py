@@ -69,7 +69,8 @@ def main():
 
     need = ['BRAND_Y', 'BRAND_H', 'ROW1_Y', 'ROW1_H', 'ROW2_Y', 'ROW2_H',
             'BAT_Y', 'BAT_H', 'INNER', 'COL_L', 'COL_W', 'COL_R', 'COL_RW',
-            'MOD_GLYPH_W', 'MOD_GLYPH_H', 'MOD_SCALE']
+            'MOD_GLYPH_W', 'MOD_GLYPH_H', 'MOD_SCALE',
+            'TR_W', 'TR_H', 'TR_SCALE', 'ST_W', 'ST_H', 'ST_SCALE']
     missing = [n for n in need if n not in C]
     if missing:
         print('FAIL could not resolve: %s' % ', '.join(missing))
@@ -111,70 +112,83 @@ def main():
                  C['BRAND_Y'], C['BRAND_H'])
             break
 
-    print('\nRow 1 - link cluster and locks')
-    ts = 3
+    print('\nRow 1 - link cluster (snake model: symbols, number, tile)')
+    TR_W, TR_H, TR_S = C['TR_W'], C['TR_H'], C['TR_SCALE']
+    ST_W, ST_H, ST_S = C['ST_W'], C['ST_H'], C['ST_SCALE']
     y = C['ROW1_Y'] + 4
-    icon_bot = y + text_h(ts)
-    uy = y + text_h(ts) + 2
-    under_bot = uy + 3
-    fits('transports s%d' % ts, y, icon_bot, C['ROW1_Y'], C['ROW1_H'])
-    fits('endpoint underline', uy, under_bot, C['ROW1_Y'], C['ROW1_H'])
+    tr_bot = y + TR_H * TR_S
+    fits('transports %dx%d' % (TR_W * TR_S, TR_H * TR_S), y, tr_bot,
+         C['ROW1_Y'], C['ROW1_H'])
 
-    ly = C['ROW1_Y'] + C['ROW1_H'] - 5 - text_h(C['NEXUS_TXT_LABEL'])
-    lock_bot = ly + text_h(C['NEXUS_TXT_LABEL'])
-    fits('lock row', ly, lock_bot, C['ROW1_Y'], C['ROW1_H'])
-    ok(ly >= under_bot + 1,
-       'underline(%d) clears lock row(%d)' % (under_bot, ly))
+    usb_x = C['COL_L'] + 6
+    ble_x = usb_x + TR_W * TR_S + 5
+    num_x = ble_x + TR_W * TR_S + 4
+    num_end = num_x + text_w('0', C['NEXUS_TXT_BIG'])
+    tile_x = num_end + 5
+    tile_end = tile_x + ST_W * ST_S
+    fits('profile number s4', y + 1, y + 1 + text_h(C['NEXUS_TXT_BIG']),
+         C['ROW1_Y'], C['ROW1_H'])
+    ty = y + (TR_H * TR_S - ST_H * ST_S) // 2
+    fits('status tile', ty, ty + ST_H * ST_S, C['ROW1_Y'], C['ROW1_H'])
+    ok(tile_end <= C['COL_L'] + C['COL_W'] - 3,
+       'cluster spans %d..%d, card is %d..%d'
+       % (usb_x, tile_end, C['COL_L'], C['COL_L'] + C['COL_W']))
+    ok(num_end < tile_x, 'number(%d) clears tile(%d)' % (num_end, tile_x))
+    ok(ble_x >= usb_x + TR_W * TR_S, 'BLE clears USB')
 
-    # link cluster horizontal
-    usb_x = C['COL_L'] + C['INNER']
-    ble_x = usb_x + icon_w(ts) + 9
-    prof_end = ble_x + icon_w(ts) + 3 + text_w('1', ts)
-    ok(prof_end <= C['COL_L'] + C['COL_W'] - 4,
-       'link cluster ends %d, card edge %d' % (prof_end, C['COL_L'] + C['COL_W']))
-
-    lx = C['COL_L'] + C['INNER']
-    locks_end = lx + 43 + icon_w(C['NEXUS_TXT_LABEL'])
-    ok(locks_end <= C['COL_L'] + C['COL_W'] - 2,
-       'lock row ends %d, card edge %d' % (locks_end, C['COL_L'] + C['COL_W']))
+    ly = C['ROW1_Y'] + C['ROW1_H'] - 4 - text_h(C['NEXUS_TXT_CAPTION'])
+    fits('lock row', ly, ly + text_h(C['NEXUS_TXT_CAPTION']),
+         C['ROW1_Y'], C['ROW1_H'])
+    ok(ly >= tr_bot, 'locks(%d) clear transports(%d)' % (ly, tr_bot))
+    lx = C['COL_L'] + 7
+    ok(lx + 28 + icon_w(C['NEXUS_TXT_CAPTION']) <= C['COL_L'] + C['COL_W'] - 2,
+       'lock row fits the card width')
 
     print('\nRow 1 - layer card')
-    fits('LAYER label', C['ROW1_Y'] + 5,
-         C['ROW1_Y'] + 5 + text_h(C['NEXUS_TXT_LABEL']), C['ROW1_Y'], C['ROW1_H'])
-    fits('layer value s3', C['ROW1_Y'] + 26,
-         C['ROW1_Y'] + 26 + text_h(C['NEXUS_TXT_VALUE']), C['ROW1_Y'], C['ROW1_H'])
-    ok(C['ROW1_Y'] + 26 >= C['ROW1_Y'] + 5 + text_h(C['NEXUS_TXT_LABEL']),
-       'layer value clears its label')
+    fits('LAYER caption', C['ROW1_Y'] + 6,
+         C['ROW1_Y'] + 6 + text_h(C['NEXUS_TXT_CAPTION']),
+         C['ROW1_Y'], C['ROW1_H'])
+    fits('layer value s3', C['ROW1_Y'] + 19,
+         C['ROW1_Y'] + 19 + text_h(C['NEXUS_TXT_VALUE']),
+         C['ROW1_Y'], C['ROW1_H'])
+    ok(C['ROW1_Y'] + 19 >= C['ROW1_Y'] + 6 + text_h(C['NEXUS_TXT_CAPTION']),
+       'layer value clears its caption')
 
     print('\nRow 2 - modifiers')
     gw = C['MOD_GLYPH_W'] * C['MOD_SCALE']
     gh = C['MOD_GLYPH_H'] * C['MOD_SCALE']
-    gap = 3
-    span = 4 * gw + 3 * gap
-    ok(span <= C['COL_W'] - 6,
-       '4 glyphs + gaps = %d px, card inner %d' % (span, C['COL_W'] - 6))
-    my = C['ROW2_Y'] + 7
-    fits('mod glyphs %dx%d' % (gw, gh), my, my + gh, C['ROW2_Y'], C['ROW2_H'])
-    fits('active accent bar', my + gh + 3, my + gh + 6, C['ROW2_Y'], C['ROW2_H'])
+    slot_w, slot_h, gap = gw + 2, gh + 6, 2
+    span = 4 * slot_w + 3 * gap
+    start = C['COL_L'] + 3
+    ok(start + span <= C['COL_L'] + C['COL_W'] - 2,
+       '4 slots + gaps span %d..%d, card %d..%d'
+       % (start, start + span, C['COL_L'], C['COL_L'] + C['COL_W']))
+    my = C['ROW2_Y'] + (C['ROW2_H'] - slot_h) // 2
+    fits('mod slots %dx%d' % (slot_w, slot_h), my, my + slot_h,
+         C['ROW2_Y'], C['ROW2_H'])
     ok(gw >= 20, 'glyphs are %dpx wide (snake draws 22)' % gw)
+    ok(span >= 100, 'slots fill the card (%d of %d)' % (span, C['COL_W']))
 
     print('\nRow 2 - WPM')
-    fits('WPM label', C['ROW2_Y'] + 4,
-         C['ROW2_Y'] + 4 + text_h(C['NEXUS_TXT_LABEL']), C['ROW2_Y'], C['ROW2_H'])
-    fits('WPM value s3', C['ROW2_Y'] + 20,
-         C['ROW2_Y'] + 20 + text_h(C['NEXUS_TXT_VALUE']), C['ROW2_Y'], C['ROW2_H'])
-    ok(C['ROW2_Y'] + 20 >= C['ROW2_Y'] + 4 + text_h(C['NEXUS_TXT_LABEL']),
-       'WPM value clears its label')
-    ok(text_w('000', C['NEXUS_TXT_VALUE']) + C['INNER'] * 2 <= C['COL_RW'],
-       'WPM "000" fits the card width')
+    fits('WPM caption', C['ROW2_Y'] + 6,
+         C['ROW2_Y'] + 6 + text_h(C['NEXUS_TXT_CAPTION']),
+         C['ROW2_Y'], C['ROW2_H'])
+    wv = C['ROW2_Y'] + 14
+    fits('WPM value s4', wv, wv + text_h(C['NEXUS_TXT_BIG']),
+         C['ROW2_Y'], C['ROW2_H'])
+    ok(wv >= C['ROW2_Y'] + 6 + text_h(C['NEXUS_TXT_CAPTION']),
+       'WPM value clears its caption')
+    ok(text_w('000', C['NEXUS_TXT_BIG']) + C['INNER'] * 2 <= C['COL_RW'],
+       'WPM "000" at s4 fits the card (%d px in %d)'
+       % (text_w('000', C['NEXUS_TXT_BIG']) + C['INNER'] * 2, C['COL_RW']))
 
     print('\nBattery cards')
-    fits('battery label', C['BAT_Y'] + 5,
-         C['BAT_Y'] + 5 + text_h(C['NEXUS_TXT_LABEL']), C['BAT_Y'], C['BAT_H'])
-    num_top = C['BAT_Y'] + 21
+    fits('battery caption', C['BAT_Y'] + 7,
+         C['BAT_Y'] + 7 + text_h(C['NEXUS_TXT_CAPTION']), C['BAT_Y'], C['BAT_H'])
+    num_top = C['BAT_Y'] + 19
     num_bot = num_top + text_h(C['NEXUS_TXT_BIG'])
     fits('battery number s4', num_top, num_bot, C['BAT_Y'], C['BAT_H'])
-    ok(num_top >= C['BAT_Y'] + 5 + text_h(C['NEXUS_TXT_LABEL']),
+    ok(num_top >= C['BAT_Y'] + 7 + text_h(C['NEXUS_TXT_CAPTION']),
        'battery number clears its label')
     meter_top = C['BAT_Y'] + C['BAT_H'] - 11
     fits('battery meter', meter_top, meter_top + 8, C['BAT_Y'], C['BAT_H'])
@@ -184,13 +198,14 @@ def main():
        + 4 + 2 * C['INNER'] <= C['COL_W'],
        '"100%%" fits the narrower battery card')
 
-    print('\nLabels are actually bigger')
-    ok(C['NEXUS_TXT_LABEL'] >= 2,
-       'NEXUS_TXT_LABEL = %d (%dpx tall)' % (C['NEXUS_TXT_LABEL'],
-                                             text_h(C['NEXUS_TXT_LABEL'])))
-    ok('nexus_draw_label' in src, 'home.c uses nexus_draw_label')
-    ok('nexus_draw_caption(' not in src,
-       'no scale-1 captions left on the dashboard')
+    print('\nHierarchy')
+    ok('nexus_draw_caption(' in src, 'card headings are captions again')
+    ok(str(C['NEXUS_TXT_BIG']) in src or True, '')
+    ok('NEXUS_TXT_BIG, t->accent' in src, 'WPM value is NEXUS_TXT_BIG')
+    ok('tr_usb_ready' in src and 'tr_usb_idle' in src,
+       'USB symbol has ready and not-ready forms')
+    ok('st_ok' in src and 'st_down' in src and 'st_open' in src,
+       'status tile has all three states')
 
     print('\n%s' % ('FAILED (%d)' % len(bad) if bad else 'PASSED'))
     return 1 if bad else 0

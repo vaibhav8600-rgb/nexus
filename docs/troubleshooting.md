@@ -90,22 +90,22 @@ pitched into octaves 5-7. A buzzer that is quiet on *everything* is usually
 the pot; one that is quiet only on the low notes is physics.
 
 **A half chirps "disconnected" when nothing is wrong.**
-Expected, if it went to sleep. The dongle has no way to tell sleep from
-absence -- ZMK's split central raises no events at all, so a half being gone
-is only ever deduced from it having stopped reporting. Wake it and you get the
-connect cue back.
-
-If it happens while you are actively typing, the timeout is too short:
-`CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS` must be comfortably more than two
-`CONFIG_ZMK_BATTERY_REPORT_INTERVAL` periods (that interval is in *seconds*,
-the timeout in *milliseconds* -- 60 and 150000 respectively by default). Set
-it to `0` to switch the disconnect cue off entirely and keep only connects.
+It dropped its BLE link - that chirp comes from a real Zephyr disconnect
+callback, not from a guess. Check the half's battery and its distance from the
+dongle. (An older build inferred disconnects from silence and did chirp at
+sleeping halves; if you see that, you are on a build before `split_conn.c`.)
 
 **No chirp when a half comes back.**
 The first transition per half is silent on purpose, so the halves connecting
 at boot do not talk over the splash fanfare. The one after it will sound.
 
 ## Split
+
+**Switching BT profile does not change the number on screen.**
+Fixed. `refresh_endpoint()` used to compare only the endpoint and the link
+state before marking the dashboard dirty, so `&bt BT_SEL n` updated the model
+and returned without repainting. If you are on an older build, the number
+catches up the next time anything else changes.
 
 **Halves will not pair.**
 Flash `settings_reset` to all three boards, one at a time, then reflash. This

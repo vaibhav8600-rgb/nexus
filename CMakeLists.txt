@@ -38,6 +38,7 @@ zephyr_library_sources(
   src/action.c
   src/settings.c
   src/status/status.c
+  src/status/split_conn.c
   src/status/zmk_events.c
 )
 

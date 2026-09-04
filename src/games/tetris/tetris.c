@@ -52,10 +52,14 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define NEXT_H 64
 #define NEXT_CELL 8
 
-#define OVER_X 16
-#define OVER_Y 62
-#define OVER_W 208
-#define OVER_H 118
+/* Vertical rhythm inside the modal. */
+#define STAT_GAP 18
+#define HINT_GAP 6
+
+#define OVER_X 18
+#define OVER_Y 56
+#define OVER_W 204
+#define OVER_H 128
 
 extern const struct nexus_game nexus_game_tetris;
 
@@ -218,38 +222,65 @@ static void draw_overlay(void)
 	gfx_round_frame(OVER_X, OVER_Y, OVER_W, OVER_H, nexus_theme()->radius,
 			t->accent, GFX_OPAQUE);
 
-	/* Title, tracked, over its own rule - the same lockup the wordmark
-	 * uses, so the game's modal belongs to the same product. */
-	int y = OVER_Y + 14;
+	/*
+	 * Measured, then centred. Top-anchoring left the pause modal with a
+	 * gap at the bottom and the game-over one pressed against the frame,
+	 * so the two looked like different dialogs; the eye reads that as
+	 * unfinished long before it reads any of the words.
+	 */
+	bool over = (g_state == NEXUS_GAME_OVER);
+	int title_h = gfx_text_h(NEXUS_TXT_VALUE);
+	int hint_h = gfx_text_h(NEXUS_TXT_BODY);
+	int block = title_h + 6 + 2;              /* title over its rule   */
+
+	if (over) {
+		block += 14 + STAT_GAP;           /* SCORE / BEST row      */
+	}
+	block += 14;                              /* air before the hints  */
+	if (g_over_hint) {
+		block += hint_h;
+	}
+	if (g_over_hint2) {
+		block += HINT_GAP + hint_h;
+	}
+
+	int y = OVER_Y + (OVER_H - block) / 2;
 	int tw = nexus_tracked_w(g_over_title, NEXUS_TXT_VALUE, 2);
 
 	nexus_draw_tracked(GFX_W / 2, y, g_over_title, NEXUS_TXT_VALUE, 2,
 			   t->accent);
-	y += gfx_text_h(NEXUS_TXT_VALUE) + 6;
+	y += title_h + 6;
 	gfx_round_rect((GFX_W - tw) / 2, y, tw, 2, 1, t->accent, 150);
-	y += 12;
+	y += 2 + 14;
 
-	if (g_state == NEXUS_GAME_OVER) {
-		nexus_draw_caption_c(GFX_W / 2 - 46, y, "SCORE");
-		nexus_draw_caption_c(GFX_W / 2 + 46, y, "BEST");
-		gfx_text_c(GFX_W / 2 - 46, y + 12,
+	if (over) {
+		nexus_draw_caption_c(GFX_W / 2 - 48, y, "SCORE");
+		nexus_draw_caption_c(GFX_W / 2 + 48, y, "BEST");
+		gfx_text_c(GFX_W / 2 - 48, y + 12,
 			   gfx_utoa(g_t.score, buf, sizeof(buf), 0),
 			   NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
-		gfx_text_c(GFX_W / 2 + 46, y + 12,
+		gfx_text_c(GFX_W / 2 + 48, y + 12,
 			   gfx_utoa(nexus_game_highscore(&nexus_game_tetris),
 				    buf, sizeof(buf), 0),
 			   NEXUS_TXT_BODY, t->accent, GFX_OPAQUE);
-		y += 32;
+		y += 14 + STAT_GAP;
 	}
 
+	/*
+	 * Both hints at the same size. They are two halves of one instruction
+	 * - tap does this, hold does that - and printing one at twice the
+	 * other made the second look like a footnote you were not meant to
+	 * read, which is the opposite of what a modal explaining the only
+	 * button needs to do. Rank is carried by colour instead.
+	 */
 	if (g_over_hint) {
 		gfx_text_c(GFX_W / 2, y, g_over_hint, NEXUS_TXT_BODY, t->value,
 			   GFX_OPAQUE);
-		y += gfx_text_h(NEXUS_TXT_BODY) + 5;
+		y += hint_h + HINT_GAP;
 	}
 	if (g_over_hint2) {
-		nexus_draw_tracked(GFX_W / 2, y, g_over_hint2,
-				   NEXUS_TXT_CAPTION, 2, t->caption);
+		gfx_text_c(GFX_W / 2, y, g_over_hint2, NEXUS_TXT_BODY,
+			   t->caption, GFX_OPAQUE);
 	}
 }
 

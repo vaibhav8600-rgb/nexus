@@ -23,6 +23,17 @@ void nexus_health_set_games(bool ok);
 struct nexus_status *nexus_status_mut(void);
 void nexus_status_mark(uint32_t changed);
 void nexus_status_peripheral_battery(uint8_t source, uint8_t level);
+
+/**
+ * A split half's BLE link came up or went down.
+ *
+ * Called from Zephyr connection callbacks (src/status/split_conn.c), which is
+ * the only place on a dongle where this is actually observable - ZMK's split
+ * central raises no events for it.
+ *
+ * @param slot ZMK peripheral index, 0 or 1.
+ */
+void nexus_status_half_link(int slot, bool connected);
 void nexus_status_init(void);
 void nexus_status_seed(void);
 

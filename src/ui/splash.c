@@ -65,6 +65,11 @@ static int block_h(const struct nexus_splash_art *art)
 /* Which letter the highlight is on. One integer of animation state. */
 static int8_t g_lit;
 
+int nexus_splash_phase(void)
+{
+	return g_lit;
+}
+
 static void splash_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();

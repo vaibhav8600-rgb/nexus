@@ -74,17 +74,18 @@ sigh rather than an alert.
 Nothing plays for the halves connecting during boot. That is not news, and it
 would collide with the splash fanfare.
 
-**Connect is observed. Disconnect is inferred.** ZMK's split central raises no
-events at all - there is no "peripheral connected" or "peripheral lost" signal
-on the dongle side - so a half arriving is known from its first battery report,
-and a half leaving is only ever deduced from it having gone quiet. That is what
-`CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS` is, and why its default is as long as it
-is; see [Split status](#split-status).
+Both directions are real events. They come from Zephyr connection callbacks
+on the dongle's own BLE links (`src/status/split_conn.c`), filtered to the
+links where the dongle is the central - which is exactly the set of keyboard
+halves, since the host connects to *us*.
 
-A half with `CONFIG_ZMK_SLEEP` that dozes off also stops reporting, so it is
-announced as disconnected and then as connected again when you wake it. The
-dongle genuinely cannot tell sleep from absence, and for a notification chirp
-the distinction does not matter much: either way that half is not there now.
+That matters because there is nothing in ZMK to subscribe to: the split
+central raises no events at all, and snake-module's `peripheral_status.c`
+handler is an empty stub with "do we need this ?" in it. An earlier version of
+this inferred a disconnect from a half going quiet for 150 s, which announced
+a half leaving two minutes late and announced a "disconnect" every time a
+sleeping half stopped reporting battery. Connection callbacks know the
+difference between a half that dozed and a half that dropped.
 
 ## Games
 
@@ -198,7 +199,6 @@ sensor-bindings = <&nexus_theme_enc NEXUS_ACT_THEME_NEXT NEXUS_ACT_THEME_PREV
 | Option | Default | |
 | --- | --- | --- |
 | `CONFIG_NEXUS_SPLIT_SWAP_SIDES` | `n` | ZMK numbers peripherals by pairing order, not by physical side. Set this if LEFT and RIGHT are the wrong way round. |
-| `CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS` | `150000` | Call a half gone after N ms of silence: demotes it to RECONNECTING on the dashboard and, with `CONFIG_NEXUS_SOUND_SPLIT`, plays the disconnect cue. Never touches the battery reading. Halves check in every `CONFIG_ZMK_BATTERY_REPORT_INTERVAL` seconds (60 by default), so anything under about two intervals announces a disconnect for a half that is merely between reports. |
 | `CONFIG_NEXUS_STATUS_STALE_MS` | `0` | Blank a half's battery after N ms of silence. **Off by default**: a half with `CONFIG_ZMK_SLEEP` stops reporting when idle, so any timeout eventually blanks a good reading. An idle half has a battery level; we just heard it a while ago. |
 | `CONFIG_NEXUS_ANTI_IDLE_STATUS` | `n` | Cursor icon showing whether the mouse jiggler is on. Needs the `&anti_idle` behavior, which comes from snake-module, not from NEXUS. |
 

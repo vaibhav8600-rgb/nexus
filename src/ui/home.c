@@ -29,25 +29,23 @@
 #define COL_RW (GFX_W - NEXUS_PAD - COL_R)       /* 108 */
 
 /*
- * Vertical budget, reworked so every label can be NEXUS_TXT_LABEL.
+ * Vertical budget.
  *
- * At scale 1 a label is 5x7 - seven pixels tall on a 240px panel, which is
- * unreadable at desk distance and was the complaint. Scale 2 is 14 tall, so
- * each card needs about 6 more rows; the brand plate gives up 6 (its wordmark
- * only ever needed 42) and the battery cards 4.
- */
-/*
- * Gutters are 5 here, not NEXUS_GAP's 7. Scale-2 labels need 6 more rows per
- * card than scale-1 ones did, and 240 pixels is 240 pixels: three gutters
- * giving up 2px each buys back most of one card's growth, and nobody has ever
- * looked at a dashboard and wished the gaps were wider.
+ * Card headings went to scale 2 for one round and came back: 14px of "LAYER"
+ * next to a 21px value reads as two competing headlines, and every card had
+ * to grow to hold it, which squeezed the whole dashboard. Headings are
+ * supporting text and are sized like it - the numbers you actually read from
+ * across a desk carry the size instead.
+ *
+ * Gutters stay at 5 rather than NEXUS_GAP's 7, which is what buys ROW1 the
+ * height for a proper link cluster.
  */
 #define ROW_GAP 5
 
 #define BRAND_Y NEXUS_PAD                        /*   9 */
-#define BRAND_H 48                               /* ends at  57 */
-#define ROW1_Y (BRAND_Y + BRAND_H + ROW_GAP)     /*  62 */
-#define ROW1_H 52                                /* ends at 114 */
+#define BRAND_H 50                               /* ends at  59 */
+#define ROW1_Y (BRAND_Y + BRAND_H + ROW_GAP)     /*  64 */
+#define ROW1_H 50                                /* ends at 114 */
 #define ROW2_Y (ROW1_Y + ROW1_H + ROW_GAP)       /* 119 */
 #define ROW2_H 44                                /* ends at 163 */
 #define BAT_Y (ROW2_Y + ROW2_H + ROW_GAP)        /* 168 */
@@ -66,6 +64,52 @@
 #define MOD_GLYPH_W 11
 #define MOD_GLYPH_H 11
 #define MOD_SCALE 2
+
+/*
+ * Transport symbols, 9x15, straight off snake-module's model - a USB plug
+ * whose body says whether HID is actually up, and the Bluetooth rune. Drawn
+ * at scale 2 (18x30), which is what snake uses and what makes them readable.
+ *
+ * Row-major, bit N = column N, same as mod_glyphs below.
+ */
+#define TR_W 9
+#define TR_H 15
+#define TR_SCALE 2
+
+/* USB plug, HID ready: the arrow inside is live. */
+static const uint16_t tr_usb_ready[TR_H] = {
+	0x0FE, 0x0FE, 0x092, 0x092, 0x092, 0x0FE, 0x1FF, 0x101,
+	0x141, 0x161, 0x175, 0x11D, 0x109, 0x101, 0x1FF,
+};
+/* Same plug, HID not ready: the arrow becomes a cross. */
+static const uint16_t tr_usb_idle[TR_H] = {
+	0x0FE, 0x0FE, 0x092, 0x092, 0x092, 0x0FE, 0x1FF, 0x101,
+	0x145, 0x129, 0x111, 0x129, 0x145, 0x101, 0x1FF,
+};
+static const uint16_t tr_ble[TR_H] = {
+	0x010, 0x030, 0x070, 0x0D2, 0x092, 0x0EC, 0x078, 0x030,
+	0x078, 0x0EC, 0x092, 0x0D2, 0x070, 0x030, 0x010,
+};
+
+/*
+ * The status box: a bordered 9x9 tile that answers "is this profile usable",
+ * separately from which transport is selected. Snake keeps these two facts on
+ * two different elements for good reason - a single highlighted icon cannot
+ * say "BLE is selected but that profile has never paired".
+ */
+#define ST_W 9
+#define ST_H 9
+#define ST_SCALE 2
+
+static const uint16_t st_ok[ST_H] = {   /* tick: bonded and connected */
+	0x1FF, 0x101, 0x141, 0x161, 0x175, 0x11D, 0x109, 0x101, 0x1FF,
+};
+static const uint16_t st_down[ST_H] = { /* cross: bonded, not connected */
+	0x1FF, 0x101, 0x145, 0x129, 0x111, 0x129, 0x145, 0x101, 0x1FF,
+};
+static const uint16_t st_open[ST_H] = { /* dashed: open, waiting to pair */
+	0x155, 0x000, 0x101, 0x000, 0x101, 0x000, 0x101, 0x000, 0x155,
+};
 
 static const uint16_t mod_glyphs[4][MOD_GLYPH_H] = {
 	/* CTRL: the caret, widening downward. */
@@ -138,72 +182,74 @@ static void draw_link(const struct nexus_status *st)
 {
 	const struct nexus_theme *t = nexus_theme();
 	bool on_usb = (st->endpoint == NEXUS_ENDPOINT_USB);
-	bool on_ble = (st->endpoint == NEXUS_ENDPOINT_BLE);
 
 	nexus_draw_card(COL_L, ROW1_Y, COL_W, ROW1_H);
 
 	/*
-	 * Snake's model, which is better than "show the winner": each
-	 * transport is coloured by ITS OWN state, so the cluster answers
-	 * "is USB live?" and "is my BLE profile bonded and connected?"
-	 * independently. A single highlighted label could not.
+	 * Snake-module's layout, which separates two questions NEXUS was
+	 * previously cramming into one row of colour:
 	 *
-	 *   green  connected        amber  bonded but not connected, or
-	 *   grey   nothing there           an unpaired (open) profile
+	 *   which transport am I typing through   -> the lit symbol
+	 *   is that endpoint actually usable      -> the status tile
 	 *
-	 * The active endpoint gets an underline instead of a colour, so
-	 * "which one am I typing through" never competes with "which one is
-	 * healthy" for the same channel.
+	 * Selection is brightness (value vs muted), exactly as snake does it,
+	 * so the transport you are on is obvious at a glance and the tile is
+	 * free to carry health on its own.
 	 */
-	bool usb_live = st->usb_present;
-	gfx_color usb_c = usb_live ? t->success : t->muted;
-	gfx_color ble_c;
-
-	if (!st->bt_profile_bonded) {
-		ble_c = t->warning;                 /* open, waiting to pair */
-	} else if (on_ble && st->link_host == NEXUS_LINK_CONNECTED) {
-		ble_c = t->success;
-	} else {
-		ble_c = t->error;                   /* bonded, not connected */
-	}
-
-	/* Scale 3: 15x21 per symbol. Snake draws its transports at 2-4 and is
-	 * readable across a desk; at scale 2 these were not. */
-	const int ts = 3;
 	int y = ROW1_Y + 4;
-	int usb_x = COL_L + INNER;
-	int ble_x = usb_x + gfx_icon_w(ts) + 9;
+	int usb_x = COL_L + 6;
+	int ble_x = usb_x + TR_W * TR_SCALE + 5;
 
-	gfx_icon(usb_x, y, GFX_ICON_USB, ts, usb_c, GFX_OPAQUE);
-	gfx_icon(ble_x, y, GFX_ICON_BT, ts, ble_c, GFX_OPAQUE);
+	gfx_glyph(usb_x, y, st->usb_present ? tr_usb_ready : tr_usb_idle,
+		  TR_W, TR_H, TR_SCALE,
+		  on_usb ? t->value : t->muted, GFX_OPAQUE);
+	gfx_glyph(ble_x, y, tr_ble, TR_W, TR_H, TR_SCALE,
+		  on_usb ? t->muted : t->value, GFX_OPAQUE);
 
+	/* Profile number, big - it is the thing you check after BT_SEL. */
 	char prof[4];
+	int num_x = ble_x + TR_W * TR_SCALE + 4;
 
 	gfx_utoa((uint32_t)st->bt_profile + 1U, prof, sizeof(prof), 0);
-	gfx_text(ble_x + gfx_icon_w(ts) + 3, y, prof, ts, ble_c, GFX_OPAQUE);
+	gfx_text(num_x, y + 1, prof, NEXUS_TXT_BIG,
+		 on_usb ? t->muted : t->accent, GFX_OPAQUE);
 
-	/* Underline marks the endpoint actually in use. */
-	int uy = y + gfx_text_h(ts) + 2;
+	/*
+	 * Status tile, on the same line rather than under it. Two 30px rows
+	 * plus a lock row does not fit 50, and shrinking the symbols is what
+	 * made this cluster unreadable in the first place. Across the card:
+	 * USB, BLE, profile number, tile - 87px inside a 107px card.
+	 */
+	const uint16_t *tile;
+	gfx_color tile_c;
 
-	if (on_usb) {
-		gfx_rect(usb_x, uy, gfx_icon_w(ts), 3, t->accent, GFX_OPAQUE);
-	} else if (on_ble) {
-		gfx_rect(ble_x, uy, gfx_icon_w(ts), 3, t->accent, GFX_OPAQUE);
+	if (!st->bt_profile_bonded) {
+		tile = st_open;                 /* open, waiting to pair */
+		tile_c = t->warning;
+	} else if (st->link_host == NEXUS_LINK_CONNECTED && !on_usb) {
+		tile = st_ok;                   /* bonded and connected  */
+		tile_c = t->success;
+	} else {
+		tile = st_down;                 /* bonded, not connected */
+		tile_c = t->error;
 	}
+	gfx_glyph(num_x + gfx_text_w("0", NEXUS_TXT_BIG) + 5,
+		  y + (TR_H * TR_SCALE - ST_H * ST_SCALE) / 2, tile,
+		  ST_W, ST_H, ST_SCALE, tile_c, GFX_OPAQUE);
 
 	/* Locks and the jiggler along the bottom. The padlock IS caps. */
-	int lx = COL_L + INNER;
-	int ly = ROW1_Y + ROW1_H - 5 - gfx_text_h(NEXUS_TXT_LABEL);
+	int lx = COL_L + 7;
+	int ly = ROW1_Y + ROW1_H - 4 - gfx_text_h(NEXUS_TXT_CAPTION);
 
-	gfx_icon(lx, ly, GFX_ICON_LOCK, NEXUS_TXT_LABEL,
+	gfx_icon(lx, ly, GFX_ICON_LOCK, NEXUS_TXT_CAPTION,
 		 st->caps_lock ? t->warning : t->muted, GFX_OPAQUE);
-	gfx_text(lx + 15, ly, "N", NEXUS_TXT_LABEL,
+	gfx_text(lx + 10, ly, "N", NEXUS_TXT_CAPTION,
 		 st->num_lock ? t->warning : t->muted, GFX_OPAQUE);
-	gfx_text(lx + 28, ly, "S", NEXUS_TXT_LABEL,
+	gfx_text(lx + 18, ly, "S", NEXUS_TXT_CAPTION,
 		 st->scroll_lock ? t->warning : t->muted, GFX_OPAQUE);
 
 	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
-		gfx_icon(lx + 43, ly, GFX_ICON_MOUSE, NEXUS_TXT_LABEL,
+		gfx_icon(lx + 28, ly, GFX_ICON_MOUSE, NEXUS_TXT_CAPTION,
 			 st->anti_idle ? t->accent : t->muted, GFX_OPAQUE);
 	}
 }
@@ -215,7 +261,7 @@ static void draw_layer(const struct nexus_status *st)
 	const char *name = st->layer_name;
 
 	nexus_draw_card(COL_R, ROW1_Y, COL_RW, ROW1_H);
-	nexus_draw_label(COL_R + INNER, ROW1_Y + 5, "LAYER");
+	nexus_draw_caption(COL_R + INNER, ROW1_Y + 6, "LAYER");
 
 	if (name == NULL || name[0] == '\0') {
 		/* An unnamed layer shows its index. Never invent "DEFAULT" for
@@ -227,7 +273,7 @@ static void draw_layer(const struct nexus_status *st)
 
 	int avail = COL_RW - 2 * INNER;
 
-	gfx_text(COL_R + INNER, ROW1_Y + 26, name,
+	gfx_text(COL_R + INNER, ROW1_Y + 19, name,
 		 fit_scale(name, avail, NEXUS_TXT_VALUE), t->value, GFX_OPAQUE);
 }
 
@@ -236,27 +282,35 @@ static void draw_mods(const struct nexus_status *st)
 	const struct nexus_theme *t = nexus_theme();
 	const int gw = MOD_GLYPH_W * MOD_SCALE; /* 22 */
 	const int gh = MOD_GLYPH_H * MOD_SCALE; /* 22 */
-	const int gap = 3;
-	int x = COL_L + INNER - 3; /* 4*22 + 3*3 = 97 fills the card */
-	int y = ROW2_Y + 7;
+	const int gap = 2;
+	const int slot_w = gw + 2;      /* 24 */
+	const int slot_h = gh + 6;      /* 28 */
+	int x = COL_L + 3;              /* 4*24 + 3*2 = 102 in a 107 card */
+	int y = ROW2_Y + (ROW2_H - slot_h) / 2;
 
 	nexus_draw_card(COL_L, ROW2_Y, COL_W, ROW2_H);
 
 	for (int i = 0; i < 4; i++) {
 		bool on = (st->modifiers & mod_bits[i]) != 0;
 
-		gfx_glyph(x, y, mod_glyphs[i], MOD_GLYPH_W, MOD_GLYPH_H,
-			  MOD_SCALE, on ? t->value : t->muted, GFX_OPAQUE);
-
 		/*
-		 * An accent bar under the held ones. Section 106: state must
-		 * not be carried by colour alone, and a dim glyph next to a
-		 * bright one is exactly that.
+		 * Each glyph sits in a recessed slot rather than floating on
+		 * the card. Four bare symbols on a flat panel read as
+		 * unfinished - the eye needs to see four *places*, so that an
+		 * unheld modifier is visibly an empty slot rather than
+		 * something that failed to draw.
 		 */
-		if (on) {
-			gfx_rect(x, y + gh + 3, gw, 3, t->accent, GFX_OPAQUE);
-		}
-		x += gw + gap;
+		gfx_round_rect(x, y, slot_w, slot_h, 4,
+			       on ? t->accent_alt : t->track, on ? 110 : 150);
+		gfx_round_frame(x, y, slot_w, slot_h, 4,
+				on ? t->accent : t->border,
+				on ? GFX_OPAQUE : t->border_alpha);
+
+		gfx_glyph(x + (slot_w - gw) / 2, y + (slot_h - gh) / 2,
+			  mod_glyphs[i], MOD_GLYPH_W, MOD_GLYPH_H, MOD_SCALE,
+			  on ? t->value : t->muted, GFX_OPAQUE);
+
+		x += slot_w + gap;
 	}
 }
 
@@ -266,16 +320,18 @@ static void draw_wpm(const struct nexus_status *st)
 	char buf[8];
 
 	nexus_draw_card(COL_R, ROW2_Y, COL_RW, ROW2_H);
-	nexus_draw_label(COL_R + INNER, ROW2_Y + 4, "WPM");
+	nexus_draw_caption(COL_R + INNER, ROW2_Y + 6, "WPM");
 
 	/* Zero-padded to three digits so the numerals never shift sideways as
 	 * the value crosses 10 or 100 (Section 27). */
 	gfx_utoa(st->wpm, buf, sizeof(buf), 3);
 
+	/* The one number on this row worth reading from across the desk, so
+	 * it gets NEXUS_TXT_BIG while its heading stays a caption. */
 	int right = COL_R + COL_RW - INNER;
 
-	gfx_text(right - gfx_text_w(buf, NEXUS_TXT_VALUE), ROW2_Y + 20, buf,
-		 NEXUS_TXT_VALUE, t->accent, GFX_OPAQUE);
+	gfx_text(right - gfx_text_w(buf, NEXUS_TXT_BIG), ROW2_Y + 14, buf,
+		 NEXUS_TXT_BIG, t->accent, GFX_OPAQUE);
 }
 
 static void draw_battery(int x, int w, const char *label, uint8_t pct)
@@ -285,7 +341,7 @@ static void draw_battery(int x, int w, const char *label, uint8_t pct)
 	bool known = (pct != NEXUS_BATTERY_UNKNOWN && pct <= 100);
 
 	nexus_draw_card(x, BAT_Y, w, BAT_H);
-	nexus_draw_label(x + INNER, BAT_Y + 5, label);
+	nexus_draw_caption(x + INNER, BAT_Y + 7, label);
 
 	if (known) {
 		gfx_utoa(pct, buf, sizeof(buf), 0);
@@ -297,12 +353,12 @@ static void draw_battery(int x, int w, const char *label, uint8_t pct)
 		buf[2] = '\0';
 	}
 
-	gfx_text(x + INNER, BAT_Y + 21, buf, NEXUS_TXT_BIG,
+	gfx_text(x + INNER, BAT_Y + 19, buf, NEXUS_TXT_BIG,
 		 known ? t->value : t->muted, GFX_OPAQUE);
 
 	if (known) {
 		gfx_text(x + INNER + gfx_text_w(buf, NEXUS_TXT_BIG) + 4,
-			 BAT_Y + 21 + gfx_text_h(NEXUS_TXT_BIG) -
+			 BAT_Y + 19 + gfx_text_h(NEXUS_TXT_BIG) -
 				 gfx_text_h(NEXUS_TXT_BODY),
 			 "%", NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
 	}

@@ -134,6 +134,8 @@ static void refresh_endpoint(void)
 	struct nexus_status *st = nexus_status_mut();
 	enum nexus_endpoint ep = NEXUS_ENDPOINT_NONE;
 	enum nexus_link_state host = NEXUS_LINK_DISCONNECTED;
+	uint8_t profile = st->bt_profile;
+	bool bonded = st->bt_profile_bonded;
 	/*
 	 * ZMK API pin point: endpoint selection. This is the spelling used by
 	 * the shipping dongle code this project already builds against; some
@@ -164,13 +166,13 @@ static void refresh_endpoint(void)
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 	case ZMK_TRANSPORT_BLE:
 		ep = NEXUS_ENDPOINT_BLE;
-		st->bt_profile = zmk_ble_active_profile_index();
-		st->bt_profile_bonded = !zmk_ble_active_profile_is_open();
+		profile = (uint8_t)zmk_ble_active_profile_index();
+		bonded = !zmk_ble_active_profile_is_open();
 		if (zmk_ble_active_profile_is_connected()) {
 			host = NEXUS_LINK_CONNECTED;
 		} else {
-			host = st->bt_profile_bonded ? NEXUS_LINK_RECONNECTING
-						     : NEXUS_LINK_CONNECTING;
+			host = bonded ? NEXUS_LINK_RECONNECTING
+				      : NEXUS_LINK_CONNECTING;
 		}
 		break;
 #endif
@@ -178,7 +180,17 @@ static void refresh_endpoint(void)
 		break;
 	}
 
-	if (st->endpoint == ep && st->link_host == host) {
+	/*
+	 * The profile fields are part of "did anything change", not just the
+	 * endpoint and the link. Without them, pressing &bt BT_SEL 1 updated
+	 * st->bt_profile above and then returned here without marking
+	 * anything dirty - because the endpoint is still BLE and the link
+	 * state often does not move - so the panel kept showing the old
+	 * profile number until something unrelated forced a repaint. That is
+	 * the whole of "switching BT profile does nothing on screen".
+	 */
+	if (st->endpoint == ep && st->link_host == host &&
+	    st->bt_profile == profile && st->bt_profile_bonded == bonded) {
 		return;
 	}
 
@@ -189,6 +201,8 @@ static void refresh_endpoint(void)
 
 	st->endpoint = ep;
 	st->link_host = host;
+	st->bt_profile = profile;
+	st->bt_profile_bonded = bonded;
 	nexus_status_mark(NEXUS_STATUS_ENDPOINT);
 
 	if (became) {
