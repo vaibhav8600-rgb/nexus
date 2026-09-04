@@ -56,7 +56,8 @@ enum nexus_battery_band {
 #define NEXUS_STATUS_MODS     BIT(4)
 #define NEXUS_STATUS_LOCKS    BIT(5)
 #define NEXUS_STATUS_LINKS    BIT(6)
-#define NEXUS_STATUS_ALL      0x7F
+#define NEXUS_STATUS_JIGGLE   BIT(7)
+#define NEXUS_STATUS_ALL      0xFF
 
 struct nexus_status {
 	const char *layer_name;
@@ -81,6 +82,11 @@ struct nexus_status {
 	bool caps_lock;
 	bool num_lock;
 	bool scroll_lock;
+
+	/* Mouse jiggler, when CONFIG_NEXUS_ANTI_IDLE_STATUS is built. Always
+	 * present in the struct so widgets need no #ifdef; simply never true
+	 * without the module that reports it. */
+	bool anti_idle;
 };
 
 /** Live model. Read-only for everything outside src/status/. */

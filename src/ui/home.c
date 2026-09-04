@@ -147,6 +147,17 @@ static void draw_link(const struct nexus_status *st)
 		 st->num_lock ? t->warning : t->muted, GFX_OPAQUE);
 	gfx_text(lx + 7, ly, "S", NEXUS_TXT_CAPTION,
 		 st->scroll_lock ? t->warning : t->muted, GFX_OPAQUE);
+
+	/*
+	 * Mouse jiggler. Lit in the accent colour so it is obvious at a
+	 * glance - a jiggler you cannot see the state of is one you leave
+	 * running into a meeting. Drawn dim rather than hidden when off, so
+	 * the row does not change width as it toggles.
+	 */
+	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
+		gfx_icon(lx + 16, ly, GFX_ICON_MOUSE, 1,
+			 st->anti_idle ? t->accent : t->muted, GFX_OPAQUE);
+	}
 }
 
 static void draw_layer(const struct nexus_status *st)
@@ -278,7 +289,7 @@ static void on_status(const struct nexus_status *st, uint32_t changed)
 	ARG_UNUSED(st);
 
 	if (changed & (NEXUS_STATUS_ENDPOINT | NEXUS_STATUS_LOCKS |
-		       NEXUS_STATUS_LAYER)) {
+		       NEXUS_STATUS_LAYER | NEXUS_STATUS_JIGGLE)) {
 		nexus_screen_invalidate_rows(ROW1_Y, ROW1_Y + ROW1_H);
 	}
 	if (changed & (NEXUS_STATUS_MODS | NEXUS_STATUS_WPM)) {

@@ -132,6 +132,7 @@ enum gfx_icon {
 	GFX_ICON_SHIFT,  /* up arrow                        */
 	GFX_ICON_ALT,    /* option stroke                   */
 	GFX_ICON_GUI,    /* four panes, the usual GUI key   */
+	GFX_ICON_MOUSE,  /* cursor arrow, for the jiggler   */
 	GFX_ICON_COUNT,
 };
 

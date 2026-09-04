@@ -232,6 +232,19 @@ config NEXUS_GAME_HIGHSCORE_PERSIST
 # --------------------------------------------------------------------------
 # Status sources
 # --------------------------------------------------------------------------
+config NEXUS_ANTI_IDLE_STATUS
+	bool "Show a mouse-jiggler indicator on the dashboard"
+	default n
+	help
+	  Subscribes to zmk_anti_idle_state and lights a cursor icon on the
+	  LINK card while the jiggler is on.
+
+	  Off by default because the behavior that raises that event is not
+	  part of NEXUS - it comes from the snake-module ZMK module. Enable
+	  this only in a build that has it, or the include will not resolve.
+	  A jiggler you cannot see the state of is a jiggler you leave running
+	  into a meeting, which is the whole reason for the indicator.
+
 config NEXUS_SPLIT_SWAP_SIDES
 	bool "Swap which peripheral slot is labelled LEFT"
 	default n

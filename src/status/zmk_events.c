@@ -235,6 +235,27 @@ static void refresh_locks(void)
 }
 #endif
 
+/* ------------------------------------------------------ mouse jiggler -- */
+#if IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)
+/*
+ * The only event NEXUS consumes that ZMK itself does not define - it comes
+ * from the snake-module module, which is why it sits behind a Kconfig rather
+ * than being assumed present (Section 99: sit on top of ZMK, do not require
+ * anyone else's module).
+ */
+#include <zmk_dongle_events/anti_idle_state_event.h>
+
+static void refresh_anti_idle(bool active)
+{
+	struct nexus_status *st = nexus_status_mut();
+
+	if (st->anti_idle != active) {
+		st->anti_idle = active;
+		nexus_status_mark(NEXUS_STATUS_JIGGLE);
+	}
+}
+#endif
+
 /* ------------------------------------------------------------- listener -- */
 
 static int nexus_status_listener(const zmk_event_t *eh)
@@ -266,6 +287,11 @@ static int nexus_status_listener(const zmk_event_t *eh)
 		refresh_locks();
 	}
 #endif
+#if IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)
+	else if (as_zmk_anti_idle_state(eh)) {
+		refresh_anti_idle(as_zmk_anti_idle_state(eh)->active);
+	}
+#endif
 	else if (as_zmk_battery_state_changed(eh)) {
 		nexus_status_mut()->battery_dongle =
 			as_zmk_battery_state_changed(eh)->state_of_charge;
@@ -288,6 +314,9 @@ ZMK_SUBSCRIPTION(nexus_status, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_keycode_state_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_battery_state_changed);
+#if IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)
+ZMK_SUBSCRIPTION(nexus_status, zmk_anti_idle_state);
+#endif
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 ZMK_SUBSCRIPTION(nexus_status, zmk_peripheral_battery_state_changed);
 #endif
