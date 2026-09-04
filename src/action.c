@@ -8,6 +8,7 @@
  */
 
 #include <nexus/action.h>
+#include <nexus/settings.h>
 #include <nexus/sound.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -52,6 +53,13 @@ static void handle(enum nexus_action action)
 	case NEXUS_ACTION_MENU:
 		nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
 		nexus_screen_push(&nexus_screen_settings_def);
+		break;
+	case NEXUS_ACTION_SAVE:
+		/* Works from any screen, so you can commit a theme change from
+		 * the keyboard without walking back to the SAVE row. */
+		nexus_sound_play(nexus_settings_save() == 0
+					 ? NEXUS_SOUND_MENU_SELECT
+					 : NEXUS_SOUND_BACK);
 		break;
 	default:
 		LOG_DBG("action %d unhandled on screen %s", action,

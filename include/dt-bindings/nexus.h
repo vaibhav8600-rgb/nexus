@@ -22,4 +22,8 @@
 #define NEXUS_ACT_ROTATE      14
 #define NEXUS_ACT_DROP        15
 
+/* Commit the current sound / theme / brightness to storage. Exists so the
+ * keyboard can do everything the dongle button can, and then some. */
+#define NEXUS_ACT_SAVE        16
+
 #endif /* DT_BINDINGS_NEXUS_H_ */

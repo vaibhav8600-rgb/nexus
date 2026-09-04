@@ -20,32 +20,57 @@
 #include <nexus/widgets.h>
 #include <zephyr/kernel.h>
 
-#define MARK_GAP 10
-#define BRAND_H 13 /* caption + its gap */
-#define SUB_H 13
+#define MARK_GAP 12
+#define BRAND_GAP 10   /* below the mark, above the wordmark */
+#define SUB_GAP 10     /* below the wordmark                 */
 
-static int text_height(void)
+/*
+ * Everything except the wordmark used to be caption-sized, so on hardware the
+ * brand and subtitle simply did not register - the splash read as "logo, then
+ * NEXUS, then two smudges". They are body size now, and the block is measured
+ * before it is drawn so the whole thing stays centred whatever the strings and
+ * the artwork add up to.
+ */
+static int brand_h(void)
 {
-	int h = gfx_text_h(NEXUS_TXT_BIG);
+	return sizeof(NEXUS_BRAND) > 1
+		       ? gfx_text_h(NEXUS_TXT_BODY) + BRAND_GAP
+		       : 0;
+}
 
-	if (sizeof(NEXUS_BRAND) > 1) {
-		h += BRAND_H;
+static int sub_h(void)
+{
+	return sizeof(NEXUS_SUBTITLE) > 1
+		       ? gfx_text_h(NEXUS_TXT_BODY) + SUB_GAP
+		       : 0;
+}
+
+/* Wordmark scale that fits the panel width, and the whole block's height. */
+static int mark_scale(void)
+{
+	for (int sc = 5; sc > 1; sc--) {
+		if (gfx_text_w(NEXUS_PRODUCT, sc) <= GFX_W - 2 * NEXUS_PAD - 8) {
+			return sc;
+		}
 	}
-	if (sizeof(NEXUS_SUBTITLE) > 1) {
-		h += SUB_H;
-	}
-	return h;
+	return 1;
+}
+
+static int block_h(const struct nexus_splash_art *art)
+{
+	return (art->h ? art->h + MARK_GAP : 0) + brand_h() +
+	       nexus_wordmark_h(mark_scale()) + sub_h();
 }
 
 static void splash_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
 	const struct nexus_splash_art *art = &nexus_splash_art;
-	int block = art->h + (art->h ? MARK_GAP : 0) + text_height();
-	int y = (GFX_H - block) / 2;
+	int scale = mark_scale();
+	int y = (GFX_H - block_h(art)) / 2;
 
-	if (y < 0) {
-		y = 0;
+	if (y < NEXUS_PAD) {
+		y = NEXUS_PAD;
 	}
 
 	if (art->h) {
@@ -54,16 +79,17 @@ static void splash_draw(void)
 	}
 
 	if (sizeof(NEXUS_BRAND) > 1) {
-		nexus_draw_caption_c(GFX_W / 2, y, NEXUS_BRAND);
-		y += BRAND_H;
+		gfx_text_c(GFX_W / 2, y, NEXUS_BRAND, NEXUS_TXT_BODY,
+			   t->caption, GFX_OPAQUE);
+		y += gfx_text_h(NEXUS_TXT_BODY) + BRAND_GAP;
 	}
 
-	nexus_draw_wordmark(GFX_W / 2, y, NEXUS_PRODUCT, NEXUS_TXT_BIG);
-	y += gfx_text_h(NEXUS_TXT_BIG);
+	nexus_draw_wordmark(GFX_W / 2, y, NEXUS_PRODUCT, scale);
+	y += nexus_wordmark_h(scale);
 
 	if (sizeof(NEXUS_SUBTITLE) > 1) {
-		gfx_text_c(GFX_W / 2, y + 6, NEXUS_SUBTITLE, NEXUS_TXT_CAPTION,
-			   t->caption, GFX_OPAQUE);
+		gfx_text_c(GFX_W / 2, y + SUB_GAP, NEXUS_SUBTITLE,
+			   NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
 	}
 }
 

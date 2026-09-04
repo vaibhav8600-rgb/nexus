@@ -31,12 +31,33 @@ struct note {
 #define C5 523
 #define D5 587
 #define E5 659
+#define F5 698
 #define G5 784
 #define A5 880
+#define B5 988
 #define C6 1047
+#define D6 1175
 #define E6 1319
+#define G6 1568
+#define REST 0
 
-static const struct note s_startup[]   = { {C5,70},{E5,70},{G5,70},{C6,140}, N_END };
+/*
+ * Startup: a real phrase rather than four rising notes.
+ *
+ * C major arpeggio up to the octave, a beat of air, then a bright
+ * G-B-D-G turnaround that lands back on the tonic - about 1.6 s, which fits
+ * comfortably inside the default 3.5 s splash. Sequenced on a work item like
+ * every other effect, so it never holds up the boot it plays over
+ * (Sections 18, 108).
+ */
+static const struct note s_startup[]   = {
+	{C5,110},{E5,110},{G5,110},{C6,190},
+	{REST,60},
+	{G5,90},{B5,90},{D6,90},{G6,260},
+	{REST,50},
+	{C6,300},
+	N_END
+};
 static const struct note s_select[]    = { {A5,25}, N_END };
 static const struct note s_back[]      = { {E5,25}, N_END };
 static const struct note s_connect[]   = { {G5,60},{C6,90}, N_END };
