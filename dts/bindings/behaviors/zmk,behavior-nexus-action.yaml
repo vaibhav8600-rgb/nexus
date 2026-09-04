@@ -1,0 +1,5 @@
+description: Dispatch a NEXUS logical action from the keymap
+
+compatible: "zmk,behavior-nexus-action"
+
+include: one_param.yaml

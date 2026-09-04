@@ -1,0 +1,10 @@
+name: nexus
+build:
+  cmake: .
+  kconfig: Kconfig
+  # These belong under build:, not at the top level. Zephyr ignores a top-level
+  # settings block without complaining, and the symptom is a shield that "does
+  # not exist" and DT bindings that never resolve.
+  settings:
+    board_root: .
+    dts_root: .

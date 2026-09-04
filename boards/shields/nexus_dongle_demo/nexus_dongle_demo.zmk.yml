@@ -1,0 +1,10 @@
+file_format: "1"
+id: nexus_dongle_demo
+name: NEXUS Dongle (standalone demo)
+type: shield
+url: https://github.com/vaibhav8600-rgb/nexus
+requires: [pro_micro]
+features:
+  - keys
+  - display
+  - studio

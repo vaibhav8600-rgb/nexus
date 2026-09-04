@@ -1,0 +1,168 @@
+/*
+ * NEXUS dongle - nRF52840 ProMicro-compatible wiring.
+ *
+ * PIN MAP SOURCE: the supplied wiring diagram, which Section 5 names as the
+ * source of truth. Two pins in that section's prose table disagree with the
+ * diagram it is transcribing; the diagram wins, and it also matches the
+ * hardware the existing Snake dongle already runs on, so this mapping is the
+ * one with evidence behind it. Both variants are spelled out below so a
+ * rewire is a two-line edit and never a source change (Section 6).
+ *
+ *   signal   | diagram (used here) | Section 5 prose table
+ *   ---------+---------------------+----------------------
+ *   LCD CS   | P0.11               | P0.10
+ *   LCD BL   | tied to VCC (n/c)   | P0.11
+ *   BUZZER   | P0.29               | P0.02
+ *
+ * Everything else agrees: SCK P0.17, MOSI P0.20, RESET P0.22, DC P0.24,
+ * action button P0.31, and the reset button on the MCU RST pin - hardware
+ * only, deliberately not a ZMK key (Section 14).
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+#include <behaviors/nexus_action.dtsi>
+
+/ {
+	chosen {
+		zephyr,display = &nexus_lcd;
+	};
+
+	aliases {
+		nexus-button = &nexus_action_button;
+		nexus-buzzer = &nexus_buzzer;
+		/* nexus-backlight / nexus-backlight-pwm are deliberately absent:
+		 * with BL strapped to VCC there is nothing to control, and
+		 * nexus_display_backlight_mode() reports FIXED rather than
+		 * offering a brightness slider that does nothing (Section 10). */
+	};
+
+	nexus_action_button: nexus-action-button {
+		compatible = "nexus,button";
+		gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		label = "NEXUS action";
+	};
+
+	nexus_buzzer: nexus-buzzer {
+		compatible = "nexus,buzzer";
+		pwms = <&pwm0 0 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
+		label = "NEXUS buzzer";
+	};
+
+	/* --- WIRING VARIANT: BL on a GPIO (Section 5 prose table) ------------
+	 * Move LCD CS to P0.10 in the &spi0 node below, then uncomment this
+	 * block and add `nexus-backlight = &nexus_bl_led;` to aliases above.
+	 *
+	 * nexus_backlight: nexus-backlight {
+	 *     compatible = "gpio-leds";
+	 *     nexus_bl_led: nexus_bl_led {
+	 *         gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>;
+	 *     };
+	 * };
+	 *
+	 * For PWM dimming instead, put BL on a free PWM channel, point
+	 * nexus-backlight-pwm at it, and NEXUS reports real brightness.
+	 * ------------------------------------------------------------------ */
+};
+
+&pinctrl {
+	nexus_spi_default: nexus_spi_default {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 0, 17)>,
+				<NRF_PSEL(SPIM_MOSI, 0, 20)>;
+		};
+	};
+
+	nexus_spi_sleep: nexus_spi_sleep {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 0, 17)>,
+				<NRF_PSEL(SPIM_MOSI, 0, 20)>;
+			low-power-enable;
+		};
+	};
+
+	nexus_pwm_default: nexus_pwm_default {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 29)>; /* buzzer */
+		};
+	};
+
+	nexus_pwm_sleep: nexus_pwm_sleep {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 29)>;
+			low-power-enable;
+		};
+	};
+};
+
+&pwm0 {
+	status = "okay";
+	pinctrl-0 = <&nexus_pwm_default>;
+	pinctrl-1 = <&nexus_pwm_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&spi0 {
+	status = "okay";
+	compatible = "nordic,nrf-spim";
+	pinctrl-0 = <&nexus_spi_default>;
+	pinctrl-1 = <&nexus_spi_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio0 11 GPIO_ACTIVE_LOW>;   /* VARIANT: <&gpio0 10 ...> */
+};
+
+/ {
+	/*
+	 * Current Zephyr drives ST7789 through the MIPI DBI layer, not as a
+	 * direct SPI child - the old `sitronix,st7789v` on-SPI binding with
+	 * cmd-data-gpios no longer exists, and using it fails devicetree
+	 * validation rather than merely rendering wrong. DC and RESET belong
+	 * to the DBI controller; the SPI node above owns SCK, MOSI and CS.
+	 */
+	nexus_mipi_dbi: mipi-dbi {
+		compatible = "zephyr,mipi-dbi-spi";
+		spi-dev = <&spi0>;
+		dc-gpios = <&gpio0 24 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
+		write-only;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		nexus_lcd: st7789v@0 {
+			compatible = "sitronix,st7789v";
+			reg = <0>;
+			mipi-max-frequency = <30000000>;
+			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+
+			width = <240>;
+			height = <240>;
+			x-offset = <0>;
+			y-offset = <0>;
+
+			/*
+			 * Standard 240x240 IPS ST7789 init values. `mdac`
+			 * selects the panel's own scan order, which is the free
+			 * way to rotate: change it here first, and only reach
+			 * for CONFIG_NEXUS_DISPLAY_ROTATION (which rotates in
+			 * software, in the compositor) if your panel is mounted
+			 * at an angle the controller cannot express.
+			 */
+			vcom = <0x19>;
+			gctrl = <0x35>;
+			vrhs = <0x12>;
+			vdvs = <0x20>;
+			mdac = <0x00>;
+			gamma = <0x01>;
+			colmod = <0x05>;
+			lcm = <0x2c>;
+			porch-param = [0c 0c 00 33 33];
+			cmd2en-param = [5a 69 02 01];
+			pwctrl1-param = [a4 a1];
+			pvgam-param = [D0 04 0D 11 13 2B 3F 54 4C 18 0D 0B 1F 23];
+			nvgam-param = [D0 04 0C 11 13 2C 3F 44 51 2F 1F 1F 20 23];
+			ram-param = [00 F0];
+			rgb-param = [CD 08 14];
+		};
+	};
+};

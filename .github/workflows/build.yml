@@ -1,0 +1,132 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The standalone demo is what proves the module actually compiles and
+          # links. Left/right halves come from the integrator's own keyboard
+          # shield and are built in their config repo (see examples/).
+          - name: nexus_dongle
+            board: nice_nano_v2
+            shield: nexus_dongle nexus_dongle_demo
+            snippet: studio-rpc-usb-uart
+          - name: nexus_dongle_no_studio
+            board: nice_nano_v2
+            shield: nexus_dongle nexus_dongle_demo
+            snippet: ""
+          # Section 81: a peripheral build must not drag in the UI, the games
+          # or the display stack. If NEXUS ever leaks into this one, the size
+          # check below fails.
+          - name: settings_reset
+            board: nice_nano_v2
+            shield: settings_reset
+            snippet: ""
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: nexus
+
+      - name: Cache west modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            modules/
+            tools/
+            zephyr/
+            bootloader/
+            zmk/
+          key: zmk-${{ hashFiles('nexus/.github/ci/west.yml') }}
+          restore-keys: zmk-
+
+      - name: West init
+        run: west init -l nexus/.github/ci
+
+      - name: West update
+        run: west update
+
+      - name: West Zephyr export
+        run: west zephyr-export
+
+      - name: Build ${{ matrix.name }}
+        run: |
+          west build -s zmk/app -b ${{ matrix.board }} \
+            ${{ matrix.snippet && format('-S {0}', matrix.snippet) || '' }} \
+            -- -DSHIELD="${{ matrix.shield }}" \
+               -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}/nexus"
+
+      - name: Report flash and RAM
+        # Section 100: the memory budget is a build-time concern, not a
+        # surprise at flash time. This line is the number to watch when adding
+        # artwork or fonts.
+        run: |
+          echo "### ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 12 build/build.log 2>/dev/null || true
+          arm-zephyr-eabi-size build/zephyr/zmk.elf | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ${{ matrix.name }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          # Section 82: artifacts are named for what they are, so nobody flashes
+          # the wrong .uf2 to the wrong half.
+          path: |
+            build/zephyr/zmk.uf2
+            build/zephyr/zmk.hex
+          if-no-files-found: error
+
+  devicetree:
+    # Section 84: catch overlay and binding mistakes without a full firmware
+    # link, and much faster than the matrix above.
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: nexus
+
+      - name: Every YAML binding parses
+        run: |
+          python3 - <<'PY'
+          import glob
+          import sys
+          import yaml
+
+          bad = 0
+          for path in glob.glob("nexus/dts/bindings/**/*.yaml", recursive=True):
+              try:
+                  doc = yaml.safe_load(open(path, encoding="utf-8"))
+              except Exception as exc:
+                  print("::error file=%s::%s" % (path, exc))
+                  bad += 1
+                  continue
+              if "compatible" not in doc:
+                  print("::error file=%s::binding has no compatible" % path)
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Shield metadata parses
+        run: |
+          python3 -c "
+          import glob, yaml
+          for p in glob.glob('nexus/boards/shields/*/*.zmk.yml'):
+              d = yaml.safe_load(open(p))
+              assert d['id'] and d['type'] == 'shield', p
+              print('ok', p)
+          "

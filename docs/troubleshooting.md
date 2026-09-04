@@ -1,0 +1,147 @@
+# Troubleshooting
+
+## Display
+
+**Nothing on the screen, but the keyboard types.**
+Working as designed -- NEXUS never takes the keyboard down with it. Check
+`CONFIG_ZMK_DISPLAY=y`, then the wiring: `CS` and `BL` are the two pins the
+requirements document and the wiring diagram disagree about. See
+[hardware.md](hardware.md#pin-map).
+
+**Everything is a photo-negative.**
+`CONFIG_LV_COLOR_16_SWAP` is wrong for your panel. The shield defaults it to
+`y` because ST7789 wants big-endian pixels. Set it to `n` in your `.conf` if
+your module differs.
+
+**Image is offset by a few pixels, or there is a bright line at one edge.**
+`x-offset` / `y-offset` in the `st7789v` node. 240x240 modules vary; 0/0 is the
+common case but some need 0/80.
+
+**Rotated the wrong way.**
+`CONFIG_NEXUS_DISPLAY_ROTATION` asks the driver, and most panel drivers refuse.
+The free fix is the panel's own scan order: change `mdac` in the overlay
+(`0x00`, `0x60`, `0xC0`, `0xA0` for 0/90/180/270). Look for the log line
+"driver refused rotation" -- if it is there, use `mdac`.
+
+**Garbled or torn.**
+Drop `spi-max-frequency` from `32000000` to `16000000`. Long dupont jumpers do
+not carry 32 MHz.
+
+## Batteries
+
+**Both cards say `--` forever.**
+That is the honest answer for "unknown", not a bug (Section 26). Check:
+
+- Dongle: `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y`
+- Halves: `CONFIG_ZMK_BATTERY_REPORTING=y`
+- The halves are actually paired. Flash `settings_reset` to everything and
+  re-pair.
+
+Levels arrive on ZMK's own reporting interval -- allow a minute.
+
+**LEFT and RIGHT are swapped.**
+ZMK numbers peripherals by pairing order, not by physical side. Set
+`CONFIG_NEXUS_SPLIT_SWAP_SIDES=y`.
+
+**A card went back to `--` while the half is clearly working.**
+`CONFIG_NEXUS_STATUS_STALE_MS` (default 120 s) expired. Either the half really
+did go quiet, or its reporting interval is longer than the timeout -- raise the
+timeout.
+
+## Button
+
+**One press produces several actions.**
+Raise `CONFIG_NEXUS_BUTTON_DEBOUNCE_MS` toward 50.
+
+**A long press fires a short press too.**
+It should not -- the release path checks whether long already fired. If you see
+it, the button is bouncing hard on release; raise the debounce.
+
+**Long press never fires.**
+Lower `CONFIG_NEXUS_BUTTON_LONG_PRESS_MS`, and check the pull-up. The overlay
+assumes active-low with an internal pull-up (`GPIO_ACTIVE_LOW | GPIO_PULL_UP`),
+i.e. the switch shorts P0.31 to ground.
+
+**Nothing at all.**
+Check the Diagnostics screen: `BUTTON` shows `N/A` if devicetree has no
+`nexus-button` alias, and `OK` if the GPIO came up.
+
+## Sound
+
+**Silent.**
+In order: `CONFIG_NEXUS_SOUND=y`; a `nexus-buzzer` alias exists; the buzzer is
+*passive*; the volume pot is not at zero; Diagnostics shows `BUZZER: OK`.
+
+**One flat tone regardless of what should be playing.**
+The buzzer is active, not passive. An active buzzer has its own oscillator and
+ignores the waveform. Replace it.
+
+**Very quiet.**
+The pot, or the duty cycle. NEXUS drives 50%, which is the loudest a square
+wave gets; there is no software volume.
+
+## Split
+
+**Halves will not pair.**
+Flash `settings_reset` to all three boards, one at a time, then reflash. This
+fixes the great majority of split problems and is the first thing to try, not
+the last.
+
+**One half connects, the other does not.**
+Confirm the non-working half is built as a peripheral. With a dongle as
+central, *both* halves are peripherals -- a left half still built with
+`CONFIG_ZMK_SPLIT_ROLE_CENTRAL=y` will fight the dongle and lose.
+
+## Studio
+
+**Studio cannot see the device.**
+The `studio-rpc-usb-uart` snippet is missing from `build.yaml`. Without it
+`CONFIG_ZMK_STUDIO=y` builds fine but exposes no USB transport.
+
+**Connects but will not save.**
+Locked. Press your `&studio_unlock` key.
+
+**Build fails with "no driver for behavior studio_unlock".**
+`CONFIG_ZMK_STUDIO=n` but the keymap references `&studio_unlock`. Enable Studio
+or remove the binding.
+
+## Build
+
+**`CONFIG_NEXUS_SPLASH_IMAGE points at a missing file`.**
+The path is relative to your `config/` directory, not the repo root, and not
+the shield directory.
+
+**`png2c: interlaced PNGs are not supported`.**
+Re-save without interlacing / "progressive".
+
+**`NEXUS splash artwork is RGB565; set CONFIG_LV_COLOR_DEPTH_16=y`.**
+Exactly what it says. NEXUS assumes a 16-bit colour depth throughout.
+
+**Flash or RAM overflow.**
+Cut in the order given in [zmk-studio.md](zmk-studio.md#memory). Splash artwork
+first -- it is usually the single biggest thing you added.
+
+**Peripheral (half) build pulls in the display stack.**
+`CONFIG_NEXUS` leaked into the half's config. It should only be set by the
+dongle shield; `CMakeLists.txt` returns early and compiles nothing without it
+(Section 81). Check the half's `.conf` and any shared `nexus.conf` you included
+into it by mistake.
+
+## Games
+
+**Game Center is empty.**
+`CONFIG_NEXUS_TETRIS=n`, or `CONFIG_NEXUS_GAMES` never got selected.
+
+**High score resets on reboot.**
+`CONFIG_NEXUS_GAME_HIGHSCORE_PERSIST=y` and `CONFIG_SETTINGS=y`. The runtime
+score works regardless; only persistence needs settings.
+
+**Tetris is unplayable with one button.**
+It is meant to be. Movement comes from the keyboard -- see
+[games.md](games.md#tetris-controls).
+
+## When the UI has crashed
+
+Press the hardware reset button. It is wired straight to `RST` and has no
+software path at all, which is precisely so it works when everything else does
+not (Section 14). Double-tap it for the UF2 bootloader.

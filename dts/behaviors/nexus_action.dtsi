@@ -1,0 +1,16 @@
+/*
+ * Optional keymap behavior (Section 96). Include this from your shield overlay
+ * to get `&nexus_action <NEXUS_ACT_*>` in the keymap. It is declared in
+ * devicetree like every other ZMK behavior, so ZMK Studio can represent it
+ * (Section 97).
+ */
+
+/ {
+	behaviors {
+		/omit-if-no-ref/ nexus_action: nexus_action {
+			compatible = "zmk,behavior-nexus-action";
+			#binding-cells = <1>;
+			display-name = "NEXUS Action";
+		};
+	};
+};

@@ -1,0 +1,43 @@
+/*
+ * A two-key standalone keymap for the NEXUS dongle.
+ *
+ * Purpose: prove the hardware and the firmware without needing a keyboard
+ * (Section 129, Phase 1) and give CI something real to compile. For a real
+ * build you combine `nexus_dongle` with your own keyboard dongle shield
+ * instead of this one - see docs/installation.md.
+ */
+
+#include <dt-bindings/zmk/matrix_transform.h>
+#include <physical_layouts.dtsi>
+
+/ {
+	chosen {
+		zmk,kscan = &nexus_demo_kscan;
+		zmk,physical-layout = &nexus_demo_layout;
+	};
+
+	/* The dongle has no matrix of its own; keys arrive over the split link.
+	 * The two positions below exist purely so there is somewhere to bind
+	 * studio_unlock and a NEXUS action during bring-up. */
+	nexus_demo_kscan: kscan {
+		compatible = "zmk,kscan-mock";
+		columns = <2>;
+		rows = <1>;
+		events = <0>;
+	};
+
+	nexus_demo_transform: matrix_transform {
+		compatible = "zmk,matrix-transform";
+		columns = <2>;
+		rows = <1>;
+		map = <RC(0, 0) RC(0, 1)>;
+	};
+
+	nexus_demo_layout: physical_layout {
+		compatible = "zmk,physical-layout";
+		display-name = "NEXUS Demo";
+		transform = <&nexus_demo_transform>;
+		keys = <&key_physical_attrs 100 100    0   0 0 0 0>
+		     , <&key_physical_attrs 100 100  100   0 0 0 0>;
+	};
+};

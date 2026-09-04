@@ -1,0 +1,61 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    # No Zephyr toolchain needed: the Tetris rules engine and the splash
+    # converter are both deliberately free of RTOS dependencies so they can be
+    # tested in seconds instead of in a firmware build (Section 109).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tetris rules engine
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 \
+             -o /tmp/test_tetris \
+             tests/tetris/test_tetris.c src/games/tetris/tetris_core.c
+          /tmp/test_tetris
+
+      - name: Tetris engine under UBSan/ASan
+        run: |
+          cc -std=c11 -Wall -Wextra -O1 -g \
+             -fsanitize=address,undefined -fno-sanitize-recover=all \
+             -o /tmp/test_tetris_san \
+             tests/tetris/test_tetris.c src/games/tetris/tetris_core.c
+          /tmp/test_tetris_san
+
+      - name: Splash asset pipeline
+        run: python3 tests/splash/test_png2c.py
+
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax and style
+        run: |
+          python3 -m py_compile scripts/png2c.py tests/splash/test_png2c.py
+          pip install --quiet flake8
+          flake8 --max-line-length 100 --extend-ignore=E203,W503 scripts/ tests/splash/
+
+      - name: No hardware pins outside the shield overlays
+        # Requirement D: UI and game code must never name a GPIO.
+        run: |
+          if grep -rnE 'P0\.[0-9]|gpio0 [0-9]' src/ui src/games include/nexus; then
+            echo "::error::hardware pin reference found outside the HAL"
+            exit 1
+          fi
+
+      - name: No user branding baked into the core
+        # Requirement B: "VAIBHAV TECH" may only appear as a Kconfig default.
+        run: |
+          if grep -rn "VAIBHAV" src/ include/ | grep -v Kconfig; then
+            echo "::error::branding string found in source"
+            exit 1
+          fi

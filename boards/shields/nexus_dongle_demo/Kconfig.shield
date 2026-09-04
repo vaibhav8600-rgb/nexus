@@ -1,0 +1,2 @@
+config SHIELD_NEXUS_DONGLE_DEMO
+	def_bool $(shields_list_contains,nexus_dongle_demo)

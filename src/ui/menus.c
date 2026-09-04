@@ -1,0 +1,525 @@
+/*
+ * Settings, Diagnostics and About (Sections 62-63, 86).
+ *
+ * One generic list screen serves Settings and Diagnostics. Rows that can
+ * change at runtime do; the rest report their build-time value rather than
+ * pretending to be editable (Section 62 allows build-time config in v1).
+ *
+ * Values are formatted once per tick into a small cache, never inside draw().
+ * draw() runs once per compositor band, so formatting there would run every
+ * row twenty times per repaint - and formatting is also the one thing on this
+ * thread that can eat stack (see gfx_utoa).
+ */
+
+#include <nexus/display.h>
+#include <nexus/game.h>
+#include <nexus/gfx.h>
+#include <nexus/nexus.h>
+#include <nexus/screen.h>
+#include <nexus/sound.h>
+#include <nexus/status.h>
+#include <nexus/theme.h>
+#include <nexus/widgets.h>
+#include <zephyr/kernel.h>
+#include <string.h>
+
+#include "../nexus_priv.h"
+
+#define TITLE_Y 8
+#define LIST_Y 26
+#define ROW_H 15
+#define ROW_PITCH 17
+/* 26 + 12*17 = 230, which is the most rows that fit above the bottom margin. */
+#define MAX_ROWS 12
+#define VAL_MAX 16
+#define INNER 8
+
+/* ---- tiny formatters (no printf on the display thread) ----------------- */
+
+struct buf {
+	char *p;
+	char *end;
+};
+
+static struct buf buf_init(char *dst, size_t len)
+{
+	dst[0] = '\0';
+	return (struct buf){ .p = dst, .end = dst + len - 1 };
+}
+
+static void put(struct buf *b, const char *s)
+{
+	while (s && *s && b->p < b->end) {
+		*b->p++ = *s++;
+	}
+	*b->p = '\0';
+}
+
+static void put_u(struct buf *b, uint32_t v)
+{
+	char tmp[12];
+
+	put(b, gfx_utoa(v, tmp, sizeof(tmp), 0));
+}
+
+/* ---- generic list screen ----------------------------------------------- */
+
+struct row {
+	const char *label;
+	/** Fill @p out with the current value; NULL means no value column. */
+	void (*value)(char *out, size_t len);
+	/** NULL means the row is informational and SELECT does nothing. */
+	void (*activate)(void);
+};
+
+static const struct row *g_rows;
+static const char *g_title;
+static uint8_t g_row_count;
+static uint8_t g_cursor;
+static char g_val[MAX_ROWS][VAL_MAX];
+
+static void refresh_values(void)
+{
+	for (uint8_t i = 0; i < g_row_count; i++) {
+		if (g_rows[i].value) {
+			g_rows[i].value(g_val[i], VAL_MAX);
+		} else {
+			g_val[i][0] = '\0';
+		}
+	}
+}
+
+static void list_draw(void)
+{
+	const struct nexus_theme *t = nexus_theme();
+
+	if (gfx_hits(TITLE_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
+		nexus_draw_caption(NEXUS_PAD, TITLE_Y, g_title);
+	}
+
+	for (uint8_t i = 0; i < g_row_count; i++) {
+		int y = LIST_Y + i * ROW_PITCH;
+
+		if (!gfx_hits(y, ROW_H)) {
+			continue;
+		}
+
+		bool sel = (i == g_cursor);
+
+		nexus_draw_card_sel(NEXUS_PAD, y, NEXUS_CONTENT_W, ROW_H, sel);
+
+		int ty = y + (ROW_H - gfx_text_h(NEXUS_TXT_CAPTION)) / 2;
+
+		gfx_text(NEXUS_PAD + INNER, ty, g_rows[i].label,
+			 NEXUS_TXT_CAPTION, sel ? t->value : t->caption,
+			 GFX_OPAQUE);
+
+		if (g_val[i][0]) {
+			int right = NEXUS_PAD + NEXUS_CONTENT_W - INNER;
+
+			gfx_text(right - gfx_text_w(g_val[i], NEXUS_TXT_CAPTION),
+				 ty, g_val[i], NEXUS_TXT_CAPTION, t->accent,
+				 GFX_OPAQUE);
+		}
+	}
+}
+
+static void list_enter(const char *title, const struct row *rows, uint8_t count)
+{
+	g_title = title;
+	g_rows = rows;
+	g_row_count = MIN(count, MAX_ROWS);
+	if (g_cursor >= g_row_count) {
+		g_cursor = 0;
+	}
+	refresh_values();
+}
+
+static void list_exit(void)
+{
+	g_rows = NULL;
+	g_row_count = 0;
+}
+
+static bool list_action(enum nexus_action action)
+{
+	switch (action) {
+	case NEXUS_ACTION_NEXT:
+	case NEXUS_ACTION_DOWN:
+		if (g_row_count) {
+			g_cursor = (uint8_t)((g_cursor + 1) % g_row_count);
+			nexus_sound_play(NEXUS_SOUND_SELECT);
+			nexus_screen_invalidate();
+		}
+		return true;
+	case NEXUS_ACTION_PREVIOUS:
+	case NEXUS_ACTION_UP:
+		if (g_row_count) {
+			g_cursor = (uint8_t)((g_cursor + g_row_count - 1) %
+					     g_row_count);
+			nexus_sound_play(NEXUS_SOUND_SELECT);
+			nexus_screen_invalidate();
+		}
+		return true;
+	case NEXUS_ACTION_SELECT:
+		if (g_row_count && g_rows[g_cursor].activate) {
+			g_rows[g_cursor].activate();
+			nexus_sound_play(NEXUS_SOUND_MENU_SELECT);
+			refresh_values();
+			nexus_screen_invalidate();
+		}
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void list_tick(void)
+{
+	refresh_values();
+	nexus_screen_invalidate();
+}
+
+/* ---- settings ---------------------------------------------------------- */
+
+static void v_sound(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_sound_enabled() ? "ON" : "OFF");
+}
+
+static void a_sound(void)
+{
+	nexus_sound_set_enabled(!nexus_sound_enabled());
+}
+
+static void v_theme(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_theme()->name);
+}
+
+static void a_theme(void)
+{
+	const char *current = nexus_theme()->name;
+	uint8_t n = nexus_theme_count();
+
+	for (uint8_t i = 0; i < n; i++) {
+		if (strcmp(nexus_theme_name_at(i), current) == 0) {
+			nexus_theme_set(nexus_theme_name_at((i + 1) % n));
+			return;
+		}
+	}
+}
+
+static uint8_t g_brightness = 100;
+
+static void v_brightness(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	if (nexus_display_backlight_mode() == NEXUS_BACKLIGHT_FIXED) {
+		/* BL strapped to VCC. Say so rather than offering a slider that
+		 * does nothing (Section 10). */
+		put(&b, "FIXED");
+		return;
+	}
+	if (!nexus_display_backlight_has_brightness()) {
+		put(&b, g_brightness ? "ON" : "OFF");
+		return;
+	}
+
+	put_u(&b, g_brightness);
+	put(&b, "%");
+}
+
+static void a_brightness(void)
+{
+	if (nexus_display_backlight_mode() == NEXUS_BACKLIGHT_FIXED) {
+		return; /* the hardware has no say in this; do not fake it */
+	}
+
+	if (nexus_display_backlight_has_brightness()) {
+		g_brightness = (g_brightness >= 100)
+				       ? 25
+				       : (uint8_t)(g_brightness + 25);
+	} else {
+		g_brightness = g_brightness ? 0 : 100;
+	}
+	nexus_display_backlight_set(g_brightness);
+}
+
+static void v_anim(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, IS_ENABLED(CONFIG_NEXUS_ANIMATIONS) ? "ON" : "OFF");
+}
+
+static void v_splash(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+#if IS_ENABLED(CONFIG_NEXUS_SPLASH)
+	put_u(&b, CONFIG_NEXUS_SPLASH_DURATION_MS);
+	put(&b, " MS");
+#else
+	put(&b, "OFF");
+#endif
+}
+
+static void v_games(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+#if IS_ENABLED(CONFIG_NEXUS_GAMES)
+	put_u(&b, nexus_game_count());
+#else
+	put(&b, "OFF");
+#endif
+}
+
+static void a_diagnostics(void)
+{
+	nexus_screen_push(&nexus_screen_diagnostics_def);
+}
+
+static void a_about(void)
+{
+	nexus_screen_push(&nexus_screen_about_def);
+}
+
+static const struct row settings_rows[] = {
+	{ "SOUND", v_sound, a_sound },
+	{ "BRIGHTNESS", v_brightness, a_brightness },
+	{ "THEME", v_theme, a_theme },
+	{ "ANIMATION", v_anim, NULL },
+	{ "SPLASH", v_splash, NULL },
+	{ "GAMES", v_games, NULL },
+	{ "DIAGNOSTICS", NULL, a_diagnostics },
+	{ "ABOUT", NULL, a_about },
+};
+
+static void settings_enter(void)
+{
+	list_enter("SETTINGS", settings_rows, ARRAY_SIZE(settings_rows));
+}
+
+const struct nexus_screen nexus_screen_settings_def = {
+	.name = "SETTINGS",
+	.enter = settings_enter,
+	.exit = list_exit,
+	.draw = list_draw,
+	.action = list_action,
+	.refresh = NEXUS_REFRESH_IDLE,
+	.btn_short = NEXUS_ACTION_NEXT,
+	.btn_long = NEXUS_ACTION_SELECT,
+};
+
+/* ---- diagnostics ------------------------------------------------------- */
+
+static const char *link_text(enum nexus_link_state s)
+{
+	switch (s) {
+	case NEXUS_LINK_CONNECTED:
+		return "OK";
+	case NEXUS_LINK_CONNECTING:
+		return "CONN";
+	case NEXUS_LINK_RECONNECTING:
+		return "RECON";
+	default:
+		return "DOWN";
+	}
+}
+
+static void v_version(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, "V" NEXUS_VERSION_STR);
+}
+
+static void v_board(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_board_name());
+}
+
+static void v_display(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_health()->display ? "OK" : "FAIL");
+}
+
+static void v_buzzer(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_health()->buzzer ? "OK" : "N/A");
+}
+
+static void v_button(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_health()->button ? "OK" : "N/A");
+}
+
+static void v_backlight(char *out, size_t len)
+{
+	static const char *const modes[] = { "OFF", "ON", "FIXED" };
+	struct buf b = buf_init(out, len);
+
+	put(&b, modes[nexus_display_backlight_mode()]);
+}
+
+static void v_host(char *out, size_t len)
+{
+	const struct nexus_status *st = nexus_status_get();
+	struct buf b = buf_init(out, len);
+
+	put(&b, st->endpoint == NEXUS_ENDPOINT_USB   ? "USB "
+		: st->endpoint == NEXUS_ENDPOINT_BLE ? "BLE "
+						     : "--- ");
+	put(&b, link_text(st->link_host));
+}
+
+static void v_halves(char *out, size_t len)
+{
+	const struct nexus_status *st = nexus_status_get();
+	struct buf b = buf_init(out, len);
+
+	put(&b, link_text(st->link_left));
+	put(&b, "/");
+	put(&b, link_text(st->link_right));
+}
+
+static void put_batt(struct buf *b, uint8_t pct)
+{
+	if (pct == NEXUS_BATTERY_UNKNOWN || pct > 100) {
+		put(b, "--");
+	} else {
+		put_u(b, pct);
+	}
+}
+
+static void v_batteries(char *out, size_t len)
+{
+	const struct nexus_status *st = nexus_status_get();
+	struct buf b = buf_init(out, len);
+
+	put_batt(&b, st->battery_left);
+	put(&b, "/");
+	put_batt(&b, st->battery_right);
+}
+
+static void v_memory(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	/*
+	 * NEXUS allocates nothing at runtime. The compositor band, the status
+	 * model, the menu value cache and the Tetris board are all static, so
+	 * the UI has no way to run out of memory at an awkward moment and no
+	 * free-heap number to report. Section 63 asks for "Free RAM"; on this
+	 * design the honest answer is that there is no UI heap to watch, and a
+	 * fabricated number would be worse than none. Watch the linker output
+	 * instead - CI prints it (Section 100).
+	 */
+	put_u(&b, (uint32_t)(sizeof(g_val) + GFX_W * GFX_STRIP_H * 2U));
+	put(&b, "B STATIC");
+}
+
+#if IS_ENABLED(CONFIG_NEXUS_DEBUG)
+static void v_fps(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put_u(&b, nexus_screen_fps());
+}
+#endif
+
+static void v_uptime(char *out, size_t len)
+{
+	uint32_t s = (uint32_t)(k_uptime_get() / MSEC_PER_SEC);
+	struct buf b = buf_init(out, len);
+
+	put_u(&b, s / 3600U);
+	put(&b, "H");
+	put_u(&b, (s / 60U) % 60U);
+	put(&b, "M");
+}
+
+static const struct row diag_rows[] = {
+	{ "FIRMWARE", v_version, NULL },
+	{ "BOARD", v_board, NULL },
+	{ "DISPLAY", v_display, NULL },
+	{ "BACKLIGHT", v_backlight, NULL },
+	{ "BUZZER", v_buzzer, NULL },
+	{ "BUTTON", v_button, NULL },
+	{ "HOST", v_host, NULL },
+	{ "L/R LINK", v_halves, NULL },
+	{ "L/R BATT", v_batteries, NULL },
+	{ "UI RAM", v_memory, NULL },
+	{ "UPTIME", v_uptime, NULL },
+#if IS_ENABLED(CONFIG_NEXUS_DEBUG)
+	/* Section 64: the FPS readout is a debug-build feature. Counting frames
+	 * is free, but a row that repaints every second to show the number is
+	 * not, and production has no use for it. */
+	{ "FPS", v_fps, NULL },
+#endif
+};
+
+static void diag_enter(void)
+{
+	list_enter("DIAGNOSTICS", diag_rows, ARRAY_SIZE(diag_rows));
+}
+
+const struct nexus_screen nexus_screen_diagnostics_def = {
+	.name = "DIAGNOSTICS",
+	.enter = diag_enter,
+	.exit = list_exit,
+	.draw = list_draw,
+	.action = list_action,
+	.tick = list_tick,
+	.refresh = NEXUS_REFRESH_NORMAL,
+	.btn_short = NEXUS_ACTION_NEXT,
+	.btn_long = NEXUS_ACTION_BACK,
+};
+
+/* ---- about ------------------------------------------------------------- */
+
+static void about_draw(void)
+{
+	const struct nexus_theme *t = nexus_theme();
+	static const char *const lines[] = {
+		NEXUS_SUBTITLE,
+		"NRF52840  ST7789",
+		"POWERED BY ZMK",
+	};
+
+	nexus_draw_card(NEXUS_PAD, 20, NEXUS_CONTENT_W, 64);
+	nexus_draw_caption_c(GFX_W / 2, 28, NEXUS_BRAND);
+	nexus_draw_wordmark(GFX_W / 2, 42, NEXUS_PRODUCT, NEXUS_TXT_BIG);
+
+	nexus_draw_card(NEXUS_PAD, 95, NEXUS_CONTENT_W, 40);
+	nexus_draw_caption_c(GFX_W / 2, 104, "FIRMWARE");
+	gfx_text_c(GFX_W / 2, 116, "V" NEXUS_VERSION_STR, NEXUS_TXT_BODY,
+		   t->accent, GFX_OPAQUE);
+
+	for (size_t i = 0; i < ARRAY_SIZE(lines); i++) {
+		nexus_draw_caption_c(GFX_W / 2, 152 + (int)i * 18, lines[i]);
+	}
+}
+
+const struct nexus_screen nexus_screen_about_def = {
+	.name = "ABOUT",
+	.draw = about_draw,
+	.refresh = NEXUS_REFRESH_IDLE,
+	.btn_short = NEXUS_ACTION_BACK,
+	.btn_long = NEXUS_ACTION_HOME,
+};

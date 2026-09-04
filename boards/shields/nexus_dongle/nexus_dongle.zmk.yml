@@ -1,0 +1,8 @@
+file_format: "1"
+id: nexus_dongle
+name: NEXUS Smart Dongle
+type: shield
+url: https://github.com/vaibhav8600-rgb/nexus
+requires: [pro_micro]
+features:
+  - display

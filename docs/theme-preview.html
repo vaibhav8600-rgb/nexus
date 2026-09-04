@@ -1,0 +1,59 @@
+<div style="padding:1rem 0">
+<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">An interactive theme switcher showing one 240 by 240 dongle screen layout rendered in six selectable colour themes.</h2>
+<link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+<style>
+#sc{width:300px;height:300px;border-radius:18px;padding:8px;box-sizing:border-box;display:flex;flex-direction:column;gap:7px;position:relative;overflow:hidden;background:var(--bg)}
+#sc .g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;position:relative}
+#sc .p{border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--pn);border:1px solid var(--br);box-shadow:inset 0 1px 0 var(--ins)}
+#sc .ir{flex-direction:row;gap:9px;font-size:17px;color:var(--cap)}
+#sc .mr{flex-direction:row;gap:6px}
+#sc .cap{font-size:9px;letter-spacing:2px;color:var(--cap);font-family:var(--font-sans)}
+#sc .md{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;background:var(--mo);border:1px solid var(--mb);color:var(--mc)}
+#sc .ma{background:var(--ao);border:1px solid var(--ab);color:var(--ac)}
+#sc .tk{width:70px;height:7px;border-radius:4px;margin-top:6px;background:var(--tr)}
+#sc .fl{height:100%;border-radius:4px;background:var(--ac2)}
+#sc .vl{font-family:Orbitron,sans-serif;font-weight:700;font-size:32px;line-height:1;color:var(--vl)}
+#sc .sm{font-family:Orbitron,sans-serif;font-weight:500;font-size:14px;letter-spacing:1px;margin-top:2px;color:var(--vl)}
+#sc .pc{font-size:13px;color:var(--cap)}
+.bl{position:absolute;border-radius:50%}
+.tb{font-size:13px;padding:8px 4px;border-radius:var(--radius);cursor:pointer}
+.tb.on{border:2px solid var(--border-accent);color:var(--text-accent)}
+</style>
+<div style="background:var(--surface-1);border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:16px">
+<div id="sc">
+<div class="bl" id="b1" style="top:-45px;left:-32px;width:175px;height:175px"></div>
+<div class="bl" id="b2" style="bottom:-52px;right:-32px;width:178px;height:178px"></div>
+<div class="p" style="height:65px"><span id="wm" style="font-family:Audiowide,sans-serif;font-size:26px;letter-spacing:2px">SNAKE</span></div>
+<div class="g" style="height:50px">
+<div class="p ir"><i class="ti ti-lock" aria-hidden="true"></i><i class="ti ti-bluetooth" aria-hidden="true"></i><span class="sm" style="margin:0;font-size:16px">1</span><i class="ti ti-device-desktop" aria-hidden="true"></i></div>
+<div class="p"><span class="cap">LAYER</span><span class="sm">DEFAULT</span></div>
+</div>
+<div class="g" style="height:50px">
+<div class="p mr"><span class="md ma">⌘</span><span class="md">⌥</span><span class="md">⌃</span><span class="md">⇧</span></div>
+<div class="p"><span class="cap">WPM</span><span class="sm" style="font-weight:700;font-size:19px;color:var(--ac2)">072</span></div>
+</div>
+<div class="g" style="flex:1">
+<div class="p"><span class="cap">LEFT</span><div style="display:flex;align-items:baseline;margin-top:4px"><span class="vl">57</span><span class="pc">%</span></div><div class="tk"><div class="fl" style="width:57%"></div></div></div>
+<div class="p"><span class="cap">RIGHT</span><div style="display:flex;align-items:baseline;margin-top:4px"><span class="vl">53</span><span class="pc">%</span></div><div class="tk"><div class="fl" style="width:53%"></div></div></div>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:300px" id="btns"></div>
+</div>
+<script>
+const T={
+aurora:{bg:"#06060E",pn:"rgba(255,255,255,.07)",br:"rgba(255,255,255,.15)",ins:"rgba(255,255,255,.26)",cap:"#8B93C4",vl:"#FFFFFF",ac2:"#5CFFC0",tr:"rgba(0,0,0,.5)",mo:"rgba(255,255,255,.05)",mb:"rgba(255,255,255,.12)",mc:"#5B628F",ao:"rgba(255,95,162,.28)",ab:"rgba(255,95,162,.7)",ac:"#FFB3D2",b1:"rgba(214,51,255,.3)",b2:"rgba(0,224,255,.22)",w:["#0B0B16","#FFC2DC","#FF5FA2","#C13FE0","#7A1A55"]},
+daylight:{bg:"#E7ECF6",pn:"rgba(255,255,255,.62)",br:"rgba(255,255,255,.92)",ins:"rgba(255,255,255,.9)",cap:"#7B84AA",vl:"#2B3350",ac2:"#17A673",tr:"rgba(60,75,130,.16)",mo:"rgba(90,105,160,.14)",mb:"rgba(90,105,160,.1)",mc:"#8990B0",ao:"#3B4BC8",ab:"#3B4BC8",ac:"#FFFFFF",b1:"rgba(120,140,255,.28)",b2:"rgba(255,140,190,.24)",w:["#E9EDF7","#8FA0F0","#3B4BC8","#26308A","#161C52"]},
+clay:{bg:"#272C3B",pn:"#272C3B",br:"rgba(255,255,255,.04)",ins:"rgba(255,255,255,.07)",cap:"#79809C",vl:"#E4E9F7",ac2:"#5FC79B",tr:"#1D2130",mo:"#272C3B",mb:"rgba(255,255,255,.06)",mc:"#666E8C",ao:"#20242F",ab:"rgba(255,255,255,.05)",ac:"#E86A9A",b1:"rgba(255,255,255,.02)",b2:"rgba(0,0,0,.12)",w:["#222634","#3F465C","#E86A9A","#A83C6C","#6B2244"]},
+espresso:{bg:"#241A15",pn:"rgba(255,228,196,.085)",br:"rgba(255,218,176,.17)",ins:"rgba(255,235,210,.22)",cap:"#A38872",vl:"#F7E9D8",ac2:"#E9A23B",tr:"rgba(0,0,0,.4)",mo:"rgba(255,228,196,.05)",mb:"rgba(255,218,176,.14)",mc:"#7E6952",ao:"rgba(233,162,59,.3)",ab:"rgba(233,162,59,.75)",ac:"#FFD9A0",b1:"rgba(233,162,59,.22)",b2:"rgba(196,92,52,.2)",w:["#2A1C12","#FFD9A0","#E9A23B","#C07822","#8A5414"]},
+mint:{bg:"#04100B",pn:"rgba(124,255,196,.06)",br:"rgba(124,255,196,.2)",ins:"rgba(124,255,196,.24)",cap:"#3E7E64",vl:"#D8FFEE",ac2:"#5CFFB0",tr:"rgba(0,0,0,.5)",mo:"rgba(124,255,196,.05)",mb:"rgba(124,255,196,.15)",mc:"#2F6B54",ao:"rgba(92,255,176,.24)",ab:"rgba(92,255,176,.7)",ac:"#C4FFE4",b1:"rgba(92,255,176,.13)",b2:"rgba(60,200,255,.1)",w:["#04150E","#B8FFDC","#5CFFB0","#2FBE80","#167A52"]},
+sunset:{bg:"linear-gradient(180deg,#170B2C 0%,#4B1450 46%,#B32C55 78%,#FF7A2F 100%)",pn:"rgba(20,6,34,.34)",br:"rgba(255,214,180,.26)",ins:"rgba(255,235,215,.3)",cap:"#E0B3C8",vl:"#FFF6EE",ac2:"#FFD166",tr:"rgba(0,0,0,.45)",mo:"rgba(255,255,255,.06)",mb:"rgba(255,214,180,.18)",mc:"#A87A92",ao:"rgba(255,209,102,.3)",ab:"rgba(255,209,102,.8)",ac:"#FFF0C4",b1:"rgba(255,180,80,.16)",b2:"rgba(255,120,60,.22)",w:["#2A0E1E","#FFE9A8","#FFB347","#FF6B8B","#B02A5E"]}};
+const N={aurora:"Aurora glass",daylight:"Frosted daylight",clay:"Clay",espresso:"Warm espresso",mint:"Mono mint",sunset:"Sunset"};
+const sc=document.getElementById("sc"),wm=document.getElementById("wm"),bs=document.getElementById("btns");
+function apply(k){const t=T[k];["bg","pn","br","ins","cap","vl","ac2","tr","mo","mb","mc","ao","ab","ac"].forEach(p=>sc.style.setProperty("--"+p,t[p]));
+document.getElementById("b1").style.background=t.b1;document.getElementById("b2").style.background=t.b2;
+wm.style.color=t.w[0];wm.style.textShadow="0 1px 0 "+t.w[1]+",0 2px 0 "+t.w[2]+",0 3px 0 "+t.w[3]+",0 4px 0 "+t.w[4];
+[...bs.children].forEach(b=>b.classList.toggle("on",b.dataset.k===k));}
+Object.keys(T).forEach(k=>{const b=document.createElement("button");b.className="tb";b.dataset.k=k;b.textContent=N[k];b.onclick=()=>apply(k);bs.appendChild(b);});
+apply("aurora");
+</script>
+</div>

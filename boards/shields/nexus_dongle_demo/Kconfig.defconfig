@@ -1,0 +1,9 @@
+if SHIELD_NEXUS_DONGLE_DEMO
+
+config ZMK_KEYBOARD_NAME
+	default "NEXUS Demo"
+
+config ZMK_STUDIO
+	default y
+
+endif

@@ -1,0 +1,2 @@
+config SHIELD_NEXUS_DONGLE
+	def_bool $(shields_list_contains,nexus_dongle)

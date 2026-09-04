@@ -1,0 +1,116 @@
+if SHIELD_NEXUS_DONGLE
+
+config ZMK_KEYBOARD_NAME
+	default "NEXUS Dongle" if !ZMK_KEYBOARD_NAME
+
+# This board is the split central and the USB/BLE host endpoint.
+config ZMK_SPLIT
+	default y
+
+config ZMK_SPLIT_ROLE_CENTRAL
+	default y
+
+config ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING
+	default y
+
+# Host profiles plus the two halves. ZMK needs a connection slot per
+# peripheral on top of the host profiles, so this is profiles + 2.
+config BT_MAX_CONN
+	default 7
+
+config BT_MAX_PAIRED
+	default 7
+
+# Status sources the dashboard reads. Without these the WPM card reads 000 and
+# the lock indicators never light. Defaults, so your own .conf still wins.
+config ZMK_WPM
+	default y
+
+config ZMK_HID_INDICATORS
+	default y
+
+config NEXUS
+	default y
+
+# ---- ZMK Studio (Sections 30-33) -----------------------------------------
+# On by default, because Section 30 makes it mandatory. Everything else about
+# Studio - the RPC transport, unlock, locking policy - is ZMK's own default and
+# is deliberately not second-guessed here (Section 99). USB RPC additionally
+# needs the studio-rpc-usb-uart snippet in build.yaml; see docs/zmk-studio.md.
+config ZMK_STUDIO
+	default y
+
+# ---- Display stack -------------------------------------------------------
+config ZMK_DISPLAY
+	default y
+
+if ZMK_DISPLAY
+
+# NEXUS *is* the status screen; this is the hook ZMK calls into
+# (zmk_display_status_screen in src/ui/screen.c).
+choice ZMK_DISPLAY_STATUS_SCREEN
+	default ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
+endchoice
+
+config SPI
+	default y
+
+config MIPI_DBI
+	default y
+
+config ST7789V
+	default y
+
+config ST7789V_RGB565
+	default y
+
+# The UI draws through the NEXUS strip compositor, straight to the panel with
+# display_write(). LVGL is present only because ZMK's status-screen API hands
+# back an lv_obj_t; it is given one empty object and draws nothing after the
+# initial clear. So this buffer only has to exist, not to be big - the pixels
+# come from a 5,760 B static band in src/ui/gfx.c. At 64% this would be 74 KB
+# of RAM doing nothing, which is the difference between fitting BLE + Studio
+# and not (Sections 34, 100).
+config LV_Z_VDB_SIZE
+	default 10
+
+config LV_Z_DOUBLE_VDB
+	default n
+
+config LV_Z_MEM_POOL_SIZE
+	default 4096
+
+# The compositor byte-swaps its own band on flush, so LVGL must not also swap.
+config LV_COLOR_16_SWAP
+	default n
+
+config LV_Z_BITS_PER_PIXEL
+	default 16
+
+choice LV_COLOR_DEPTH
+	default LV_COLOR_DEPTH_16
+endchoice
+
+# Room for the compositor band plus the screen stack. The proven number for
+# this panel; 2048 is not enough once a game is drawing.
+config ZMK_DISPLAY_DEDICATED_THREAD_STACK_SIZE
+	default 4096
+
+choice ZMK_DISPLAY_WORK_QUEUE
+	default ZMK_DISPLAY_WORK_QUEUE_DEDICATED
+endchoice
+
+# No LVGL widgets are built, so none of the font, image, canvas or complex-draw
+# machinery is either. Four Montserrat cuts alone are tens of KB of flash to
+# render text the 295-byte 5x7 font already covers (Section 102).
+
+endif # ZMK_DISPLAY
+
+# ---- Peripherals ---------------------------------------------------------
+config PWM
+	default y if NEXUS_SOUND
+
+config SETTINGS
+	default y
+
+endif # SHIELD_NEXUS_DONGLE

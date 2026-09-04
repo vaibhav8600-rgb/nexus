@@ -1,0 +1,6 @@
+build/
+.west/
+*.uf2
+*.hex
+__pycache__/
+*.pyc

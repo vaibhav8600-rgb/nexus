@@ -1,0 +1,12 @@
+description: |
+  NEXUS action button. Debounce, long-press and double-press are done in
+  software (src/hal/nexus_button.c) so the timings are tunable per build.
+
+compatible: "nexus,button"
+
+include: base.yaml
+
+properties:
+  gpios:
+    type: phandle-array
+    required: true

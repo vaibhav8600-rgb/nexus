@@ -1,0 +1,17 @@
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/nexus.h>
+
+/ {
+	keymap {
+		compatible = "zmk,keymap";
+
+		default_layer {
+			display-name = "DEFAULT";
+			/* Studio needs an unlock key somewhere reachable, and the
+			 * second key proves &nexus_action reaches the UI from the
+			 * keymap exactly like the physical button does. */
+			bindings = <&studio_unlock &nexus_action NEXUS_ACT_GAME_CENTER>;
+		};
+	};
+};

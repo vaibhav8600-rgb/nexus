@@ -1,0 +1,245 @@
+# NEXUS Smart ZMK Dongle
+# Every user-facing knob lives here so integrators never edit NEXUS source.
+
+menuconfig NEXUS
+	bool "NEXUS smart dongle platform"
+	depends on ZMK_SPLIT_ROLE_CENTRAL || !ZMK_SPLIT
+	help
+	  Display / UI / games / sound platform layered on top of ZMK.
+	  Leave this off for keyboard-half (peripheral) builds: none of the
+	  NEXUS code is compiled unless this is set.
+
+if NEXUS
+
+config NEXUS_BRAND
+	string "Brand name shown on the splash and About screen"
+	default "VAIBHAV TECH"
+
+config NEXUS_PRODUCT
+	string "Product name"
+	default "NEXUS"
+
+config NEXUS_SUBTITLE
+	string "Product subtitle"
+	default "SMART ZMK DONGLE"
+
+# --------------------------------------------------------------------------
+# Display / UI
+# --------------------------------------------------------------------------
+config NEXUS_DISPLAY
+	bool "NEXUS display UI"
+	default y
+	depends on ZMK_DISPLAY
+	help
+	  Renders the NEXUS UI as ZMK's custom status screen. ZMK owns the
+	  display device and its work queue, so NEXUS adds no thread of its own.
+
+	  The matching `choice ZMK_DISPLAY_STATUS_SCREEN` default is set by the
+	  shield (boards/shields/nexus_dongle/Kconfig.defconfig). It cannot be
+	  selected from here: Kconfig does not allow `select` on a member of a
+	  choice, and doing so makes the build fail in a way that points
+	  everywhere except at this line.
+
+if NEXUS_DISPLAY
+
+config NEXUS_THEME
+	string "Default theme name"
+	default "NEXUS"
+	help
+	  One of: NEXUS, AMOLED, DAYLIGHT, CLAY, ESPRESSO, MINT, SUNSET.
+	  Unknown names fall back to NEXUS.
+
+choice NEXUS_DEFAULT_SCREEN
+	prompt "Screen shown after boot"
+	default NEXUS_DEFAULT_SCREEN_HOME
+
+config NEXUS_DEFAULT_SCREEN_HOME
+	bool "Home dashboard"
+
+config NEXUS_DEFAULT_SCREEN_GAME_CENTER
+	bool "Game Center"
+
+config NEXUS_DEFAULT_SCREEN_DIAGNOSTICS
+	bool "Diagnostics"
+
+endchoice
+
+config NEXUS_DISPLAY_ROTATION
+	int "Logical display rotation in degrees (0/90/180/270)"
+	default 0
+	help
+	  Rotation is done by the NEXUS compositor while it pushes each band,
+	  so all drawing stays in logical top-left coordinates and no screen
+	  needs to know (Section 8).
+
+	  Try the panel first: the ST7789 `mdac` byte in your shield overlay
+	  rotates in the controller and costs nothing. Use this option when the
+	  panel is mounted at an angle the controller cannot express. It is not
+	  free - 90 and 270 transpose each band through a second 5,760-byte
+	  buffer, which is RAM and cycles you get back by setting it to 0.
+
+config NEXUS_ANIMATIONS
+	bool "UI animations"
+	default y
+
+config NEXUS_UI_REFRESH_FAST_MS
+	int "Fast (game / animation) UI period, ms"
+	default 33
+
+config NEXUS_UI_REFRESH_NORMAL_MS
+	int "Normal (status) UI period, ms"
+	default 200
+
+config NEXUS_UI_REFRESH_IDLE_MS
+	int "Idle UI period, ms"
+	default 1000
+
+config NEXUS_BACKLIGHT_TIMEOUT_S
+	int "Blank the backlight after N idle seconds (0 = never)"
+	default 0
+	help
+	  Never applied while a game is running or ZMK Studio is connected.
+
+endif # NEXUS_DISPLAY
+
+# --------------------------------------------------------------------------
+# Splash (Sections 18-21)
+# --------------------------------------------------------------------------
+config NEXUS_SPLASH
+	bool "Boot splash screen"
+	default y
+	depends on NEXUS_DISPLAY
+
+if NEXUS_SPLASH
+
+config NEXUS_SPLASH_DURATION_MS
+	int "Splash duration in ms (0 disables)"
+	default 3000
+
+config NEXUS_SPLASH_IMAGE
+	string "Path to a splash PNG, relative to your zmk-config dir"
+	default ""
+	help
+	  Converted to a native-endian RGB565 array at build time by
+	  scripts/png2c.py and blitted by the compositor. Empty means use the
+	  built-in NEXUS default artwork, which is drawn rather than stored and
+	  follows the active theme.
+
+config NEXUS_SPLASH_MAX_DIM
+	int "Downscale splash artwork above this many pixels per side"
+	default 160
+	help
+	  Guards flash: 240x240 RGB565 is 115 KB, 160x160 is 51 KB.
+
+endif # NEXUS_SPLASH
+
+# --------------------------------------------------------------------------
+# Input
+# --------------------------------------------------------------------------
+config NEXUS_BUTTON
+	bool "Physical action button"
+	default y
+	help
+	  Requires an `action-button` node in devicetree (see the nexus_dongle
+	  shield). Absent hardware degrades to "no button", never to a crash.
+
+config NEXUS_BUTTON_DEBOUNCE_MS
+	int "Action button debounce, ms"
+	default 30
+	depends on NEXUS_BUTTON
+
+config NEXUS_BUTTON_LONG_PRESS_MS
+	int "Long-press threshold, ms"
+	default 600
+	depends on NEXUS_BUTTON
+
+config NEXUS_BEHAVIOR_ACTION
+	bool "&nexus_action keymap behavior"
+	default y
+	help
+	  Lets a keymap key dispatch the same logical actions as the physical
+	  action button.
+
+# --------------------------------------------------------------------------
+# Sound (Sections 15-17, 48, 108)
+# --------------------------------------------------------------------------
+config NEXUS_SOUND
+	bool "Passive buzzer sound engine"
+	default y
+	select PWM
+	help
+	  PWM-synthesised tones. Requires a `buzzer` PWM node in devicetree.
+
+if NEXUS_SOUND
+
+config NEXUS_UI_SOUND
+	bool "UI sound effects"
+	default y
+
+config NEXUS_GAME_SOUND
+	bool "Game sound effects"
+	default y
+
+config NEXUS_SOUND_STARTUP
+	bool "Play the startup jingle"
+	default y
+
+endif # NEXUS_SOUND
+
+# --------------------------------------------------------------------------
+# Games (Sections 36-53)
+# --------------------------------------------------------------------------
+config NEXUS_GAME_CENTER
+	bool "Game Center launcher"
+	default y
+	depends on NEXUS_DISPLAY
+	select NEXUS_GAMES
+
+config NEXUS_GAMES
+	bool "Game engine"
+	default n
+
+config NEXUS_TETRIS
+	bool "Tetris"
+	default y
+	depends on NEXUS_GAMES
+
+config NEXUS_GAME_HIGHSCORE_PERSIST
+	bool "Persist high scores through Zephyr settings"
+	default y
+	depends on NEXUS_GAMES && SETTINGS
+
+# --------------------------------------------------------------------------
+# Status sources
+# --------------------------------------------------------------------------
+config NEXUS_SPLIT_SWAP_SIDES
+	bool "Swap which peripheral slot is labelled LEFT"
+	default n
+	help
+	  ZMK numbers peripherals by pairing order, not by physical side. Flip
+	  this if your dashboard shows the halves the wrong way round.
+
+config NEXUS_STATUS_STALE_MS
+	int "Treat a peripheral as disconnected after N ms of silence"
+	default 120000
+
+# --------------------------------------------------------------------------
+# Diagnostics
+# --------------------------------------------------------------------------
+config NEXUS_DEBUG
+	bool "NEXUS debug build"
+	default n
+	help
+	  Adds an FPS row to the Diagnostics screen, counted from frames the
+	  compositor actually pushed. Off in production: the row repaints once
+	  a second purely to show a number, and Section 65 is clear that idle
+	  work on this device is not free.
+
+	  For verbose logging set CONFIG_NEXUS_LOG_LEVEL_DBG=y as well, and
+	  remember USB logging measurably raises power draw (Section 65).
+
+module = NEXUS
+module-str = nexus
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # NEXUS

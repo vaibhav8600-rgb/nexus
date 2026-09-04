@@ -1,0 +1,12 @@
+description: |
+  Passive buzzer driven from a PWM channel. The period in the pwms cell is a
+  placeholder; the sound engine rewrites it per note.
+
+compatible: "nexus,buzzer"
+
+include: base.yaml
+
+properties:
+  pwms:
+    type: phandle-array
+    required: true

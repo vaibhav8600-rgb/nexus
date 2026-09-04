@@ -1,0 +1,29 @@
+manifest:
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+    - name: nexus
+      url-base: https://github.com/vaibhav8600-rgb
+  projects:
+    - name: zmk
+      remote: zmkfirmware
+      #
+      # NEXUS deliberately tracks ZMK main, because ZMK Studio and the split
+      # battery APIs it depends on are only there (Section 125 allows tracking
+      # main as long as the intent is explicit - this is that statement).
+      #
+      # Tracking main means someone else's merge can break your build on a
+      # Tuesday. To pin instead, replace `main` with the commit you last built
+      # successfully:
+      #
+      #     west list zmk -f '{revision}'
+      #
+      # and record it. docs/development.md lists what NEXUS touches, so you
+      # know what to re-check when you bump it.
+      revision: main
+      import: app/west.yml
+    - name: nexus
+      remote: nexus
+      revision: v1.0.0
+  self:
+    path: config
