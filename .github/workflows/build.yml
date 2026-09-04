@@ -92,10 +92,33 @@ jobs:
 
       - name: Build ${{ matrix.name }}
         run: |
+          set -o pipefail
           west build -s zmk/app -b ${{ matrix.board }} \
             ${{ matrix.snippet && format('-S {0}', matrix.snippet) || '' }} \
             -- -DSHIELD="${{ matrix.shield }}" \
-               -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}/nexus"
+               -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}/nexus" \
+            2>&1 | tee build-output.log
+
+      # A failing Zephyr build prints ~800 progress lines before the error, and
+      # the interesting part is past every log viewer's truncation limit. This
+      # reprints just the diagnostics, so the failure is the first thing you
+      # see and small enough to paste.
+      - name: Errors only
+        if: failure()
+        run: |
+          echo "### ${{ matrix.name }} failed" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -nE "error:|warning:|FAILED:|undefined reference|No such file" \
+            build-output.log | head -80 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-build-log
+          path: build-output.log
+          if-no-files-found: warn
 
       - name: Report flash and RAM
         # Section 100: the memory budget is a build-time concern, not a
