@@ -10,6 +10,29 @@ endif()
 zephyr_include_directories(include)
 zephyr_library_named(nexus)
 
+# ---------------------------------------------------------------------------
+# ZMK's own headers.
+#
+# zmk/display.h, zmk/event_manager.h, zmk/keymap.h and drivers/behavior.h all
+# live in <zmk>/app/include. Zephyr puts that on the *application* target's
+# include path, but a module library like this one does not inherit it, so
+# without this every NEXUS file that talks to ZMK fails with:
+#
+#     fatal error: zmk/display.h: No such file or directory
+#
+# APPLICATION_SOURCE_DIR is <workspace>/zmk/app in a ZMK build. Scoped to this
+# library rather than added globally with zephyr_include_directories(), since
+# nothing outside NEXUS needs it.
+# ---------------------------------------------------------------------------
+zephyr_library_include_directories(${APPLICATION_SOURCE_DIR}/include)
+
+# src/ui/screen.c includes <lvgl.h> for the one lv_obj_t ZMK's status-screen
+# API hands back. Zephyr's LVGL module normally exports this globally; adding
+# it explicitly costs nothing and matches what the Snake shield had to do.
+if(DEFINED ZEPHYR_LVGL_MODULE_DIR)
+  zephyr_library_include_directories(${ZEPHYR_LVGL_MODULE_DIR})
+endif()
+
 zephyr_library_sources(
   src/nexus.c
   src/action.c
