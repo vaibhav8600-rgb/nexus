@@ -65,8 +65,14 @@ config MIPI_DBI
 config ST7789V
 	default y
 
-config ST7789V_RGB565
-	default y
+# ST7789V_RGB565 belongs to `choice ST7789V_PIXEL_FORMAT`, and a plain
+# `config X / default y` on a choice member is silently ignored - Kconfig warns
+# "defaults do not affect choice symbols", and ZMK builds warnings-as-errors.
+# Selecting the choice is the only spelling that works. Same trap as `select`
+# on a choice member; see the note on ZMK_DISPLAY_STATUS_SCREEN above.
+choice ST7789V_PIXEL_FORMAT
+	default ST7789V_RGB565
+endchoice
 
 # The UI draws through the NEXUS strip compositor, straight to the panel with
 # display_write(). LVGL is present only because ZMK's status-screen API hands
