@@ -1,7 +1,11 @@
 if SHIELD_NEXUS_DONGLE
 
+# No `if !ZMK_KEYBOARD_NAME` guard here: a default whose condition names its
+# own symbol is a dependency loop, and Kconfig fails the whole build over it.
+# The guard was never needed either - the first matching default in parse order
+# wins, and any assignment in a .conf beats every default regardless.
 config ZMK_KEYBOARD_NAME
-	default "NEXUS Dongle" if !ZMK_KEYBOARD_NAME
+	default "NEXUS Dongle"
 
 # This board is the split central and the USB/BLE host endpoint.
 config ZMK_SPLIT

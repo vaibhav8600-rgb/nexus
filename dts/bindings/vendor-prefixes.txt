@@ -1,0 +1,10 @@
+# Vendor prefixes used by NEXUS bindings.
+#
+# Without this, every build prints:
+#   node '/nexus-action-button' compatible 'nexus,button' has unknown vendor
+#   prefix 'nexus'
+# Harmless, but Section 84 asks CI to be clean enough that a real warning is
+# still visible among the noise.
+#
+# Format is <prefix><TAB><description>, one per line.
+nexus	NEXUS Smart ZMK Dongle
