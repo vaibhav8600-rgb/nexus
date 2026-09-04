@@ -27,10 +27,17 @@
 
 #define TITLE_Y 8
 #define LIST_Y 26
-#define ROW_H 15
-#define ROW_PITCH 17
-/* 26 + 12*17 = 230, which is the most rows that fit above the bottom margin. */
-#define MAX_ROWS 12
+/*
+ * Body text, not caption. At 5x7 the list was legible with your nose on the
+ * panel and not from across a desk, which is the distance a dongle is
+ * actually read from. 10x14 costs rows, so the list scrolls instead.
+ */
+#define ROW_TEXT NEXUS_TXT_BODY
+#define ROW_H 24
+#define ROW_PITCH 27
+#define VIS_ROWS 7                 /* 26 + 7*27 = 215, hint sits below */
+#define HINT_Y 222
+#define MAX_ROWS 14                /* total items; VIS_ROWS are on screen */
 #define VAL_MAX 16
 #define INNER 8
 
@@ -89,16 +96,61 @@ static void refresh_values(void)
 	}
 }
 
+/* Keep the cursor near the middle of the window, clamped at both ends. */
+static uint8_t first_visible(void)
+{
+	if (g_row_count <= VIS_ROWS) {
+		return 0;
+	}
+
+	int f = (int)g_cursor - VIS_ROWS / 2;
+
+	if (f < 0) {
+		f = 0;
+	}
+	if (f > g_row_count - VIS_ROWS) {
+		f = g_row_count - VIS_ROWS;
+	}
+	return (uint8_t)f;
+}
+
 static void list_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
+	uint8_t first = first_visible();
 
 	if (gfx_hits(TITLE_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
 		nexus_draw_caption(NEXUS_PAD, TITLE_Y, g_title);
+
+		/* Position in the list, so a scrolled window does not look
+		 * like the whole list. */
+		if (g_row_count > VIS_ROWS) {
+			char pos[10];
+			int n;
+
+			gfx_utoa(g_cursor + 1U, pos, sizeof(pos), 0);
+			n = 0;
+			while (pos[n]) {
+				n++;
+			}
+			pos[n++] = '/';
+			gfx_utoa(g_row_count, &pos[n], (int)sizeof(pos) - n, 0);
+
+			gfx_text(NEXUS_PAD + NEXUS_CONTENT_W -
+					 gfx_text_w(pos, NEXUS_TXT_CAPTION),
+				 TITLE_Y, pos, NEXUS_TXT_CAPTION, t->caption,
+				 GFX_OPAQUE);
+		}
 	}
 
-	for (uint8_t i = 0; i < g_row_count; i++) {
-		int y = LIST_Y + i * ROW_PITCH;
+	for (uint8_t v = 0; v < VIS_ROWS; v++) {
+		uint8_t i = first + v;
+
+		if (i >= g_row_count) {
+			break;
+		}
+
+		int y = LIST_Y + v * ROW_PITCH;
 
 		if (!gfx_hits(y, ROW_H)) {
 			continue;
@@ -108,19 +160,41 @@ static void list_draw(void)
 
 		nexus_draw_card_sel(NEXUS_PAD, y, NEXUS_CONTENT_W, ROW_H, sel);
 
-		int ty = y + (ROW_H - gfx_text_h(NEXUS_TXT_CAPTION)) / 2;
+		int ty = y + (ROW_H - gfx_text_h(ROW_TEXT)) / 2;
 
-		gfx_text(NEXUS_PAD + INNER, ty, g_rows[i].label,
-			 NEXUS_TXT_CAPTION, sel ? t->value : t->caption,
-			 GFX_OPAQUE);
+		gfx_text(NEXUS_PAD + INNER, ty, g_rows[i].label, ROW_TEXT,
+			 sel ? t->value : t->caption, GFX_OPAQUE);
 
 		if (g_val[i][0]) {
 			int right = NEXUS_PAD + NEXUS_CONTENT_W - INNER;
+			int room = NEXUS_CONTENT_W - 2 * INNER - 6 -
+				   gfx_text_w(g_rows[i].label, ROW_TEXT);
+			int vs = ROW_TEXT;
 
-			gfx_text(right - gfx_text_w(g_val[i], NEXUS_TXT_CAPTION),
-				 ty, g_val[i], NEXUS_TXT_CAPTION, t->accent,
-				 GFX_OPAQUE);
+			/*
+			 * Drop a size rather than clip. Every value on this
+			 * hardware fits at 10x14, but CONFIG_BOARD is whatever
+			 * board someone built for - "promicro_nrf52840" is
+			 * already too wide beside its label - and a truncated
+			 * diagnostic is worse than a small one.
+			 */
+			if (gfx_text_w(g_val[i], vs) > room) {
+				vs = NEXUS_TXT_CAPTION;
+			}
+
+			gfx_text(right - gfx_text_w(g_val[i], vs),
+				 y + (ROW_H - gfx_text_h(vs)) / 2, g_val[i], vs,
+				 t->accent, GFX_OPAQUE);
 		}
+	}
+
+	/*
+	 * The button means the same thing on every list: tap moves, hold acts.
+	 * Saying so is what makes a one-button menu usable, and it is why BACK
+	 * is a row rather than a second meaning for hold.
+	 */
+	if (gfx_hits(HINT_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
+		nexus_draw_caption_c(GFX_W / 2, HINT_Y, "TAP=NEXT   HOLD=SELECT");
 	}
 }
 
@@ -291,15 +365,24 @@ static void a_about(void)
 	nexus_screen_push(&nexus_screen_about_def);
 }
 
+/* BACK is a row, not a gesture. With one button you need three verbs from two
+ * gestures, and making hold mean "activate" here but "go back" everywhere else
+ * is how a menu stops being predictable. */
+static void a_back(void)
+{
+	nexus_screen_pop();
+}
+
 static const struct row settings_rows[] = {
 	{ "SOUND", v_sound, a_sound },
-	{ "BRIGHTNESS", v_brightness, a_brightness },
+	{ "BRIGHT", v_brightness, a_brightness },
 	{ "THEME", v_theme, a_theme },
-	{ "ANIMATION", v_anim, NULL },
+	{ "ANIM", v_anim, NULL },
 	{ "SPLASH", v_splash, NULL },
 	{ "GAMES", v_games, NULL },
-	{ "DIAGNOSTICS", NULL, a_diagnostics },
+	{ "DIAG", NULL, a_diagnostics },
 	{ "ABOUT", NULL, a_about },
+	{ "BACK", NULL, a_back },
 };
 
 static void settings_enter(void)
@@ -320,17 +403,19 @@ const struct nexus_screen nexus_screen_settings_def = {
 
 /* ---- diagnostics ------------------------------------------------------- */
 
+/* Two characters, because at 10x14 "RECON/RECON" plus its label overruns the
+ * 206px content width and clipped text is worse than terse text. */
 static const char *link_text(enum nexus_link_state s)
 {
 	switch (s) {
 	case NEXUS_LINK_CONNECTED:
 		return "OK";
 	case NEXUS_LINK_CONNECTING:
-		return "CONN";
+		return "CN";
 	case NEXUS_LINK_RECONNECTING:
-		return "RECON";
+		return "RC";
 	default:
-		return "DOWN";
+		return "--";
 	}
 }
 
@@ -431,7 +516,7 @@ static void v_memory(char *out, size_t len)
 	 * instead - CI prints it (Section 100).
 	 */
 	put_u(&b, (uint32_t)(sizeof(g_val) + GFX_W * GFX_STRIP_H * 2U));
-	put(&b, "B STATIC");
+	put(&b, "B");
 }
 
 #if IS_ENABLED(CONFIG_NEXUS_DEBUG)
@@ -466,6 +551,7 @@ static const struct row diag_rows[] = {
 	{ "L/R BATT", v_batteries, NULL },
 	{ "UI RAM", v_memory, NULL },
 	{ "UPTIME", v_uptime, NULL },
+	{ "BACK", NULL, a_back },
 #if IS_ENABLED(CONFIG_NEXUS_DEBUG)
 	/* Section 64: the FPS readout is a debug-build feature. Counting frames
 	 * is free, but a row that repaints every second to show the number is
@@ -488,7 +574,7 @@ const struct nexus_screen nexus_screen_diagnostics_def = {
 	.tick = list_tick,
 	.refresh = NEXUS_REFRESH_NORMAL,
 	.btn_short = NEXUS_ACTION_NEXT,
-	.btn_long = NEXUS_ACTION_BACK,
+	.btn_long = NEXUS_ACTION_SELECT,
 };
 
 /* ---- about ------------------------------------------------------------- */

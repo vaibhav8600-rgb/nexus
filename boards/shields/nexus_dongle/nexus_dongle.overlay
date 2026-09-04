@@ -19,6 +19,24 @@
  * only, deliberately not a ZMK key (Section 14).
  */
 
+/*
+ * Marker for keymaps that want NEXUS-specific bindings.
+ *
+ * You cannot test CONFIG_* in a keymap: Zephyr generates the devicetree
+ * BEFORE it runs Kconfig, so autoconf.h does not exist yet and every
+ * `#ifdef CONFIG_...` in a .keymap silently evaluates false. What does work
+ * is a plain define, because Zephyr concatenates all the DTS files and
+ * preprocesses them as one unit - and shield overlays come before the keymap.
+ *
+ *     #ifdef NEXUS_DONGLE
+ *         ... bindings that need &nexus_action ...
+ *     #endif
+ *
+ * A build without this shield never sees the define, so one shared keymap can
+ * serve both a NEXUS dongle and something else. See docs/configuration.md.
+ */
+#define NEXUS_DONGLE 1
+
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
 #include <zephyr/dt-bindings/pwm/pwm.h>
