@@ -45,7 +45,7 @@ west update
 west zephyr-export
 
 # Build the standalone demo
-west build -s zmk/app -b nice_nano_v2 -S studio-rpc-usb-uart -- \
+west build -s zmk/app -b nice_nano@2.0.0//zmk -S studio-rpc-usb-uart -- \
   -DSHIELD="nexus_dongle nexus_dongle_demo" \
   -DZMK_EXTRA_MODULES="/path/to/nexus"
 ```
@@ -69,7 +69,7 @@ west build -t pristine
 | Zephyr | 3.5.x (whatever ZMK's `west.yml` pins) |
 | LVGL | present but unused for drawing; `LV_COLOR_DEPTH=16`, `LV_Z_VDB_SIZE=10`, `LV_COLOR_16_SWAP=n` |
 | Rendering | NEXUS strip compositor, `src/ui/gfx.c`, 240x12 RGB565 band |
-| Board | nRF52840 ProMicro-compatible (`nice_nano_v2` tested) |
+| Board | nRF52840 ProMicro-compatible (`nice_nano@2.0.0//zmk` tested) |
 | Display | Zephyr `sitronix,st7789v` driver, 240x240, RGB565 |
 | Studio | `studio-rpc-usb-uart` snippet, `CONFIG_ZMK_STUDIO=y` |
 

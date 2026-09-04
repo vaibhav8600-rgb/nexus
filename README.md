@@ -52,7 +52,7 @@ last.
 
 ```yaml
 # build.yaml
-  - board: nice_nano_v2
+  - board: nice_nano@2.0.0//zmk
     shield: nexus_dongle sofle_dongle
     snippet: studio-rpc-usb-uart
     artifact-name: nexus_dongle

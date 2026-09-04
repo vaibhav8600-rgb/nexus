@@ -36,7 +36,7 @@ your own dongle shield is the keys:
 
 ```yaml
 include:
-  - board: nice_nano_v2
+  - board: nice_nano@2.0.0//zmk
     shield: nexus_dongle sofle_dongle
     snippet: studio-rpc-usb-uart
     artifact-name: nexus_dongle
@@ -46,7 +46,7 @@ Never wired a keyboard to it yet? Use the shipped demo instead -- it needs
 nothing else and boots straight into the UI:
 
 ```yaml
-  - board: nice_nano_v2
+  - board: nice_nano@2.0.0//zmk
     shield: nexus_dongle nexus_dongle_demo
     snippet: studio-rpc-usb-uart
     artifact-name: nexus_standalone

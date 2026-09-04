@@ -13,7 +13,7 @@ Studio needs two things: the config symbol and the USB transport snippet.
 `build.yaml`:
 
 ```yaml
-- board: nice_nano_v2
+- board: nice_nano@2.0.0//zmk
   shield: nexus_dongle sofle_dongle
   snippet: studio-rpc-usb-uart
   artifact-name: nexus_dongle

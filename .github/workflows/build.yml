@@ -19,18 +19,18 @@ jobs:
           # links. Left/right halves come from the integrator's own keyboard
           # shield and are built in their config repo (see examples/).
           - name: nexus_dongle
-            board: nice_nano_v2
+            board: nice_nano@2.0.0//zmk
             shield: nexus_dongle nexus_dongle_demo
             snippet: studio-rpc-usb-uart
           - name: nexus_dongle_no_studio
-            board: nice_nano_v2
+            board: nice_nano@2.0.0//zmk
             shield: nexus_dongle nexus_dongle_demo
             snippet: ""
           # Section 81: a peripheral build must not drag in the UI, the games
           # or the display stack. If NEXUS ever leaks into this one, the size
           # check below fails.
           - name: settings_reset
-            board: nice_nano_v2
+            board: nice_nano@2.0.0//zmk
             shield: settings_reset
             snippet: ""
 
@@ -68,6 +68,18 @@ jobs:
 
       - name: West Zephyr export
         run: west zephyr-export
+
+      # Zephyr 4.1 uses hardware model v2, where a board target is
+      # <board>@<revision>/<soc>/<variant> and the old flat `nice_nano_v2`
+      # no longer resolves. When that goes wrong the error dumps every board
+      # Zephyr knows and none of the valid qualifiers, so print the matching
+      # ones here: one CI round to find the answer instead of one per guess.
+      - name: Show matching board targets
+        run: |
+          west boards --format '{name} qualifiers={qualifiers} revisions={revisions}' \
+            2>/dev/null | grep -iE 'nice_nano|promicro' \
+            || west boards 2>/dev/null | grep -iE 'nice_nano|promicro' \
+            || true
 
       - name: Build ${{ matrix.name }}
         run: |
