@@ -36,6 +36,7 @@ endif()
 zephyr_library_sources(
   src/nexus.c
   src/action.c
+  src/settings.c
   src/status/status.c
   src/status/zmk_events.c
 )

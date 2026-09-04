@@ -16,6 +16,7 @@
 #include <nexus/gfx.h>
 #include <nexus/nexus.h>
 #include <nexus/screen.h>
+#include <nexus/settings.h>
 #include <nexus/sound.h>
 #include <nexus/status.h>
 #include <nexus/theme.h>
@@ -266,6 +267,7 @@ static void v_sound(char *out, size_t len)
 static void a_sound(void)
 {
 	nexus_sound_set_enabled(!nexus_sound_enabled());
+	nexus_settings_touch();
 }
 
 static void v_theme(char *out, size_t len)
@@ -283,13 +285,14 @@ static void a_theme(void)
 	for (uint8_t i = 0; i < n; i++) {
 		if (strcmp(nexus_theme_name_at(i), current) == 0) {
 			nexus_theme_set(nexus_theme_name_at((i + 1) % n));
+			nexus_settings_touch();
 			return;
 		}
 	}
 }
 
-static uint8_t g_brightness = 100;
-
+/* No local copy of the level: the backlight HAL owns it, so a value restored
+ * from saved settings shows correctly here without a second thing to sync. */
 static void v_brightness(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
@@ -301,11 +304,11 @@ static void v_brightness(char *out, size_t len)
 		return;
 	}
 	if (!nexus_display_backlight_has_brightness()) {
-		put(&b, g_brightness ? "ON" : "OFF");
+		put(&b, nexus_display_backlight_level() ? "ON" : "OFF");
 		return;
 	}
 
-	put_u(&b, g_brightness);
+	put_u(&b, nexus_display_backlight_level());
 	put(&b, "%");
 }
 
@@ -315,14 +318,15 @@ static void a_brightness(void)
 		return; /* the hardware has no say in this; do not fake it */
 	}
 
+	uint8_t level = nexus_display_backlight_level();
+
 	if (nexus_display_backlight_has_brightness()) {
-		g_brightness = (g_brightness >= 100)
-				       ? 25
-				       : (uint8_t)(g_brightness + 25);
+		level = (level >= 100) ? 25 : (uint8_t)(level + 25);
 	} else {
-		g_brightness = g_brightness ? 0 : 100;
+		level = level ? 0 : 100;
 	}
-	nexus_display_backlight_set(g_brightness);
+	nexus_display_backlight_set(level);
+	nexus_settings_touch();
 }
 
 static void v_anim(char *out, size_t len)
@@ -365,6 +369,24 @@ static void a_about(void)
 	nexus_screen_push(&nexus_screen_about_def);
 }
 
+static void v_save(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	/* The row doubles as the unsaved-changes indicator, so there is no
+	 * separate dirty marker to notice or miss. */
+	put(&b, nexus_settings_dirty() ? "*" : "OK");
+}
+
+static void a_save(void)
+{
+	if (nexus_settings_save() == 0) {
+		nexus_sound_play(NEXUS_SOUND_MENU_SELECT);
+	} else {
+		nexus_sound_play(NEXUS_SOUND_BACK);
+	}
+}
+
 /* BACK is a row, not a gesture. With one button you need three verbs from two
  * gestures, and making hold mean "activate" here but "go back" everywhere else
  * is how a menu stops being predictable. */
@@ -382,6 +404,7 @@ static const struct row settings_rows[] = {
 	{ "GAMES", v_games, NULL },
 	{ "DIAG", NULL, a_diagnostics },
 	{ "ABOUT", NULL, a_about },
+	{ "SAVE", v_save, a_save },
 	{ "BACK", NULL, a_back },
 };
 

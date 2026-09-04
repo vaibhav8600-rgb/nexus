@@ -184,6 +184,27 @@ int nexus_theme_set(const char *name)
 	return -ENOENT;
 }
 
+uint8_t nexus_theme_index(void)
+{
+	const struct nexus_theme *cur = nexus_theme();
+
+	for (size_t i = 0; i < ARRAY_SIZE(themes); i++) {
+		if (&themes[i] == cur) {
+			return (uint8_t)i;
+		}
+	}
+	return 0;
+}
+
+int nexus_theme_set_index(uint8_t index)
+{
+	if (index >= ARRAY_SIZE(themes)) {
+		return -ERANGE;
+	}
+	g_active = &themes[index];
+	return 0;
+}
+
 uint8_t nexus_theme_count(void)
 {
 	return (uint8_t)ARRAY_SIZE(themes);

@@ -33,6 +33,9 @@ enum nexus_backlight_mode nexus_display_backlight_mode(void);
  */
 int nexus_display_backlight_set(uint8_t percent);
 
+/** Last requested level. Survives a restart once settings are saved. */
+uint8_t nexus_display_backlight_level(void);
+
 /** Blank/unblank the panel itself for idle power saving (Section 66). */
 int nexus_display_sleep(bool sleep);
 

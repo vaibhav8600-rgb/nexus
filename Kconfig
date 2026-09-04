@@ -204,6 +204,19 @@ config NEXUS_TETRIS
 	default y
 	depends on NEXUS_GAMES
 
+config NEXUS_SETTINGS_PERSIST
+	bool "Remember sound, theme and brightness across restarts"
+	default y
+	depends on SETTINGS
+	help
+	  Without this the Settings screen edits only the running session and
+	  everything returns to its Kconfig default at the next power-on,
+	  which reads as the screen not having worked.
+
+	  Saving is explicit, from the SAVE row. Section 107's reasoning about
+	  high scores applies here too: settings writes hit flash, and cycling
+	  through seven themes should not cost seven erase cycles.
+
 config NEXUS_GAME_HIGHSCORE_PERSIST
 	bool "Persist high scores through Zephyr settings"
 	default y

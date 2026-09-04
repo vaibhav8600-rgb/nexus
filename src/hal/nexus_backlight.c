@@ -35,6 +35,15 @@ static const struct gpio_dt_spec bl_gpio = GPIO_DT_SPEC_GET(BL_GPIO_NODE, gpios)
 
 static enum nexus_backlight_mode g_mode = NEXUS_BACKLIGHT_FIXED;
 
+/* Requested level, kept here rather than in the Settings screen so it can be
+ * saved and re-applied at boot before anything is drawn. */
+static uint8_t g_level = 100;
+
+uint8_t nexus_display_backlight_level(void)
+{
+	return g_level;
+}
+
 bool nexus_display_backlight_has_brightness(void)
 {
 	return HAVE_PWM && g_mode != NEXUS_BACKLIGHT_FIXED;
@@ -47,6 +56,11 @@ enum nexus_backlight_mode nexus_display_backlight_mode(void)
 
 int nexus_display_backlight_set(uint8_t percent)
 {
+	if (percent > 100) {
+		percent = 100;
+	}
+	g_level = percent;
+
 #if HAVE_PWM
 	uint32_t period = bl_pwm.period;
 	uint32_t pulse = (uint32_t)((uint64_t)period * MIN(percent, 100U) / 100U);
@@ -95,7 +109,8 @@ int nexus_backlight_init(void)
 	}
 #endif
 	g_mode = NEXUS_BACKLIGHT_ON;
-	return nexus_display_backlight_set(100);
+	/* g_level is whatever the saved settings restored, or 100. */
+	return nexus_display_backlight_set(g_level);
 #else
 	LOG_INF("no controllable backlight in devicetree - assuming always on");
 	g_mode = NEXUS_BACKLIGHT_FIXED;
