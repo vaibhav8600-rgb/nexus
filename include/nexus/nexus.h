@@ -25,6 +25,7 @@ extern "C" {
 #define NEXUS_BRAND    CONFIG_NEXUS_BRAND
 #define NEXUS_PRODUCT  CONFIG_NEXUS_PRODUCT
 #define NEXUS_SUBTITLE CONFIG_NEXUS_SUBTITLE
+#define NEXUS_AUTHOR   CONFIG_NEXUS_AUTHOR
 
 /** Which optional subsystems actually came up on this boot. */
 struct nexus_health {

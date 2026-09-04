@@ -53,9 +53,9 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define NEXT_CELL 8
 
 #define OVER_X 20
-#define OVER_Y 78
+#define OVER_Y 70
 #define OVER_W 200
-#define OVER_H 92
+#define OVER_H 108
 
 extern const struct nexus_game nexus_game_tetris;
 
@@ -63,6 +63,7 @@ static struct tetris g_t;
 static enum nexus_game_state g_state;
 static const char *g_over_title;
 static const char *g_over_hint;
+static const char *g_over_hint2;
 
 static void gravity_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_gravity, gravity_fn);
@@ -222,9 +223,19 @@ static void draw_overlay(void)
 			   NEXUS_TXT_BODY, t->accent, GFX_OPAQUE);
 	}
 
+	/*
+	 * Body size, two lines. These are the only instructions the game ever
+	 * gives, and at caption size they were the smallest text on a panel
+	 * you read from across a desk - so the one screen that has to tell you
+	 * what the button does was the hardest thing on it to read.
+	 */
 	if (g_over_hint) {
-		nexus_draw_caption_c(GFX_W / 2, OVER_Y + OVER_H - 18,
-				     g_over_hint);
+		gfx_text_c(GFX_W / 2, OVER_Y + OVER_H - 40, g_over_hint,
+			   NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
+	}
+	if (g_over_hint2) {
+		gfx_text_c(GFX_W / 2, OVER_Y + OVER_H - 22, g_over_hint2,
+			   NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
 	}
 }
 
@@ -291,7 +302,8 @@ static void end_round(void)
 	nexus_game_submit_score(&nexus_game_tetris, g_t.score);
 
 	g_over_title = "GAME OVER";
-	g_over_hint = "ACTION=RESTART   HOLD=EXIT";
+	g_over_hint = "ACTION=RESTART";
+	g_over_hint2 = "HOLD=EXIT";
 	nexus_screen_invalidate();
 }
 
@@ -347,6 +359,7 @@ static void new_round(uint32_t salt)
 	g_state = NEXUS_GAME_RUNNING;
 	g_over_title = NULL;
 	g_over_hint = NULL;
+	g_over_hint2 = NULL;
 	arm_gravity();
 	nexus_screen_invalidate();
 }
@@ -362,6 +375,7 @@ static void tetris_stop(void)
 	g_state = NEXUS_GAME_IDLE;
 	g_over_title = NULL;
 	g_over_hint = NULL;
+	g_over_hint2 = NULL;
 }
 
 static void tetris_pause(void)
@@ -373,7 +387,8 @@ static void tetris_pause(void)
 	g_state = NEXUS_GAME_PAUSED;
 	k_work_cancel_delayable(&g_gravity);
 	g_over_title = "PAUSED";
-	g_over_hint = "ACTION=RESUME   HOLD=EXIT";
+	g_over_hint = "ACTION=RESUME";
+	g_over_hint2 = "HOLD=EXIT";
 	nexus_screen_invalidate();
 }
 
@@ -385,6 +400,7 @@ static void tetris_resume(void)
 
 	g_over_title = NULL;
 	g_over_hint = NULL;
+	g_over_hint2 = NULL;
 	g_state = NEXUS_GAME_RUNNING;
 	arm_gravity();
 	nexus_screen_invalidate();

@@ -23,6 +23,13 @@ config NEXUS_SUBTITLE
 	string "Product subtitle"
 	default "SMART ZMK DONGLE"
 
+config NEXUS_AUTHOR
+	string "Creator credit shown on the About screen"
+	default "VAIBHAV RAJPUT"
+	help
+	  Empty hides the line. Like every other name here this is a default,
+	  not a constant in the source (Requirement B).
+
 # --------------------------------------------------------------------------
 # Display / UI
 # --------------------------------------------------------------------------

@@ -47,10 +47,19 @@ void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill);
 void nexus_draw_pill(int x, int y, int w, int h, bool active, const char *text);
 
 /**
- * The extruded wordmark from the reference: four shadow steps drawn one pixel
- * lower each, then the face on top. Costs five text passes and no asset.
+ * The product wordmark: a weighted face over a soft drop shadow, with an
+ * accent rule beneath.
+ *
+ * The four-step extrusion this replaces was a poor trade at 240x240 - five
+ * offset copies of a 5x7 face turn into mush at any size big enough to read,
+ * and the "depth" just cost contrast. Stamping the glyphs 2x2 thickens every
+ * stroke instead, which is what actually makes a bitmap face look bold, and
+ * the rule under it does the job the extrusion was there for.
  */
 void nexus_draw_wordmark(int cx, int y, const char *text, int scale);
+
+/** Total height of a wordmark, including its rule. */
+int nexus_wordmark_h(int scale);
 
 #ifdef __cplusplus
 }

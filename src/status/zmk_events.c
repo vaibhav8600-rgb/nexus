@@ -78,6 +78,24 @@ static void refresh_layer(void)
 static void refresh_wpm(uint8_t raw)
 {
 	struct nexus_status *st = nexus_status_mut();
+
+	/*
+	 * Idle snaps straight to zero. ZMK only raises this event when the
+	 * value changes, so easing toward 0 a quarter at a time would stall
+	 * partway down the moment ZMK stopped sending updates - the dashboard
+	 * would sit at "014" long after you stopped typing. Smoothing is there
+	 * to stop the numerals jittering while typing, not to invent activity
+	 * that has ended (Section 27).
+	 */
+	if (raw == 0) {
+		st->wpm_raw = 0;
+		if (st->wpm != 0) {
+			st->wpm = 0;
+			nexus_status_mark(NEXUS_STATUS_WPM);
+		}
+		return;
+	}
+
 	uint8_t smoothed = (uint8_t)((st->wpm * 3 + raw + 2) / 4);
 
 	/* Without this nudge, integer rounding parks one step short forever. */

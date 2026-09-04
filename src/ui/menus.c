@@ -611,17 +611,35 @@ static void about_draw(void)
 		"POWERED BY ZMK",
 	};
 
-	nexus_draw_card(NEXUS_PAD, 20, NEXUS_CONTENT_W, 64);
-	nexus_draw_caption_c(GFX_W / 2, 28, NEXUS_BRAND);
-	nexus_draw_wordmark(GFX_W / 2, 42, NEXUS_PRODUCT, NEXUS_TXT_BIG);
+	nexus_draw_card(NEXUS_PAD, 14, NEXUS_CONTENT_W, 62);
+	nexus_draw_caption_c(GFX_W / 2, 21, NEXUS_BRAND);
+	nexus_draw_wordmark(GFX_W / 2, 33, NEXUS_PRODUCT, 4);
 
-	nexus_draw_card(NEXUS_PAD, 95, NEXUS_CONTENT_W, 40);
-	nexus_draw_caption_c(GFX_W / 2, 104, "FIRMWARE");
-	gfx_text_c(GFX_W / 2, 116, "V" NEXUS_VERSION_STR, NEXUS_TXT_BODY,
+	nexus_draw_card(NEXUS_PAD, 84, NEXUS_CONTENT_W, 38);
+	nexus_draw_caption_c(GFX_W / 2, 91, "FIRMWARE");
+	gfx_text_c(GFX_W / 2, 102, "V" NEXUS_VERSION_STR, NEXUS_TXT_BODY,
 		   t->accent, GFX_OPAQUE);
 
 	for (size_t i = 0; i < ARRAY_SIZE(lines); i++) {
-		nexus_draw_caption_c(GFX_W / 2, 152 + (int)i * 18, lines[i]);
+		nexus_draw_caption_c(GFX_W / 2, 130 + (int)i * 14, lines[i]);
+	}
+
+	/*
+	 * Creator credit. Given its own card at body size rather than a fourth
+	 * caption line: whoever built the thing should not be the smallest
+	 * text on its About screen. Empty CONFIG_NEXUS_AUTHOR hides it.
+	 */
+	if (sizeof(NEXUS_AUTHOR) > 1) {
+		nexus_draw_card(NEXUS_PAD, 180, NEXUS_CONTENT_W, 46);
+		nexus_draw_caption_c(GFX_W / 2, 188, "CREATED BY");
+
+		int scale = gfx_text_w(NEXUS_AUTHOR, NEXUS_TXT_BODY) <=
+					    NEXUS_CONTENT_W - 16
+				    ? NEXUS_TXT_BODY
+				    : NEXUS_TXT_CAPTION;
+
+		gfx_text_c(GFX_W / 2, 202, NEXUS_AUTHOR, scale, t->value,
+			   GFX_OPAQUE);
 	}
 }
 

@@ -125,9 +125,13 @@ void gfx_text_c(int cx, int y, const char *s, int scale, gfx_color c, uint8_t a)
  * the font's range checks simple and costs 15 bytes.
  */
 enum gfx_icon {
-	GFX_ICON_BT = 0, /* Bluetooth rune */
-	GFX_ICON_USB,    /* monitor, i.e. "wired to a host" */
-	GFX_ICON_LOCK,   /* padlock, for caps lock */
+	GFX_ICON_BT = 0, /* Bluetooth rune                  */
+	GFX_ICON_USB,    /* monitor: "wired to a host"      */
+	GFX_ICON_LOCK,   /* padlock, for caps lock          */
+	GFX_ICON_CTRL,   /* caret                           */
+	GFX_ICON_SHIFT,  /* up arrow                        */
+	GFX_ICON_ALT,    /* option stroke                   */
+	GFX_ICON_GUI,    /* four panes, the usual GUI key   */
 	GFX_ICON_COUNT,
 };
 

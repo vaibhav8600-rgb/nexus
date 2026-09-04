@@ -140,14 +140,37 @@ void nexus_draw_pill(int x, int y, int w, int h, bool active, const char *text)
 	}
 }
 
+#define WORDMARK_RULE_GAP 4
+#define WORDMARK_RULE_H 3
+
+int nexus_wordmark_h(int scale)
+{
+	return gfx_text_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
+}
+
 void nexus_draw_wordmark(int cx, int y, const char *text, int scale)
 {
 	const struct nexus_theme *t = nexus_theme();
+	int w = gfx_text_w(text, scale);
+	int x = cx - w / 2;
 
-	/* Back to front: shadow steps first, face last. Same stacking the CSS
-	 * reference does with layered text-shadows. */
-	for (int i = 4; i >= 1; i--) {
-		gfx_text_c(cx, y + i, text, scale, t->wordmark[i], GFX_OPAQUE);
+	/* A single soft shadow for lift, not a stack of them. */
+	gfx_text(x + 2, y + 3, text, scale, t->wordmark[4], 90);
+
+	/*
+	 * Faux bold. A 5x7 face has one-pixel strokes however far you scale
+	 * it, so it always looks thin next to the big numerals; stamping it
+	 * four times at one-pixel offsets thickens every stroke by one scaled
+	 * pixel and costs four cheap text passes.
+	 */
+	for (int dy = 0; dy <= 1; dy++) {
+		for (int dx = 0; dx <= 1; dx++) {
+			gfx_text(x + dx, y + dy, text, scale, t->wordmark[2],
+				 GFX_OPAQUE);
+		}
 	}
-	gfx_text_c(cx, y, text, scale, t->wordmark[0], GFX_OPAQUE);
+
+	/* Accent rule: what actually reads as "this is a product name". */
+	gfx_round_rect(x, y + gfx_text_h(scale) + WORDMARK_RULE_GAP, w,
+		       WORDMARK_RULE_H, 1, t->accent, GFX_OPAQUE);
 }

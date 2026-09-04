@@ -42,7 +42,11 @@
 static const uint8_t mod_bits[4] = {
 	NEXUS_MOD_CTRL, NEXUS_MOD_SHIFT, NEXUS_MOD_ALT, NEXUS_MOD_GUI
 };
-static const char *const mod_glyphs[4] = { "C", "S", "A", "G" };
+/* The symbols printed on the keys themselves. "C S A G" needed a legend;
+ * a caret, an up arrow, an option stroke and four panes do not. */
+static const enum gfx_icon mod_icons[4] = {
+	GFX_ICON_CTRL, GFX_ICON_SHIFT, GFX_ICON_ALT, GFX_ICON_GUI
+};
 
 /* ---- drawing ----------------------------------------------------------- */
 
@@ -86,10 +90,10 @@ static void draw_brand(void)
 	 * to 145x35, which fills the plate the way the reference does, and
 	 * fit_scale() still steps down for a longer CONFIG_NEXUS_PRODUCT.
 	 */
-	int scale = fit_scale(NEXUS_PRODUCT, NEXUS_CONTENT_W - 2 * INNER, 5);
+	int scale = fit_scale(NEXUS_PRODUCT, NEXUS_CONTENT_W - 2 * INNER - 4, 5);
 
 	nexus_draw_wordmark(GFX_W / 2,
-			    BRAND_Y + (BRAND_H - gfx_text_h(scale)) / 2,
+			    BRAND_Y + (BRAND_H - nexus_wordmark_h(scale)) / 2,
 			    NEXUS_PRODUCT, scale);
 }
 
@@ -99,45 +103,41 @@ static void draw_link(const struct nexus_status *st)
 	bool live = (st->link_host == NEXUS_LINK_CONNECTED);
 	bool on_usb = (st->endpoint == NEXUS_ENDPOINT_USB);
 	bool on_ble = (st->endpoint == NEXUS_ENDPOINT_BLE);
+	gfx_color usb_c = on_usb ? (live ? t->success : t->warning) : t->muted;
+	gfx_color ble_c = on_ble ? (live ? t->success : t->warning) : t->muted;
 
 	nexus_draw_card(COL_L, ROW1_Y, COL_W, ROW1_H);
 
 	/*
-	 * Both transports, always, with the selected one lit - the reference
-	 * shows the whole cluster rather than just the winner, and "USB" alone
-	 * cannot tell you whether BLE is even an option on this build.
+	 * Both transports at body size. At caption size this was the smallest
+	 * thing on the panel and it is the thing you most often glance at -
+	 * "am I on USB or BLE, and is it up?".
 	 */
 	int x = COL_L + INNER;
-	int y = ROW1_Y + 7;
+	int y = ROW1_Y + 5;
 
-	gfx_icon(x, y, GFX_ICON_USB, 1, on_usb ? (live ? t->success : t->warning)
-					      : t->muted, GFX_OPAQUE);
-	x += gfx_icon_w(1) + 3;
-	gfx_text(x, y, "USB", NEXUS_TXT_CAPTION,
-		 on_usb ? (live ? t->success : t->warning) : t->muted,
-		 GFX_OPAQUE);
-	x += gfx_text_w("USB", NEXUS_TXT_CAPTION) + 7;
+	gfx_icon(x, y, GFX_ICON_USB, 2, usb_c, GFX_OPAQUE);
+	x += gfx_icon_w(2) + 3;
+	gfx_text(x, y, "USB", NEXUS_TXT_BODY, usb_c, GFX_OPAQUE);
+	x += gfx_text_w("USB", NEXUS_TXT_BODY) + 8;
 
-	gfx_icon(x, y, GFX_ICON_BT, 1, on_ble ? (live ? t->success : t->warning)
-					      : t->muted, GFX_OPAQUE);
-	x += gfx_icon_w(1) + 2;
+	gfx_icon(x, y, GFX_ICON_BT, 2, ble_c, GFX_OPAQUE);
+	x += gfx_icon_w(2) + 3;
 
-	/* BLE profile number rides with the rune, as "BT 2" would read wrong
-	 * when USB is the active endpoint. */
+	/* Profile number rides with the rune; "BT 2" would read wrong while USB
+	 * is the active endpoint. */
 	char prof[4];
 
 	gfx_utoa((uint32_t)st->bt_profile + 1U, prof, sizeof(prof), 0);
-	gfx_text(x, y, prof, NEXUS_TXT_CAPTION,
-		 on_ble ? (live ? t->success : t->warning) : t->muted,
-		 GFX_OPAQUE);
+	gfx_text(x, y, prof, NEXUS_TXT_BODY, ble_c, GFX_OPAQUE);
 
 	/*
-	 * Locks along the bottom. The padlock IS caps - the reference leads
-	 * its indicator row with one - so num and scroll are the only two that
+	 * Locks along the bottom. The padlock IS caps - the reference leads its
+	 * indicator row with one - so num and scroll are the only two that
 	 * still need a letter.
 	 */
 	int lx = COL_L + INNER;
-	int ly = ROW1_Y + ROW1_H - 7 - gfx_text_h(NEXUS_TXT_CAPTION);
+	int ly = ROW1_Y + ROW1_H - 6 - gfx_text_h(NEXUS_TXT_CAPTION);
 
 	gfx_icon(lx, ly, GFX_ICON_LOCK, 1,
 		 st->caps_lock ? t->warning : t->muted, GFX_OPAQUE);
@@ -183,8 +183,13 @@ static void draw_mods(const struct nexus_status *st)
 	nexus_draw_card(COL_L, ROW2_Y, COL_W, ROW2_H);
 
 	for (int i = 0; i < 4; i++) {
-		nexus_draw_pill(x, y, pw, ph, (st->modifiers & mod_bits[i]) != 0,
-				mod_glyphs[i]);
+		bool on = (st->modifiers & mod_bits[i]) != 0;
+
+		nexus_draw_pill(x, y, pw, ph, on, NULL);
+		gfx_icon(x + (pw - gfx_icon_w(1)) / 2,
+			 y + (ph - gfx_text_h(1)) / 2, mod_icons[i], 1,
+			 on ? nexus_theme()->value : nexus_theme()->muted,
+			 GFX_OPAQUE);
 		x += pw + gap;
 	}
 }

@@ -531,6 +531,12 @@ static const uint8_t icons[GFX_ICON_COUNT][FONT_W] = {
 	[GFX_ICON_USB]  = { 0x0F, 0x49, 0x79, 0x49, 0x0F },
 	/* Padlock: shackle over a solid body. */
 	[GFX_ICON_LOCK] = { 0x7E, 0x79, 0x71, 0x79, 0x7E },
+	/* Modifiers, drawn as the symbols the keys are actually printed with
+	 * rather than the initials C/S/A/G, which needed a legend to read. */
+	[GFX_ICON_CTRL]  = { 0x10, 0x08, 0x04, 0x08, 0x10 }, /* caret     */
+	[GFX_ICON_SHIFT] = { 0x04, 0x06, 0x3F, 0x06, 0x04 }, /* up arrow  */
+	[GFX_ICON_ALT]   = { 0x30, 0x18, 0x0D, 0x07, 0x03 }, /* option    */
+	[GFX_ICON_GUI]   = { 0x36, 0x36, 0x00, 0x36, 0x36 }, /* four panes*/
 };
 
 int gfx_icon_w(int scale)
