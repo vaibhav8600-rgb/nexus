@@ -84,7 +84,9 @@ CONFIG_NEXUS_SUBTITLE="SMART ZMK DONGLE"
 ```
 
 Set `BRAND` or `SUBTITLE` to `""` to hide that line. `PRODUCT` is drawn as a
-five-layer extruded wordmark in the active theme's colours -- keep it short.
+weighted wordmark over an accent rule, in the active theme's colours. Brand
+and subtitle are drawn at body size, and the whole block is measured before
+it is drawn so it stays centred whatever your strings and artwork come to.
 
 ## Timing
 

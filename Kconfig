@@ -224,6 +224,16 @@ config NEXUS_SETTINGS_PERSIST
 	  high scores applies here too: settings writes hit flash, and cycling
 	  through seven themes should not cost seven erase cycles.
 
+config NEXUS_SETTINGS_AUTOSAVE_MS
+	int "Quiet period before a deferred save commits, ms"
+	default 4000
+	depends on NEXUS_SETTINGS_PERSIST
+	help
+	  Used by controls that fire repeatedly during one gesture - an
+	  encoder emits a detent per click. The value applies instantly; only
+	  the flash write waits for you to stop turning, so spinning through
+	  seven themes costs one erase cycle instead of seven.
+
 config NEXUS_GAME_HIGHSCORE_PERSIST
 	bool "Persist high scores through Zephyr settings"
 	default y

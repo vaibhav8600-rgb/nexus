@@ -68,6 +68,8 @@ int nexus_theme_set(const char *name);
 /** Index of the active theme, for persisting a choice across reboots. */
 uint8_t nexus_theme_index(void);
 int nexus_theme_set_index(uint8_t index);
+/** Step through the palettes, wrapping. @p delta is normally +1 or -1. */
+void nexus_theme_cycle(int delta);
 const char *nexus_theme_name_at(uint8_t index);
 uint8_t nexus_theme_count(void);
 

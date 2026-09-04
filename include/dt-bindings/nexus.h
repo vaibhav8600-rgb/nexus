@@ -26,4 +26,9 @@
  * keyboard can do everything the dongle button can, and then some. */
 #define NEXUS_ACT_SAVE        16
 
+/* Cycle the theme without opening Settings. Meant for an encoder, which is
+ * why they are a pair rather than one toggle. */
+#define NEXUS_ACT_THEME_NEXT  17
+#define NEXUS_ACT_THEME_PREV  18
+
 #endif /* DT_BINDINGS_NEXUS_H_ */

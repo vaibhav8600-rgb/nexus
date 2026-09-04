@@ -30,6 +30,35 @@ struct nexus_prefs {
 
 static bool g_dirty;
 
+#if IS_ENABLED(CONFIG_NEXUS_SETTINGS_PERSIST)
+static void autosave_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(g_autosave, autosave_fn);
+
+static void autosave_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	if (g_dirty) {
+		nexus_settings_save();
+	}
+}
+
+void nexus_settings_save_deferred(void)
+{
+	g_dirty = true;
+	/* RESCHEDULE, not schedule: each click should push the deadline out,
+	 * so a long spin writes once at the end rather than once at the start
+	 * and then again for everything after it. */
+	k_work_reschedule_for_queue(nexus_workq(), &g_autosave,
+				    K_MSEC(CONFIG_NEXUS_SETTINGS_AUTOSAVE_MS));
+}
+#else
+void nexus_settings_save_deferred(void)
+{
+	g_dirty = true;
+}
+#endif
+
 bool nexus_settings_dirty(void)
 {
 	return g_dirty;

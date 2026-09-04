@@ -9,6 +9,7 @@
 
 #include <nexus/action.h>
 #include <nexus/settings.h>
+#include <nexus/theme.h>
 #include <nexus/sound.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -53,6 +54,19 @@ static void handle(enum nexus_action action)
 	case NEXUS_ACTION_MENU:
 		nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
 		nexus_screen_push(&nexus_screen_settings_def);
+		break;
+	case NEXUS_ACTION_THEME_NEXT:
+	case NEXUS_ACTION_THEME_PREV:
+		/*
+		 * Direct access, no menu. Applies on the spot and schedules a
+		 * save for once you stop turning - an encoder fires a detent
+		 * per click, and a flash write per click is not a trade worth
+		 * making (Section 107).
+		 */
+		nexus_theme_cycle(action == NEXUS_ACTION_THEME_NEXT ? 1 : -1);
+		nexus_settings_save_deferred();
+		nexus_screen_invalidate();
+		nexus_sound_play(NEXUS_SOUND_SELECT);
 		break;
 	case NEXUS_ACTION_SAVE:
 		/* Works from any screen, so you can commit a theme change from

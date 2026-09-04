@@ -279,16 +279,9 @@ static void v_theme(char *out, size_t len)
 
 static void a_theme(void)
 {
-	const char *current = nexus_theme()->name;
-	uint8_t n = nexus_theme_count();
-
-	for (uint8_t i = 0; i < n; i++) {
-		if (strcmp(nexus_theme_name_at(i), current) == 0) {
-			nexus_theme_set(nexus_theme_name_at((i + 1) % n));
-			nexus_settings_touch();
-			return;
-		}
-	}
+	/* Same helper the encoder uses, so the two paths cannot drift. */
+	nexus_theme_cycle(1);
+	nexus_settings_touch();
 }
 
 /* No local copy of the level: the backlight HAL owns it, so a value restored

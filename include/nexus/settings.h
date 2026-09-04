@@ -35,6 +35,16 @@ void nexus_settings_touch(void);
  */
 int nexus_settings_save(void);
 
+/**
+ * Save a few seconds from now, restarting the clock on each call.
+ *
+ * For controls that change value many times per gesture - an encoder emits a
+ * detent per click - where saving each step would burn a flash erase cycle per
+ * click. The setting applies instantly either way; only the write waits until
+ * you have stopped turning.
+ */
+void nexus_settings_save_deferred(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -8,7 +8,8 @@ Everything is Kconfig or devicetree. If you find yourself editing a file under
 | Option | Default | |
 | --- | --- | --- |
 | `CONFIG_NEXUS_BRAND` | `"VAIBHAV TECH"` | Small line above the wordmark on the splash and About screens. Empty hides it. |
-| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Keep it short -- it is rendered at 28 px with a five-layer extrude. |
+| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Rendered as large as it fits (up to 35 px), weighted, over an accent rule; a longer name steps down a size rather than overflowing. |
+| `CONFIG_NEXUS_AUTHOR` | `"VAIBHAV RAJPUT"` | Creator credit on the About screen. Empty hides the card. |
 | `CONFIG_NEXUS_SUBTITLE` | `"SMART ZMK DONGLE"` | Caption under the wordmark. Empty hides it. |
 
 These are Kconfig *defaults*, not constants. Nothing in `src/` contains a brand
@@ -87,24 +88,88 @@ The mapping is data on each screen, not a switch statement (Section 12):
 | Game (running) | pause | leave game |
 | Game (paused) | resume | leave game |
 | Game (over) | restart | leave game |
-| Settings / Diagnostics | next row | activate / back |
+| Settings / Diagnostics | next row | activate the row |
 | About | back | Home |
 
-### Modifier pill legend
+`BACK` is a **row** on the menus, not a gesture: with one button you need three
+verbs from two gestures, and making hold mean "activate" there but "go back"
+everywhere else is how a menu stops being predictable. The screens say so --
+`TAP=NEXT   HOLD=SELECT`.
 
-The dashboard shows four 22 px pills. They light when the modifier is held:
+### Modifier pills
 
-`C` Ctrl · `S` Shift · `A` Alt · `G` GUI
+Four 22 px pills, lit while the modifier is held, drawn with the symbol the key
+itself is printed with rather than an initial:
+
+caret = Ctrl · up arrow = Shift · option stroke = Alt · four panes = GUI
 
 Left and right variants are merged -- there is no room for eight pills and no
-value in distinguishing them at a glance.
+value in telling them apart at a glance.
+
+## Settings that survive a restart
+
+| Option | Default | |
+| --- | --- | --- |
+| `CONFIG_NEXUS_SETTINGS_PERSIST` | `y` | Sound, theme and brightness are stored under `nexus/ui/prefs`. Without it the Settings screen edits only the running session. Needs `CONFIG_SETTINGS`. |
+| `CONFIG_NEXUS_SETTINGS_AUTOSAVE_MS` | `4000` | Quiet period before a *deferred* save commits. Used by controls that fire repeatedly in one gesture, so spinning an encoder through seven themes costs one flash erase, not seven. |
+
+Saving from the menu is explicit -- the `SAVE` row, which doubles as the
+unsaved-changes marker (`*` dirty, `OK` clean). The encoder and
+`&nexus_action NEXUS_ACT_SAVE` do not need it.
+
+## Keymap control (`&nexus_action`)
+
+Everything the physical button can do, plus the things one button cannot.
+Include `<dt-bindings/nexus.h>` and bind any of:
+
+| Action | Does |
+| --- | --- |
+| `NEXUS_ACT_HOME` / `NEXUS_ACT_GAME_CENTER` / `NEXUS_ACT_MENU` | jump to that screen |
+| `NEXUS_ACT_UP` / `NEXUS_ACT_DOWN` | move a menu cursor; `DOWN` also soft-drops in Tetris |
+| `NEXUS_ACT_SELECT` | activate a row, or pause / resume / restart a game |
+| `NEXUS_ACT_BACK` | leave the current screen |
+| `NEXUS_ACT_LEFT` / `RIGHT` / `ROTATE` / `DROP` | gameplay |
+| `NEXUS_ACT_SAVE` | commit settings, from any screen |
+| `NEXUS_ACT_THEME_NEXT` / `THEME_PREV` | cycle themes without opening Settings; saves itself once you stop |
+
+Verbs are context-sensitive by design (Section 13): the screen decides what
+`SELECT` means, not the key.
+
+### Guarding keymap bindings
+
+`#ifdef CONFIG_NEXUS` **does not work in a keymap.** Zephyr builds the
+devicetree before it runs Kconfig, so `autoconf.h` does not exist yet and the
+test is silently false. The `nexus_dongle` shield defines `NEXUS_DONGLE`
+instead, and shield overlays are concatenated ahead of the keymap:
+
+```c
+#ifdef NEXUS_DONGLE
+#include <dt-bindings/nexus.h>
+/* ... bindings that need &nexus_action ... */
+#endif
+```
+
+### Theme on an encoder
+
+```dts
+nexus_theme_enc: nexus_theme_enc {
+    compatible = "zmk,behavior-sensor-rotate-var";
+    #sensor-binding-cells = <2>;
+    bindings = <&nexus_action>, <&nexus_action>;
+    tap-ms = <20>;
+};
+/* ... then on the layer ... */
+sensor-bindings = <&nexus_theme_enc NEXUS_ACT_THEME_NEXT NEXUS_ACT_THEME_PREV
+                   &inc_dec_kp C_VOL_UP C_VOL_DN>;
+```
 
 ## Split status
 
 | Option | Default | |
 | --- | --- | --- |
 | `CONFIG_NEXUS_SPLIT_SWAP_SIDES` | `n` | ZMK numbers peripherals by pairing order, not by physical side. Set this if LEFT and RIGHT are the wrong way round. |
-| `CONFIG_NEXUS_STATUS_STALE_MS` | `120000` | A half that has said nothing for this long shows `--` and `RECONNECTING` instead of a stale percentage. |
+| `CONFIG_NEXUS_STATUS_STALE_MS` | `0` | Blank a half's battery after N ms of silence. **Off by default**: a half with `CONFIG_ZMK_SLEEP` stops reporting when idle, so any timeout eventually blanks a good reading. An idle half has a battery level; we just heard it a while ago. |
+| `CONFIG_NEXUS_ANTI_IDLE_STATUS` | `n` | Cursor icon showing whether the mouse jiggler is on. Needs the `&anti_idle` behavior, which comes from snake-module, not from NEXUS. |
 
 Battery levels require `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y`
 on the dongle and `CONFIG_ZMK_BATTERY_REPORTING=y` on the halves. Without them

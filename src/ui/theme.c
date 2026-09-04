@@ -205,6 +205,16 @@ int nexus_theme_set_index(uint8_t index)
 	return 0;
 }
 
+void nexus_theme_cycle(int delta)
+{
+	int n = (int)ARRAY_SIZE(themes);
+	int i = ((int)nexus_theme_index() + delta) % n;
+
+	/* C's % keeps the sign of the dividend, so a backwards step off zero
+	 * lands negative and would index out of the table. */
+	nexus_theme_set_index((uint8_t)(i < 0 ? i + n : i));
+}
+
 uint8_t nexus_theme_count(void)
 {
 	return (uint8_t)ARRAY_SIZE(themes);
