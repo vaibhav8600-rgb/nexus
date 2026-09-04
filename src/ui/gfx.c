@@ -98,9 +98,11 @@ static inline void px(int x, int y, gfx_color c, uint8_t a)
  */
 #define ROT CONFIG_NEXUS_DISPLAY_ROTATION
 
-#if ROT != 0
-/* A rotated band is a different shape, so the transpose needs a destination.
- * Costs nothing at rotation 0. */
+#if ROT == 90 || ROT == 270
+/* 90 and 270 transpose the band into a different shape, so they need a
+ * destination buffer. 0 and 180 do not: 180 maps index i to N-1-i, which is a
+ * plain in-place reversal, so the commonest correction for an upside-down
+ * panel costs no extra RAM at all. */
 static uint16_t obuf[GFX_W * GFX_STRIP_H];
 #endif
 
@@ -122,19 +124,26 @@ static void flush(void)
 	display_write(disp, GFX_H - GFX_STRIP_H - band_y0, 0, &d, (uint8_t *)obuf);
 
 #elif ROT == 180
-	for (int ly = 0; ly < GFX_STRIP_H; ly++) {
-		for (int lx = 0; lx < GFX_W; lx++) {
-			obuf[(GFX_STRIP_H - 1 - ly) * GFX_W + (GFX_W - 1 - lx)] =
-				__builtin_bswap16(band[ly * GFX_W + lx]);
-		}
+	/*
+	 * A half turn sends band index i to (STRIP_H-1-ly)*W + (W-1-lx), which
+	 * is exactly N-1-i - so the whole band is just reversed. Doing it in
+	 * place saves the 5,760-byte destination buffer that 90 and 270 need,
+	 * and an upside-down panel is by far the most common thing anyone has
+	 * to correct.
+	 */
+	for (int i = 0, j = GFX_W * GFX_STRIP_H - 1; i < j; i++, j--) {
+		uint16_t a = __builtin_bswap16(band[i]);
+
+		band[i] = __builtin_bswap16(band[j]);
+		band[j] = a;
 	}
 
 	struct display_buffer_descriptor d = {
-		.buf_size = sizeof(obuf), .width = GFX_W,
+		.buf_size = sizeof(band), .width = GFX_W,
 		.height = GFX_STRIP_H, .pitch = GFX_W,
 	};
 
-	display_write(disp, 0, GFX_H - GFX_STRIP_H - band_y0, &d, (uint8_t *)obuf);
+	display_write(disp, 0, GFX_H - GFX_STRIP_H - band_y0, &d, (uint8_t *)band);
 
 #elif ROT == 270
 	for (int ly = 0; ly < GFX_STRIP_H; ly++) {
@@ -400,6 +409,24 @@ void gfx_round_frame(int x, int y, int w, int h, int r, gfx_color c, uint8_t a)
 			px(x + i, yy, c, aa);
 			px(x + w - 1 - i, yy, c, aa);
 		}
+	}
+}
+
+void gfx_disc(int cx, int cy, int r, gfx_color c, uint8_t a)
+{
+	if (r <= 0 || a == 0) {
+		return;
+	}
+
+	int y_a = MAX(cy - r, band_y0);
+	int y_b = MIN(cy + r + 1, gfx_band_y1());
+
+	for (int y = y_a; y < y_b; y++) {
+		int dy = y - cy;
+		/* dy is bounded by the loop, so r*r - dy*dy is never negative. */
+		int half = (int)isqrt32((uint32_t)(r * r - dy * dy));
+
+		gfx_rect(cx - half, y, 2 * half + 1, 1, c, a);
 	}
 }
 

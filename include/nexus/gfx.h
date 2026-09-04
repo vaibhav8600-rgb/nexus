@@ -95,6 +95,17 @@ void gfx_round_rect(int x, int y, int w, int h, int r, gfx_color c, uint8_t a);
 void gfx_round_frame(int x, int y, int w, int h, int r, gfx_color c, uint8_t a);
 
 /**
+ * Filled circle, one integer square root per row rather than per pixel.
+ *
+ * gfx_round_rect() anti-aliases its corners, which is right for a 7px card
+ * radius and ruinous for a 90px glow: there the "corners" are the entire
+ * shape, so every pixel pays a sqrt. Use this for large soft shapes - on a
+ * low-alpha blob the missing edge AA is invisible, and a full repaint drops
+ * from ~80,000 square roots to a couple of hundred.
+ */
+void gfx_disc(int cx, int cy, int r, gfx_color c, uint8_t a);
+
+/**
  * Blit a raw RGB565 image (native endian, row-major) with no scaling.
  * Used only by the splash; everything else is drawn.
  */

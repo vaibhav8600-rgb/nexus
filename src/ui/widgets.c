@@ -7,8 +7,14 @@
 
 /*
  * A soft corner glow, as three concentric discs at low alpha. Three is where
- * the banding stops being visible on a 240px panel; more just costs fill rate,
- * and a true radial falloff would want a square root per pixel.
+ * the banding stops being visible on a 240px panel; more just costs fill rate.
+ *
+ * gfx_disc(), not gfx_round_rect(): a rounded rect anti-aliases its corner
+ * arcs, and for a 90px "corner radius" that is the whole shape, so every one
+ * of ~80,000 glow pixels per repaint paid an integer square root. That alone
+ * was tens of milliseconds a frame and made repaints visibly crawl down the
+ * panel. gfx_disc() does one square root per row instead, and on a low-alpha
+ * blob the missing edge AA cannot be seen.
  */
 static void glow(int cx, int cy, int r, gfx_color c, uint8_t alpha)
 {
@@ -17,9 +23,7 @@ static void glow(int cx, int cy, int r, gfx_color c, uint8_t alpha)
 	}
 
 	for (int i = 0; i < 3; i++) {
-		int rr = r - i * (r / 4);
-
-		gfx_round_rect(cx - rr, cy - rr, 2 * rr, 2 * rr, rr, c, alpha);
+		gfx_disc(cx, cy, r - i * (r / 4), c, alpha);
 	}
 }
 

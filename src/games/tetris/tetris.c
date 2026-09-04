@@ -234,6 +234,17 @@ static void tetris_draw(void)
 
 	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_CAPTION))) {
 		nexus_draw_caption(NEXUS_PAD, 8, "TETRIS");
+
+		/*
+		 * One physical button has to mean two things, so the screen has
+		 * to say which is which. Without this the only way out of a
+		 * game is to already know that a long press exits - a short
+		 * press just toggles pause, so it looks like the dongle is
+		 * stuck (Section 12).
+		 */
+		nexus_draw_caption(GFX_W - NEXUS_PAD -
+					   gfx_text_w("HOLD=EXIT", NEXUS_TXT_CAPTION),
+				   8, "HOLD=EXIT");
 	}
 
 	draw_well();
@@ -280,7 +291,7 @@ static void end_round(void)
 	nexus_game_submit_score(&nexus_game_tetris, g_t.score);
 
 	g_over_title = "GAME OVER";
-	g_over_hint = "ACTION = RESTART";
+	g_over_hint = "ACTION=RESTART   HOLD=EXIT";
 	nexus_screen_invalidate();
 }
 
@@ -362,7 +373,7 @@ static void tetris_pause(void)
 	g_state = NEXUS_GAME_PAUSED;
 	k_work_cancel_delayable(&g_gravity);
 	g_over_title = "PAUSED";
-	g_over_hint = "ACTION TO RESUME";
+	g_over_hint = "ACTION=RESUME   HOLD=EXIT";
 	nexus_screen_invalidate();
 }
 
