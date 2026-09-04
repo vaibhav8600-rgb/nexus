@@ -90,27 +90,38 @@ jobs:
             || west boards 2>/dev/null | grep -iE 'nice_nano|promicro' \
             || true
 
+      # Plain POSIX sh: this container runs `sh -e {0}`, not bash, so no
+      # `set -o pipefail` and no `tee` into a pipeline.
+      #
+      # A failing Zephyr build prints ~800 progress lines before the actual
+      # diagnostic, which pushes it past the truncation limit of every log
+      # viewer. So capture everything to a file and, on failure, print only
+      # the lines that matter - short enough to read and to paste.
       - name: Build ${{ matrix.name }}
         run: |
-          set -o pipefail
-          west build -s zmk/app -b ${{ matrix.board }} \
-            ${{ matrix.snippet && format('-S {0}', matrix.snippet) || '' }} \
-            -- -DSHIELD="${{ matrix.shield }}" \
-               -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}/nexus" \
-            2>&1 | tee build-output.log
+          if west build -s zmk/app -b ${{ matrix.board }} \
+               ${{ matrix.snippet && format('-S {0}', matrix.snippet) || '' }} \
+               -- -DSHIELD="${{ matrix.shield }}" \
+                  -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}/nexus" \
+               > build-output.log 2>&1; then
+            tail -n 15 build-output.log
+            exit 0
+          fi
 
-      # A failing Zephyr build prints ~800 progress lines before the error, and
-      # the interesting part is past every log viewer's truncation limit. This
-      # reprints just the diagnostics, so the failure is the first thing you
-      # see and small enough to paste.
-      - name: Errors only
-        if: failure()
-        run: |
-          echo "### ${{ matrix.name }} failed" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -nE "error:|warning:|FAILED:|undefined reference|No such file" \
-            build-output.log | head -80 | tee -a "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "=================== DIAGNOSTICS ==================="
+          grep -nE "error:|FAILED:|undefined reference|No such file" \
+            build-output.log | head -n 60
+          echo "=================== LAST 40 LINES ================="
+          tail -n 40 build-output.log
+
+          {
+            echo "### ${{ matrix.name }} failed"
+            echo '```'
+            grep -nE "error:|FAILED:|undefined reference" build-output.log |
+              head -n 40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - name: Upload full build log
         if: failure()
