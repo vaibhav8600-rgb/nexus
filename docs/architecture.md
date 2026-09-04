@@ -102,6 +102,26 @@ cards (Section 61).
 Building a second dispatch framework on top of ZMK's would have been ~200 lines
 that do what 40 lines already do.
 
+### Status coalesces, input does not
+
+Repaints from status events go through a coalesce window sized by the screen's
+refresh class, so a burst of battery and WPM events costs one frame instead of
+six. On a static screen that window is `CONFIG_NEXUS_UI_REFRESH_IDLE_MS`, a
+full second - fine for a battery reading that changes every minute.
+
+Input must not go through it. A cursor move on the Settings list is not a
+status event and has nothing to coalesce with; putting it behind a timer sized
+for battery reports is how a menu ends up feeling like it is thinking. So the
+action queue drains and then calls `nexus_screen_render_now()` directly, once
+per drained batch rather than once per action, and the armed timer harmlessly
+finds a clean dirty range afterwards. Safe because the action drain and the
+painter are the same work queue.
+
+The other half of the same idea: a screen that ticks only invalidates when a
+value it renders actually changed. The diagnostics list holds still for
+seconds at a time, and repainting 240 rows five times a second to redraw
+identical text is fill rate taken from whatever the user is doing.
+
 ### Input is logical, everywhere
 
 ```

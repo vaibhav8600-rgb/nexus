@@ -112,6 +112,7 @@ static void refresh_wpm(uint8_t raw)
 #endif
 
 /* -------------------------------------------------------------- battery -- */
+#include <zmk/events/activity_state_changed.h>
 #include <zmk/events/battery_state_changed.h>
 
 /* ------------------------------------------------------------- endpoint -- */
@@ -306,6 +307,27 @@ static int nexus_status_listener(const zmk_event_t *eh)
 			as_zmk_battery_state_changed(eh)->state_of_charge;
 		nexus_status_mark(NEXUS_STATUS_BATTERY);
 	}
+#if IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT)
+	else if (as_zmk_activity_state_changed(eh)) {
+		/*
+		 * ACTIVE <-> SLEEP only. IDLE is skipped on purpose: with the
+		 * stock CONFIG_ZMK_IDLE_TIMEOUT the dongle drops to IDLE after
+		 * 30 s of not typing, so chirping on it would mean a noise
+		 * every half minute you look away.
+		 */
+		static enum zmk_activity_state prev = ZMK_ACTIVITY_ACTIVE;
+		enum zmk_activity_state now =
+			as_zmk_activity_state_changed(eh)->state;
+
+		if (now == ZMK_ACTIVITY_SLEEP && prev != ZMK_ACTIVITY_SLEEP) {
+			nexus_sound_play(NEXUS_SOUND_SLEEP);
+		} else if (now == ZMK_ACTIVITY_ACTIVE &&
+			   prev == ZMK_ACTIVITY_SLEEP) {
+			nexus_sound_play(NEXUS_SOUND_WAKE);
+		}
+		prev = now;
+	}
+#endif
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 	else if (as_zmk_peripheral_battery_state_changed(eh)) {
 		const struct zmk_peripheral_battery_state_changed *p =
@@ -323,6 +345,9 @@ ZMK_SUBSCRIPTION(nexus_status, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_keycode_state_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_battery_state_changed);
+#if IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT)
+ZMK_SUBSCRIPTION(nexus_status, zmk_activity_state_changed);
+#endif
 #if IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)
 ZMK_SUBSCRIPTION(nexus_status, zmk_anti_idle_state);
 #endif

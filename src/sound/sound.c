@@ -82,6 +82,27 @@ static const struct note s_line[]      = { {C5,45},{G5,45},{C6,70}, N_END };
 static const struct note s_tetris[]    = { {C5,40},{E5,40},{G5,40},{C6,40},{E6,120}, N_END };
 static const struct note s_level[]     = { {G5,50},{C6,50},{E6,110}, N_END };
 
+/*
+ * Split halves. Four cues that have to be told apart in a second, so they are
+ * systematic rather than four unrelated jingles: rising = arrived, falling =
+ * gone, and the left half sits a fifth below the right one. Learn one and you
+ * know all four.
+ */
+static const struct note s_half_l_conn[] = { {C5,55},{REST,15},{G5,90}, N_END };
+static const struct note s_half_l_gone[] = { {G5,55},{REST,15},{C5,110}, N_END };
+static const struct note s_half_r_conn[] = { {G5,55},{REST,15},{D6,90}, N_END };
+static const struct note s_half_r_gone[] = { {D6,55},{REST,15},{G5,110}, N_END };
+
+/*
+ * Sleep and wake. Deliberately slower and softer than the half cues - this
+ * fires when nothing is happening, so it should read as a sigh rather than an
+ * alert.
+ */
+static const struct note s_sleep[] = {
+	{A5,90},{REST,25},{E5,90},{REST,25},{C5,200}, N_END };
+static const struct note s_wake[] = {
+	{C5,70},{REST,20},{E5,70},{REST,20},{A5,160}, N_END };
+
 /* Index order must match enum nexus_sound. */
 static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
 	[NEXUS_SOUND_STARTUP]       = s_startup,
@@ -101,6 +122,12 @@ static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
 	[NEXUS_SOUND_TETRIS_LINE]   = s_line,
 	[NEXUS_SOUND_TETRIS_TETRIS] = s_tetris,
 	[NEXUS_SOUND_TETRIS_LEVEL]  = s_level,
+	[NEXUS_SOUND_HALF_L_CONNECT]    = s_half_l_conn,
+	[NEXUS_SOUND_HALF_L_DISCONNECT] = s_half_l_gone,
+	[NEXUS_SOUND_HALF_R_CONNECT]    = s_half_r_conn,
+	[NEXUS_SOUND_HALF_R_DISCONNECT] = s_half_r_gone,
+	[NEXUS_SOUND_SLEEP]             = s_sleep,
+	[NEXUS_SOUND_WAKE]              = s_wake,
 };
 
 /* Which category each effect belongs to, so UI and game sound toggle apart. */

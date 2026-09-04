@@ -71,6 +71,14 @@ void nexus_screen_invalidate(void);
  */
 void nexus_screen_invalidate_rows(int y0, int y1);
 
+/**
+ * Paint any pending dirty range immediately, bypassing the coalesce window.
+ *
+ * For input handling only - a keypress should never wait out a timer sized
+ * for status events. Must be called from the NEXUS work queue.
+ */
+void nexus_screen_render_now(void);
+
 /** Raise the refresh class until the next screen change (e.g. mid-animation). */
 void nexus_screen_request_refresh(enum nexus_refresh rate);
 

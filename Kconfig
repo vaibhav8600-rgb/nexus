@@ -262,6 +262,45 @@ config NEXUS_SPLIT_SWAP_SIDES
 	  ZMK numbers peripherals by pairing order, not by physical side. Flip
 	  this if your dashboard shows the halves the wrong way round.
 
+config NEXUS_STATUS_LINK_TIMEOUT_MS
+	int "Treat a half as gone after N ms of silence (0 = never)"
+	default 150000
+	help
+	  How long a half may stay quiet before the dashboard demotes it to
+	  RECONNECTING and, with NEXUS_SOUND_SPLIT, plays the disconnect cue.
+
+	  This is inference, not observation. ZMK's split central raises no
+	  events at all - there is no "peripheral connected" or "peripheral
+	  lost" signal on the dongle side - so silence is the only evidence
+	  available that a half went away.
+
+	  That is why the default is long. Battery reports arrive every
+	  CONFIG_ZMK_BATTERY_REPORT_INTERVAL seconds (60 by default), so a
+	  timeout under about two intervals will announce a disconnect for a
+	  half that is simply between reports. 150000 is 2.5 intervals.
+
+	  A half with CONFIG_ZMK_SLEEP that dozes off also stops reporting and
+	  will be announced as disconnected, then as connected again when it
+	  wakes. The dongle genuinely cannot tell the two apart, and for a
+	  notification chirp the distinction does not matter much: either way
+	  that half is not there right now.
+
+	  Unlike NEXUS_STATUS_STALE_MS this never blanks the battery reading.
+
+config NEXUS_SOUND_SPLIT
+	bool "Chirp when a half connects or disconnects, and on sleep/wake"
+	depends on NEXUS_SOUND
+	default y
+	help
+	  Four half cues (rising = arrived, falling = gone; left a fifth below
+	  right) plus a slower pair for deep sleep and wake.
+
+	  Nothing is played for the halves connecting during boot - that is
+	  not news, and it would collide with the splash fanfare.
+
+	  Disconnect depends on NEXUS_STATUS_LINK_TIMEOUT_MS being non-zero;
+	  see the caveat there.
+
 config NEXUS_STATUS_STALE_MS
 	int "Blank a half's battery after N ms of silence (0 = never)"
 	default 0

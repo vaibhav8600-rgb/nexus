@@ -80,6 +80,22 @@ ignores the waveform. Replace it.
 The pot, or the duty cycle. NEXUS drives 50%, which is the loudest a square
 wave gets; there is no software volume.
 
+**A half chirps "disconnected" when nothing is wrong.**
+Expected, if it went to sleep. The dongle has no way to tell sleep from
+absence -- ZMK's split central raises no events at all, so a half being gone
+is only ever deduced from it having stopped reporting. Wake it and you get the
+connect cue back.
+
+If it happens while you are actively typing, the timeout is too short:
+`CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS` must be comfortably more than two
+`CONFIG_ZMK_BATTERY_REPORT_INTERVAL` periods (that interval is in *seconds*,
+the timeout in *milliseconds* -- 60 and 150000 respectively by default). Set
+it to `0` to switch the disconnect cue off entirely and keep only connects.
+
+**No chirp when a half comes back.**
+The first transition per half is silent on purpose, so the halves connecting
+at boot do not talk over the splash fanfare. The one after it will sound.
+
 ## Split
 
 **Halves will not pair.**

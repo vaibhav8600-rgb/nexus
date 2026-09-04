@@ -86,15 +86,25 @@ static uint8_t g_row_count;
 static uint8_t g_cursor;
 static char g_val[MAX_ROWS][VAL_MAX];
 
-static void refresh_values(void)
+/* Returns true if any rendered value actually changed. */
+static bool refresh_values(void)
 {
+	char prev[VAL_MAX];
+	bool changed = false;
+
 	for (uint8_t i = 0; i < g_row_count; i++) {
+		memcpy(prev, g_val[i], VAL_MAX);
+
 		if (g_rows[i].value) {
 			g_rows[i].value(g_val[i], VAL_MAX);
 		} else {
 			g_val[i][0] = '\0';
 		}
+		if (memcmp(prev, g_val[i], VAL_MAX) != 0) {
+			changed = true;
+		}
 	}
+	return changed;
 }
 
 /* Keep the cursor near the middle of the window, clamped at both ends. */
@@ -251,8 +261,15 @@ static bool list_action(enum nexus_action action)
 
 static void list_tick(void)
 {
-	refresh_values();
-	nexus_screen_invalidate();
+	/*
+	 * Only the diagnostics list ticks, and most of its readings hold
+	 * still for seconds at a time. Repainting all 240 rows five times a
+	 * second to redraw identical text is fill rate taken from whatever
+	 * the user is actually doing.
+	 */
+	if (refresh_values()) {
+		nexus_screen_invalidate();
+	}
 }
 
 /* ---- settings ---------------------------------------------------------- */

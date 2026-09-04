@@ -175,6 +175,24 @@ void nexus_screen_invalidate(void)
 	nexus_screen_invalidate_rows(0, GFX_H);
 }
 
+void nexus_screen_render_now(void)
+{
+	/*
+	 * The coalesce window in arm_paint() is there to throttle *status*
+	 * events, which arrive on their own schedule and do not need to be on
+	 * screen this instant. User input is the opposite: on an IDLE screen
+	 * the window is a full second, so a cursor move sat there waiting for
+	 * a timer that exists to rate-limit battery reports. That is the whole
+	 * of the "settings feels laggy" report.
+	 *
+	 * Safe to render straight from the caller because every caller is
+	 * already on the NEXUS work queue - the same context paint_work_fn
+	 * runs in, so this cannot race it. The armed timer still fires and
+	 * finds a clean dirty range, which is a no-op.
+	 */
+	render_dirty();
+}
+
 /* ---- scheduler --------------------------------------------------------- */
 
 static void idle_backlight(void)

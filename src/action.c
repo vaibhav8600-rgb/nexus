@@ -94,6 +94,14 @@ static void drain(struct k_work *work)
 	while (k_msgq_get(&g_actions, &action, K_NO_WAIT) == 0) {
 		handle((enum nexus_action)action);
 	}
+
+#if IS_ENABLED(CONFIG_NEXUS_DISPLAY)
+	/*
+	 * Once, after the whole queue is drained rather than once per action,
+	 * so holding a key down still costs one repaint per batch.
+	 */
+	nexus_screen_render_now();
+#endif
 }
 static K_WORK_DEFINE(g_drain, drain);
 

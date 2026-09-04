@@ -7,6 +7,7 @@
  * widget ever polls.
  */
 
+#include <nexus/sound.h>
 #include <nexus/status.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -33,6 +34,7 @@ static atomic_t g_pending;
 
 /* Last time each peripheral said anything, for the staleness sweep. */
 static int64_t g_seen[2];
+static bool g_announced[2];
 
 static void notify_work_cb(struct k_work *work)
 {
@@ -59,6 +61,59 @@ static K_WORK_DEFINE(g_notify_work, notify_work_cb);
 static void stale_work_cb(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_stale_work, stale_work_cb);
 
+/*
+ * Every link-state change for a half goes through here, which is the only
+ * reason the connect/disconnect chirps stay in sync with the dashboard: one
+ * place decides a half arrived or went away, so the sound and the pixels can
+ * never disagree.
+ *
+ * `slot` is ZMK's peripheral index; `left` is which side of the screen that
+ * turned out to be after CONFIG_NEXUS_SPLIT_SWAP_SIDES.
+ */
+static uint32_t set_link(int slot, bool left, enum nexus_link_state to)
+{
+	enum nexus_link_state *link =
+		left ? &g_status.link_left : &g_status.link_right;
+
+	if (*link == to) {
+		return 0;
+	}
+
+	bool was_up = (*link == NEXUS_LINK_CONNECTED);
+	bool now_up = (to == NEXUS_LINK_CONNECTED);
+
+	*link = to;
+
+	if (IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT) && was_up != now_up) {
+		/* Nothing on the very first report: the halves connecting as
+		 * the dongle boots is not news, and it would collide with the
+		 * splash fanfare. */
+		if (g_announced[slot]) {
+			nexus_sound_play(now_up ? (left ? NEXUS_SOUND_HALF_L_CONNECT
+						       : NEXUS_SOUND_HALF_R_CONNECT)
+						: (left ? NEXUS_SOUND_HALF_L_DISCONNECT
+						       : NEXUS_SOUND_HALF_R_DISCONNECT));
+		}
+		g_announced[slot] = true;
+	}
+
+	return NEXUS_STATUS_LINKS;
+}
+
+/* Quarter of the shortest armed timeout, so neither fires late. */
+static uint32_t sweep_period_ms(void)
+{
+	uint32_t p = UINT32_MAX;
+
+	if (CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS > 0) {
+		p = MIN(p, (uint32_t)CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS / 4);
+	}
+	if (CONFIG_NEXUS_STATUS_STALE_MS > 0) {
+		p = MIN(p, (uint32_t)CONFIG_NEXUS_STATUS_STALE_MS / 4);
+	}
+	return p;
+}
+
 static void stale_work_cb(struct k_work *work)
 {
 	ARG_UNUSED(work);
@@ -69,17 +124,42 @@ static void stale_work_cb(struct k_work *work)
 	for (int i = 0; i < 2; i++) {
 		bool left = (i == 0) != IS_ENABLED(CONFIG_NEXUS_SPLIT_SWAP_SIDES);
 		uint8_t *batt = left ? &g_status.battery_left : &g_status.battery_right;
-		enum nexus_link_state *link = left ? &g_status.link_left : &g_status.link_right;
 
-		if (g_seen[i] == 0 || *link == NEXUS_LINK_DISCONNECTED) {
+		if (g_seen[i] == 0) {
 			continue;
 		}
-		if (now - g_seen[i] > CONFIG_NEXUS_STATUS_STALE_MS) {
-			/* Reached only when the timeout is enabled; see the
-			 * guard in nexus_status_init(). */
+
+		int64_t quiet = now - g_seen[i];
+
+		/*
+		 * Two independent timeouts on the same silence, because they
+		 * answer different questions.
+		 *
+		 * The link timeout is how the disconnect chirp exists at all.
+		 * ZMK's split central raises no events whatsoever - not for
+		 * connect, not for disconnect - so on the dongle side "that
+		 * half is gone" is not observable, only inferrable from it
+		 * having stopped reporting. Hence the long default: battery
+		 * reports arrive every CONFIG_ZMK_BATTERY_REPORT_INTERVAL
+		 * seconds (60 by default), so anything under ~2 intervals
+		 * would chirp at a half that is merely between reports.
+		 */
+		if (CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS > 0 &&
+		    quiet > CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS) {
+			changed |= set_link(i, left, NEXUS_LINK_RECONNECTING);
+		}
+
+		/*
+		 * The battery timeout is separate and off by default: a half
+		 * that is asleep still HAS a charge level, we just heard it a
+		 * while ago, and blanking it is worse than showing a slightly
+		 * old number (Section 26).
+		 */
+		if (CONFIG_NEXUS_STATUS_STALE_MS > 0 &&
+		    quiet > CONFIG_NEXUS_STATUS_STALE_MS &&
+		    *batt != NEXUS_BATTERY_UNKNOWN) {
 			*batt = NEXUS_BATTERY_UNKNOWN;
-			*link = NEXUS_LINK_RECONNECTING;
-			changed |= NEXUS_STATUS_BATTERY | NEXUS_STATUS_LINKS;
+			changed |= NEXUS_STATUS_BATTERY;
 		}
 	}
 
@@ -88,7 +168,7 @@ static void stale_work_cb(struct k_work *work)
 	}
 
 	k_work_reschedule_for_queue(nexus_workq(), &g_stale_work,
-				    K_MSEC(CONFIG_NEXUS_STATUS_STALE_MS / 4));
+				    K_MSEC(sweep_period_ms()));
 }
 
 struct nexus_status *nexus_status_mut(void)
@@ -121,13 +201,12 @@ void nexus_status_peripheral_battery(uint8_t source, uint8_t level)
 
 	if (left) {
 		g_status.battery_left = level;
-		g_status.link_left = NEXUS_LINK_CONNECTED;
 	} else {
 		g_status.battery_right = level;
-		g_status.link_right = NEXUS_LINK_CONNECTED;
 	}
 
-	nexus_status_mark(NEXUS_STATUS_BATTERY | NEXUS_STATUS_LINKS);
+	nexus_status_mark(NEXUS_STATUS_BATTERY |
+			  set_link(source, left, NEXUS_LINK_CONNECTED));
 }
 
 int nexus_status_subscribe(nexus_status_cb_t cb)
@@ -229,8 +308,9 @@ void nexus_status_init(void)
 	 * than showing a slightly old number. Not arming the sweep at all is
 	 * also cheaper than arming it and returning early forever.
 	 */
-	if (CONFIG_NEXUS_STATUS_STALE_MS > 0) {
+	if (CONFIG_NEXUS_STATUS_LINK_TIMEOUT_MS > 0 ||
+	    CONFIG_NEXUS_STATUS_STALE_MS > 0) {
 		k_work_reschedule_for_queue(nexus_workq(), &g_stale_work,
-					    K_MSEC(CONFIG_NEXUS_STATUS_STALE_MS / 4));
+					    K_MSEC(sweep_period_ms()));
 	}
 }

@@ -33,6 +33,18 @@ enum nexus_sound {
 	NEXUS_SOUND_TETRIS_LINE,
 	NEXUS_SOUND_TETRIS_TETRIS,
 	NEXUS_SOUND_TETRIS_LEVEL,
+
+	/* Split halves. Connect is observed; disconnect is inferred from
+	 * silence - the split central raises no events at all, so the dongle
+	 * has nothing better to go on. See nexus_status_link_timeout_check(). */
+	NEXUS_SOUND_HALF_L_CONNECT,
+	NEXUS_SOUND_HALF_L_DISCONNECT,
+	NEXUS_SOUND_HALF_R_CONNECT,
+	NEXUS_SOUND_HALF_R_DISCONNECT,
+
+	NEXUS_SOUND_SLEEP,
+	NEXUS_SOUND_WAKE,
+
 	NEXUS_SOUND_COUNT,
 };
 
