@@ -39,6 +39,15 @@ jobs:
         with:
           path: nexus
 
+      # Makes a pasted log self-identifying. Runs are per-commit, so when you
+      # are iterating on CI it is easy to read the previous run's failure and
+      # conclude a fix did not work.
+      - name: Which commit is this
+        run: |
+          cd nexus
+          echo "commit:  $(git rev-parse --short HEAD)"
+          echo "subject: $(git log -1 --format=%s)"
+
       - name: Cache west modules
         uses: actions/cache@v4
         with:
