@@ -75,6 +75,8 @@ static void stale_work_cb(struct k_work *work)
 			continue;
 		}
 		if (now - g_seen[i] > CONFIG_NEXUS_STATUS_STALE_MS) {
+			/* Reached only when the timeout is enabled; see the
+			 * guard in nexus_status_init(). */
 			*batt = NEXUS_BATTERY_UNKNOWN;
 			*link = NEXUS_LINK_RECONNECTING;
 			changed |= NEXUS_STATUS_BATTERY | NEXUS_STATUS_LINKS;
@@ -220,6 +222,15 @@ const char *nexus_battery_text(uint8_t percent, char *buf, size_t len)
 
 void nexus_status_init(void)
 {
-	k_work_reschedule_for_queue(nexus_workq(), &g_stale_work,
-				    K_MSEC(CONFIG_NEXUS_STATUS_STALE_MS / 4));
+	/*
+	 * A zero timeout means "keep the last level we heard", which is the
+	 * default: halves with deep sleep stop reporting when idle, and
+	 * blanking a good reading because the keyboard was resting is worse
+	 * than showing a slightly old number. Not arming the sweep at all is
+	 * also cheaper than arming it and returning early forever.
+	 */
+	if (CONFIG_NEXUS_STATUS_STALE_MS > 0) {
+		k_work_reschedule_for_queue(nexus_workq(), &g_stale_work,
+					    K_MSEC(CONFIG_NEXUS_STATUS_STALE_MS / 4));
+	}
 }

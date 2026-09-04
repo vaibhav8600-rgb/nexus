@@ -29,11 +29,11 @@
 #define COL_RW (GFX_W - NEXUS_PAD - COL_R)       /* 108 */
 
 #define BRAND_Y NEXUS_PAD                        /*   9 */
-#define BRAND_H 52
-#define ROW1_Y (BRAND_Y + BRAND_H + NEXUS_GAP)   /*  68 */
-#define ROW1_H 40
-#define ROW2_Y (ROW1_Y + ROW1_H + NEXUS_GAP)     /* 115 */
-#define ROW2_H 40
+#define BRAND_H 56
+#define ROW1_Y (BRAND_Y + BRAND_H + NEXUS_GAP)   /*  72 */
+#define ROW1_H 38
+#define ROW2_Y (ROW1_Y + ROW1_H + NEXUS_GAP)     /* 117 */
+#define ROW2_H 38
 #define BAT_Y (ROW2_Y + ROW2_H + NEXUS_GAP)      /* 162 */
 #define BAT_H 69                                 /* ends at 231 */
 
@@ -80,62 +80,73 @@ static void draw_brand(void)
 {
 	nexus_draw_card(COL_L, BRAND_Y, NEXUS_CONTENT_W, BRAND_H);
 
-	int scale = fit_scale(NEXUS_PRODUCT, NEXUS_CONTENT_W - 2 * INNER,
-			      NEXUS_TXT_BIG);
+	/*
+	 * Scale 5 where it fits: at NEXUS_TXT_BIG the wordmark was a caption
+	 * with a shadow rather than the product's name. Five characters come
+	 * to 145x35, which fills the plate the way the reference does, and
+	 * fit_scale() still steps down for a longer CONFIG_NEXUS_PRODUCT.
+	 */
+	int scale = fit_scale(NEXUS_PRODUCT, NEXUS_CONTENT_W - 2 * INNER, 5);
 
 	nexus_draw_wordmark(GFX_W / 2,
-			    BRAND_Y + (BRAND_H - gfx_text_h(scale)) / 2 - 2,
+			    BRAND_Y + (BRAND_H - gfx_text_h(scale)) / 2,
 			    NEXUS_PRODUCT, scale);
 }
 
 static void draw_link(const struct nexus_status *st)
 {
 	const struct nexus_theme *t = nexus_theme();
+	bool live = (st->link_host == NEXUS_LINK_CONNECTED);
+	bool on_usb = (st->endpoint == NEXUS_ENDPOINT_USB);
+	bool on_ble = (st->endpoint == NEXUS_ENDPOINT_BLE);
 
 	nexus_draw_card(COL_L, ROW1_Y, COL_W, ROW1_H);
-	nexus_draw_caption(COL_L + INNER, ROW1_Y + 6, "LINK");
 
-	/* Lock indicators, right-aligned. Drawn as three separate glyphs so
-	 * each can carry its own colour (Section 25). */
-	static const char *const locks[3] = { "C", "N", "S" };
-	int lx = COL_L + COL_W - INNER - 3 * 6 + 1;
+	/*
+	 * Both transports, always, with the selected one lit - the reference
+	 * shows the whole cluster rather than just the winner, and "USB" alone
+	 * cannot tell you whether BLE is even an option on this build.
+	 */
+	int x = COL_L + INNER;
+	int y = ROW1_Y + 7;
 
-	for (int i = 0; i < 3; i++) {
-		bool on = (i == 0) ? st->caps_lock
-				   : (i == 1) ? st->num_lock : st->scroll_lock;
-
-		gfx_text(lx + i * 6, ROW1_Y + 6, locks[i], NEXUS_TXT_CAPTION,
-			 on ? t->warning : t->muted, GFX_OPAQUE);
-	}
-
-	/* Transport tag, plus the active BLE profile when that is what we are
-	 * on. "---" rather than a lie when there is no endpoint at all. */
-	char buf[10];
-	int n = 0;
-
-	switch (st->endpoint) {
-	case NEXUS_ENDPOINT_USB:
-		buf[n++] = 'U';
-		buf[n++] = 'S';
-		buf[n++] = 'B';
-		break;
-	case NEXUS_ENDPOINT_BLE:
-		buf[n++] = 'B';
-		buf[n++] = 'T';
-		buf[n++] = ' ';
-		buf[n++] = (char)('1' + (st->bt_profile % 9));
-		break;
-	default:
-		buf[n++] = '-';
-		buf[n++] = '-';
-		buf[n++] = '-';
-		break;
-	}
-	buf[n] = '\0';
-
-	gfx_text(COL_L + INNER, ROW1_Y + 18, buf, NEXUS_TXT_BODY,
-		 st->link_host == NEXUS_LINK_CONNECTED ? t->accent : t->muted,
+	gfx_icon(x, y, GFX_ICON_USB, 1, on_usb ? (live ? t->success : t->warning)
+					      : t->muted, GFX_OPAQUE);
+	x += gfx_icon_w(1) + 3;
+	gfx_text(x, y, "USB", NEXUS_TXT_CAPTION,
+		 on_usb ? (live ? t->success : t->warning) : t->muted,
 		 GFX_OPAQUE);
+	x += gfx_text_w("USB", NEXUS_TXT_CAPTION) + 7;
+
+	gfx_icon(x, y, GFX_ICON_BT, 1, on_ble ? (live ? t->success : t->warning)
+					      : t->muted, GFX_OPAQUE);
+	x += gfx_icon_w(1) + 2;
+
+	/* BLE profile number rides with the rune, as "BT 2" would read wrong
+	 * when USB is the active endpoint. */
+	char prof[4];
+
+	gfx_utoa((uint32_t)st->bt_profile + 1U, prof, sizeof(prof), 0);
+	gfx_text(x, y, prof, NEXUS_TXT_CAPTION,
+		 on_ble ? (live ? t->success : t->warning) : t->muted,
+		 GFX_OPAQUE);
+
+	/*
+	 * Locks along the bottom. The padlock IS caps - the reference leads
+	 * its indicator row with one - so num and scroll are the only two that
+	 * still need a letter.
+	 */
+	int lx = COL_L + INNER;
+	int ly = ROW1_Y + ROW1_H - 7 - gfx_text_h(NEXUS_TXT_CAPTION);
+
+	gfx_icon(lx, ly, GFX_ICON_LOCK, 1,
+		 st->caps_lock ? t->warning : t->muted, GFX_OPAQUE);
+	lx += gfx_icon_w(1) + 5;
+
+	gfx_text(lx, ly, "N", NEXUS_TXT_CAPTION,
+		 st->num_lock ? t->warning : t->muted, GFX_OPAQUE);
+	gfx_text(lx + 7, ly, "S", NEXUS_TXT_CAPTION,
+		 st->scroll_lock ? t->warning : t->muted, GFX_OPAQUE);
 }
 
 static void draw_layer(const struct nexus_status *st)
@@ -157,7 +168,7 @@ static void draw_layer(const struct nexus_status *st)
 
 	int avail = COL_RW - 2 * INNER;
 
-	gfx_text(COL_R + INNER, ROW1_Y + 18, name,
+	gfx_text(COL_R + INNER, ROW1_Y + 17, name,
 		 fit_scale(name, avail, NEXUS_TXT_BODY), t->value, GFX_OPAQUE);
 }
 
@@ -184,7 +195,7 @@ static void draw_wpm(const struct nexus_status *st)
 	char buf[8];
 
 	nexus_draw_card(COL_R, ROW2_Y, COL_RW, ROW2_H);
-	nexus_draw_caption(COL_R + INNER, ROW2_Y + 6, "WPM");
+	nexus_draw_caption(COL_R + INNER, ROW2_Y + 5, "WPM");
 
 	/* Zero-padded to three digits so the numerals never shift sideways as
 	 * the value crosses 10 or 100 (Section 27). */
@@ -192,7 +203,7 @@ static void draw_wpm(const struct nexus_status *st)
 
 	int right = COL_R + COL_RW - INNER;
 
-	gfx_text(right - gfx_text_w(buf, NEXUS_TXT_VALUE), ROW2_Y + 15, buf,
+	gfx_text(right - gfx_text_w(buf, NEXUS_TXT_VALUE), ROW2_Y + 14, buf,
 		 NEXUS_TXT_VALUE, t->accent, GFX_OPAQUE);
 }
 

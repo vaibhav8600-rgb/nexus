@@ -118,6 +118,25 @@ void gfx_text(int x, int y, const char *s, int scale, gfx_color c, uint8_t a);
 /** Centred on @p cx. */
 void gfx_text_c(int cx, int y, const char *s, int scale, gfx_color c, uint8_t a);
 
+/* ---- icons ------------------------------------------------------------- */
+/*
+ * The 5x7 font is ASCII 32..90, so the reference design's Bluetooth rune,
+ * monitor and padlock have nowhere to live in it. A separate 5x7 table keeps
+ * the font's range checks simple and costs 15 bytes.
+ */
+enum gfx_icon {
+	GFX_ICON_BT = 0, /* Bluetooth rune */
+	GFX_ICON_USB,    /* monitor, i.e. "wired to a host" */
+	GFX_ICON_LOCK,   /* padlock, for caps lock */
+	GFX_ICON_COUNT,
+};
+
+/** Same cell and scaling as gfx_text(), so icons line up with text. */
+void gfx_icon(int x, int y, enum gfx_icon icon, int scale, gfx_color c,
+	      uint8_t a);
+/** Width of one icon at @p scale, matching gfx_text_w() for a single glyph. */
+int gfx_icon_w(int scale);
+
 /**
  * Unsigned to decimal, without printf.
  *

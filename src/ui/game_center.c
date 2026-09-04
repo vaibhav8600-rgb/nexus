@@ -26,6 +26,7 @@
 #define ICON_CY (CARD_Y + 48)
 #define NAME_Y (CARD_Y + CARD_H - 34)
 #define ARROW_Y (CARD_Y + CARD_H / 2 - 10)
+#define HINT_Y 162
 #define HIGH_Y 176
 
 static uint8_t g_selected;
@@ -72,13 +73,24 @@ static void gc_draw(void)
 		}
 	}
 
-	if (gfx_hits(ARROW_Y, gfx_text_h(NEXUS_TXT_BODY))) {
-		gfx_color arrow = (count > 1) ? t->caption : t->muted;
-
-		gfx_text(NEXUS_PAD + 2, ARROW_Y, "<", NEXUS_TXT_BODY, arrow,
-			 GFX_OPAQUE);
+	/*
+	 * Arrows only when they lead somewhere. With a single game the action
+	 * button cannot produce PREVIOUS or NEXT at all, so drawing "< >" was
+	 * advertising a control that does not exist - which is exactly what
+	 * made the launcher feel broken. What the button DOES do is spelled
+	 * out instead, the same way the game screen spells out HOLD=EXIT.
+	 */
+	if (gfx_hits(ARROW_Y, gfx_text_h(NEXUS_TXT_BODY)) && count > 1) {
+		gfx_text(NEXUS_PAD + 2, ARROW_Y, "<", NEXUS_TXT_BODY,
+			 t->caption, GFX_OPAQUE);
 		gfx_text(GFX_W - NEXUS_PAD - 2 - gfx_text_w(">", NEXUS_TXT_BODY),
-			 ARROW_Y, ">", NEXUS_TXT_BODY, arrow, GFX_OPAQUE);
+			 ARROW_Y, ">", NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
+	}
+
+	if (gfx_hits(HINT_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
+		nexus_draw_caption_c(GFX_W / 2, HINT_Y,
+				     count ? "ACTION=PLAY   HOLD=HOME"
+					   : "HOLD=HOME");
 	}
 
 	if (gfx_hits(HIGH_Y, 46)) {

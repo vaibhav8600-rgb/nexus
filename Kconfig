@@ -220,8 +220,18 @@ config NEXUS_SPLIT_SWAP_SIDES
 	  this if your dashboard shows the halves the wrong way round.
 
 config NEXUS_STATUS_STALE_MS
-	int "Treat a peripheral as disconnected after N ms of silence"
-	default 120000
+	int "Blank a half's battery after N ms of silence (0 = never)"
+	default 0
+	help
+	  Off by default, and that is deliberate. A half with CONFIG_ZMK_SLEEP
+	  stops reporting battery when it goes idle, so any timeout here
+	  eventually blanks a perfectly good reading and the dashboard shows
+	  "--" for a keyboard that is working fine.
+
+	  Section 26 wants "--" when the level is genuinely unavailable, not
+	  when it is merely old: an idle half has a battery level, we just
+	  heard it a while ago. Set a value only if you would rather see "--"
+	  than a stale number.
 
 # --------------------------------------------------------------------------
 # Diagnostics
