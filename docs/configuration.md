@@ -57,6 +57,12 @@ Full details in [splash.md](splash.md).
 There is also a runtime toggle on the Settings screen. Volume is the hardware
 potentiometer; there is no software volume and NEXUS does not pretend otherwise.
 
+Every effect sits in octaves 5-7. A passive piezo is a mechanical resonator
+rather than a speaker, and its output peaks somewhere near 2-4 kHz: the same
+50% square wave that is faint at 500 Hz is loud and bright at 2 kHz. This is
+why snake-module's effects live on B6 and E7, and why pitching NEXUS's tables
+up an octave did more for how they sound than any change to the notes.
+
 ### Half connect and disconnect
 
 Four cues, deliberately systematic rather than four unrelated jingles - rising

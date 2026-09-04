@@ -128,10 +128,6 @@ enum gfx_icon {
 	GFX_ICON_BT = 0, /* Bluetooth rune                  */
 	GFX_ICON_USB,    /* monitor: "wired to a host"      */
 	GFX_ICON_LOCK,   /* padlock, for caps lock          */
-	GFX_ICON_CTRL,   /* caret                           */
-	GFX_ICON_SHIFT,  /* up arrow                        */
-	GFX_ICON_ALT,    /* option stroke                   */
-	GFX_ICON_GUI,    /* four panes, the usual GUI key   */
 	GFX_ICON_MOUSE,  /* cursor arrow, for the jiggler   */
 	GFX_ICON_COUNT,
 };
@@ -141,6 +137,20 @@ void gfx_icon(int x, int y, enum gfx_icon icon, int scale, gfx_color c,
 	      uint8_t a);
 /** Width of one icon at @p scale, matching gfx_text_w() for a single glyph. */
 int gfx_icon_w(int scale);
+
+/**
+ * Draw an arbitrary 1-bit bitmap, row-major, bit N of a row = column N.
+ *
+ * The 5x7 icon table above is sized for things that sit inline with text. A
+ * modifier symbol is not one of those: at 5x7 the caret, the option stroke and
+ * the four panes are all a smudge, and no amount of scaling fixes a shape that
+ * was never drawn. This takes the real 11x11 forms instead.
+ *
+ * @p w may be up to 16. Rows outside the current band are skipped, so calling
+ * it once per band costs nothing for the bands it does not touch.
+ */
+void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
+	       gfx_color c, uint8_t a);
 
 /**
  * Unsigned to decimal, without printf.

@@ -37,7 +37,7 @@
 #define ROW_H 24
 #define ROW_PITCH 27
 #define VIS_ROWS 7                 /* 26 + 7*27 = 215, hint sits below */
-#define HINT_Y 222
+#define HINT_Y 220
 #define MAX_ROWS 14                /* total items; VIS_ROWS are on screen */
 #define VAL_MAX 16
 #define INNER 8
@@ -130,8 +130,8 @@ static void list_draw(void)
 	const struct nexus_theme *t = nexus_theme();
 	uint8_t first = first_visible();
 
-	if (gfx_hits(TITLE_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
-		nexus_draw_caption(NEXUS_PAD, TITLE_Y, g_title);
+	if (gfx_hits(TITLE_Y, gfx_text_h(NEXUS_TXT_LABEL))) {
+		nexus_draw_label(NEXUS_PAD, TITLE_Y, g_title);
 
 		/* Position in the list, so a scrolled window does not look
 		 * like the whole list. */
@@ -148,8 +148,8 @@ static void list_draw(void)
 			gfx_utoa(g_row_count, &pos[n], (int)sizeof(pos) - n, 0);
 
 			gfx_text(NEXUS_PAD + NEXUS_CONTENT_W -
-					 gfx_text_w(pos, NEXUS_TXT_CAPTION),
-				 TITLE_Y, pos, NEXUS_TXT_CAPTION, t->caption,
+					 gfx_text_w(pos, NEXUS_TXT_LABEL),
+				 TITLE_Y, pos, NEXUS_TXT_LABEL, t->caption,
 				 GFX_OPAQUE);
 		}
 	}
@@ -204,8 +204,15 @@ static void list_draw(void)
 	 * Saying so is what makes a one-button menu usable, and it is why BACK
 	 * is a row rather than a second meaning for hold.
 	 */
-	if (gfx_hits(HINT_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
-		nexus_draw_caption_c(GFX_W / 2, HINT_Y, "TAP=NEXT   HOLD=SELECT");
+	/*
+	 * Shorter than "HOLD=SELECT" because it is now twice the size: the
+	 * old string is 22 characters, which at NEXUS_TXT_LABEL is 262px on
+	 * a 240px panel. A legible hint that fits beats a precise one that
+	 * runs off the screen.
+	 */
+	if (gfx_hits(HINT_Y, gfx_text_h(NEXUS_TXT_LABEL))) {
+		gfx_text_c(GFX_W / 2, HINT_Y, "TAP=NEXT  HOLD=OK",
+			   NEXUS_TXT_LABEL, t->caption, GFX_OPAQUE);
 	}
 }
 

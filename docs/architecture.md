@@ -122,6 +122,26 @@ value it renders actually changed. The diagnostics list holds still for
 seconds at a time, and repainting 240 rows five times a second to redraw
 identical text is fill rate taken from whatever the user is doing.
 
+### The panel is on SPIM3, not SPIM0
+
+On an nRF52840 only SPIM3 can exceed 8 MHz: `nrf52840.dtsi` gives spi0/1/2
+`max-frequency = DT_FREQ_M(8)` and spi3 `DT_FREQ_M(32)`. The driver **clamps**
+to that ceiling rather than reporting anything - `MIN(spi_cfg->frequency,
+max_freq)` in `spi_nrfx_spim.c` - so a shield asking spi0 for 30 MHz quietly
+gets 8, and nothing in the build log says so.
+
+The difference is not marginal. A full 240x240 RGB565 frame is 115,200 bytes:
+
+| | 8 MHz (spi0) | 30 MHz (spi3) |
+| --- | --- | --- |
+| full panel | ~115 ms | ~31 ms |
+| Tetris well only | ~98 ms | ~26 ms |
+
+Tetris repaints the well every gravity step, so on spi0 the game was bounded at
+roughly 10 frames a second by bus time alone, before drawing anything. spi3 is
+free on a nice_nano (the board claims only spi1) and, unlike spi0, does not
+share a peripheral block with i2c0.
+
 ### Input is logical, everywhere
 
 ```

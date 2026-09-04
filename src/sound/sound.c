@@ -23,23 +23,33 @@ struct note {
 
 #define N_END { 0, 0 }
 
-/* Equal-tempered pitches, only the ones actually used. */
-#define C4 262
-#define E4 330
+/*
+ * Equal-tempered pitches, only the ones actually used.
+ *
+ * Everything sits in octaves 5-7 on purpose, and this is the one change that
+ * makes the most audible difference to the whole build.
+ *
+ * A passive piezo is not a speaker with a flat response - it is a mechanical
+ * resonator, and its output peaks somewhere around 2-4 kHz. Drive it at 500 Hz
+ * and it is quiet and dull no matter what duty cycle you use; drive it near
+ * resonance and the same 50% square wave is dramatically louder and brighter.
+ * That is why snake-module's effects live on B6 and E7 rather than in the
+ * middle of a piano, and why NEXUS's old C5-G6 tables sounded weak on the
+ * exact same hardware.
+ *
+ * Octave 4 is gone entirely. Nothing down there was audible enough to be worth
+ * the flash.
+ */
 #define G4 392
-#define A4 440
-#define C5 523
-#define D5 587
-#define E5 659
-#define F5 698
-#define G5 784
-#define A5 880
-#define B5 988
 #define C6 1047
-#define D6 1175
 #define E6 1319
-#define F6 1397
 #define G6 1568
+#define A6 1760
+#define C7 2093
+#define D7 2349
+#define E7 2637
+#define F7 2794
+#define G7 3136
 #define REST 0
 
 /*
@@ -55,32 +65,42 @@ struct note {
  * has no envelope of its own - the gaps ARE the articulation, and without
  * them a run of notes smears into one tone.
  *
+ * Pitched an octave above where it started, into the buzzer's loud band. Same
+ * tune, considerably more of it actually reaching the room.
+ *
  * About 1.7 s, comfortably inside the 3.5 s splash it plays under.
  */
 static const struct note s_startup[]   = {
-	{E5,90},{REST,25},{E5,90},{REST,25},{G5,150},{REST,30},
-	{C6,110},{REST,20},{E6,110},{REST,20},{G6,220},{REST,60},
-	{F6,110},{REST,20},{D6,110},{REST,20},
-	{G5,90},{REST,25},{C6,340},
+	{E6,90},{REST,25},{E6,90},{REST,25},{G6,150},{REST,30},
+	{C7,110},{REST,20},{E7,110},{REST,20},{G7,220},{REST,60},
+	{F7,110},{REST,20},{D7,110},{REST,20},
+	{G6,90},{REST,25},{C7,340},
 	N_END
 };
 
-static const struct note s_select[]    = { {A5,25}, N_END };
-static const struct note s_back[]      = { {E5,25}, N_END };
-static const struct note s_connect[]   = { {G5,60},{C6,90}, N_END };
-static const struct note s_disconnect[]= { {C6,60},{G5,90}, N_END };
-static const struct note s_menu_open[] = { {E5,30},{A5,45}, N_END };
-static const struct note s_menu_sel[]  = { {C6,45}, N_END };
-static const struct note s_game_start[]= { {C5,60},{G5,60},{C6,110}, N_END };
-static const struct note s_pause[]     = { {A5,50},{E5,80}, N_END };
-static const struct note s_resume[]    = { {E5,50},{A5,80}, N_END };
-static const struct note s_game_over[] = { {G5,110},{E5,110},{C5,110},{G4,220}, N_END };
-static const struct note s_move[]      = { {E4,14}, N_END };
-static const struct note s_rotate[]    = { {A4,18}, N_END };
-static const struct note s_drop[]      = { {C4,40}, N_END };
-static const struct note s_line[]      = { {C5,45},{G5,45},{C6,70}, N_END };
-static const struct note s_tetris[]    = { {C5,40},{E5,40},{G5,40},{C6,40},{E6,120}, N_END };
-static const struct note s_level[]     = { {G5,50},{C6,50},{E6,110}, N_END };
+static const struct note s_select[]    = { {A6,25}, N_END };
+static const struct note s_back[]      = { {E6,25}, N_END };
+static const struct note s_connect[]   = { {G6,60},{C7,90}, N_END };
+static const struct note s_disconnect[]= { {C7,60},{G6,90}, N_END };
+static const struct note s_menu_open[] = { {E6,30},{A6,45}, N_END };
+static const struct note s_menu_sel[]  = { {C7,45}, N_END };
+static const struct note s_game_start[]= { {C6,60},{G6,60},{C7,110}, N_END };
+static const struct note s_pause[]     = { {A6,50},{E6,80}, N_END };
+static const struct note s_resume[]    = { {E6,50},{A6,80}, N_END };
+
+/* Game over is the one thing allowed to end low - a fall to G4 reads as
+ * "that's over" in a way no bright pitch does, and it is the last thing you
+ * hear rather than something that has to cut through play. */
+static const struct note s_game_over[] = { {G6,110},{E6,110},{C6,110},{G4,260}, N_END };
+
+/* Gameplay blips. Short, and now high enough to be heard over a keyboard.
+ * They still descend move > rotate > drop so the three stay distinct. */
+static const struct note s_move[]      = { {E6,14}, N_END };
+static const struct note s_rotate[]    = { {A6,18}, N_END };
+static const struct note s_drop[]      = { {C6,40}, N_END };
+static const struct note s_line[]      = { {C6,45},{G6,45},{C7,70}, N_END };
+static const struct note s_tetris[]    = { {C6,40},{E6,40},{G6,40},{C7,40},{E7,120}, N_END };
+static const struct note s_level[]     = { {G6,50},{C7,50},{E7,110}, N_END };
 
 /*
  * Split halves. Four cues that have to be told apart in a second, so they are
@@ -88,10 +108,10 @@ static const struct note s_level[]     = { {G5,50},{C6,50},{E6,110}, N_END };
  * gone, and the left half sits a fifth below the right one. Learn one and you
  * know all four.
  */
-static const struct note s_half_l_conn[] = { {C5,55},{REST,15},{G5,90}, N_END };
-static const struct note s_half_l_gone[] = { {G5,55},{REST,15},{C5,110}, N_END };
-static const struct note s_half_r_conn[] = { {G5,55},{REST,15},{D6,90}, N_END };
-static const struct note s_half_r_gone[] = { {D6,55},{REST,15},{G5,110}, N_END };
+static const struct note s_half_l_conn[] = { {C6,55},{REST,15},{G6,90}, N_END };
+static const struct note s_half_l_gone[] = { {G6,55},{REST,15},{C6,110}, N_END };
+static const struct note s_half_r_conn[] = { {G6,55},{REST,15},{D7,90}, N_END };
+static const struct note s_half_r_gone[] = { {D7,55},{REST,15},{G6,110}, N_END };
 
 /*
  * Sleep and wake. Deliberately slower and softer than the half cues - this
@@ -99,9 +119,9 @@ static const struct note s_half_r_gone[] = { {D6,55},{REST,15},{G5,110}, N_END }
  * alert.
  */
 static const struct note s_sleep[] = {
-	{A5,90},{REST,25},{E5,90},{REST,25},{C5,200}, N_END };
+	{A6,90},{REST,25},{E6,90},{REST,25},{C6,200}, N_END };
 static const struct note s_wake[] = {
-	{C5,70},{REST,20},{E5,70},{REST,20},{A5,160}, N_END };
+	{C6,70},{REST,20},{E6,70},{REST,20},{A6,160}, N_END };
 
 /* Index order must match enum nexus_sound. */
 static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
@@ -130,10 +150,18 @@ static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
 	[NEXUS_SOUND_WAKE]              = s_wake,
 };
 
-/* Which category each effect belongs to, so UI and game sound toggle apart. */
+/*
+ * Which category each effect belongs to, so UI and game sound toggle apart.
+ *
+ * Bounded at both ends on purpose. An open-ended `>= GAME_START` silently
+ * swept up everything added to the end of the enum later, which is how the
+ * split-half and sleep chirps - status sounds, nothing to do with games -
+ * ended up gated behind CONFIG_NEXUS_GAME_SOUND.
+ */
 static bool effect_enabled(enum nexus_sound id)
 {
-	bool game = id >= NEXUS_SOUND_GAME_START;
+	bool game = (id >= NEXUS_SOUND_GAME_START &&
+		     id <= NEXUS_SOUND_TETRIS_LEVEL);
 
 	if (game) {
 		return IS_ENABLED(CONFIG_NEXUS_GAME_SOUND);
@@ -175,8 +203,15 @@ void nexus_sound_play(enum nexus_sound id)
 
 	/* Last effect wins. Queueing them would lag behind fast gameplay and
 	 * sound worse than simply cutting to the newest event. */
-	g_seq = s_table[id];
+	/*
+	 * Position first, then the sequence. step() runs on the system work
+	 * queue and can preempt this: with the old order it could observe the
+	 * new (short) sequence still carrying the old sequence's index and
+	 * read past the end of it. Zeroing first means every interleaving
+	 * sees a valid index, because index 0 is valid for every sequence.
+	 */
 	g_pos = 0;
+	g_seq = s_table[id];
 	k_work_reschedule(&g_step, K_NO_WAIT);
 }
 

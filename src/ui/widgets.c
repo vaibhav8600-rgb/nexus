@@ -96,6 +96,12 @@ void nexus_draw_caption_c(int cx, int y, const char *text)
 		   GFX_OPAQUE);
 }
 
+void nexus_draw_label(int x, int y, const char *text)
+{
+	gfx_text(x, y, text, NEXUS_TXT_LABEL, nexus_theme()->caption,
+		 GFX_OPAQUE);
+}
+
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill)
 {
 	const struct nexus_theme *t = nexus_theme();
@@ -119,26 +125,6 @@ void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill)
 	}
 }
 
-void nexus_draw_pill(int x, int y, int w, int h, bool active, const char *text)
-{
-	const struct nexus_theme *t = nexus_theme();
-	int r = h / 3;
-
-	if (active) {
-		gfx_round_rect(x, y, w, h, r, t->accent_alt, 96);
-		gfx_round_frame(x, y, w, h, r, t->accent_alt, 200);
-	} else {
-		gfx_round_rect(x, y, w, h, r, t->panel, t->panel_alpha / 2);
-		gfx_round_frame(x, y, w, h, r, t->border, t->border_alpha / 2);
-	}
-
-	if (text) {
-		gfx_text_c(x + w / 2,
-			   y + (h - gfx_text_h(NEXUS_TXT_CAPTION)) / 2, text,
-			   NEXUS_TXT_CAPTION, active ? t->value : t->muted,
-			   GFX_OPAQUE);
-	}
-}
 
 int nexus_tracked_w(const char *text, int scale, int track)
 {

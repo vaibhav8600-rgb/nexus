@@ -2,6 +2,12 @@
 
 ## Display
 
+**Everything redraws slowly, or the game feels like a slideshow.**
+Check which SPI instance the panel is on. Only SPIM3 runs above 8 MHz on an
+nRF52840, and the driver silently clamps rather than warning, so a panel on
+spi0 pushes a full frame in ~115 ms however high `mipi-max-frequency` is set.
+`nexus_dongle.overlay` uses `&spi3` for exactly this reason.
+
 **Nothing on the screen, but the keyboard types.**
 Working as designed -- NEXUS never takes the keyboard down with it. Check
 `CONFIG_ZMK_DISPLAY=y`, then the wiring: `CS` and `BL` are the two pins the
@@ -78,7 +84,10 @@ ignores the waveform. Replace it.
 
 **Very quiet.**
 The pot, or the duty cycle. NEXUS drives 50%, which is the loudest a square
-wave gets; there is no software volume.
+wave gets; there is no software volume. Note that a passive piezo is much
+quieter well below its resonance (~2-4 kHz) - which is why every effect is
+pitched into octaves 5-7. A buzzer that is quiet on *everything* is usually
+the pot; one that is quiet only on the low notes is physics.
 
 **A half chirps "disconnected" when nothing is wrong.**
 Expected, if it went to sleep. The dongle has no way to tell sleep from

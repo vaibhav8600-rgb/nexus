@@ -22,7 +22,8 @@ extern "C" {
 
 /* Type sizes, as multiples of the 5x7 cell. Section 103 wants big numerals and
  * compact uppercase labels; these four cover the whole UI. */
-#define NEXUS_TXT_CAPTION 1 /*  5x7  - LAYER, WPM, LEFT   */
+#define NEXUS_TXT_CAPTION 1 /*  5x7  - dense lists, hints */
+#define NEXUS_TXT_LABEL 2   /* 10x14 - LAYER, WPM, LEFT   */
 #define NEXUS_TXT_BODY 2    /* 10x14 - values, menu rows  */
 #define NEXUS_TXT_VALUE 3   /* 15x21 - headline values    */
 #define NEXUS_TXT_BIG 4     /* 20x28 - battery percentage */
@@ -40,11 +41,19 @@ void nexus_draw_card_sel(int x, int y, int w, int h, bool selected);
 void nexus_draw_caption(int x, int y, const char *text);
 void nexus_draw_caption_c(int cx, int y, const char *text);
 
+/**
+ * A card's label, in the caption colour but at NEXUS_TXT_LABEL.
+ *
+ * Separate from nexus_draw_caption() rather than a scale argument on it:
+ * captions and labels want different sizes in different places, and the two
+ * dozen existing caption call sites are all correct as they stand. Labels on
+ * the dashboard are read across a desk; hints in a dense list are not.
+ */
+void nexus_draw_label(int x, int y, const char *text);
+
 /** Horizontal capsule meter, 0-100, with a rounded cap at low values. */
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill);
 
-/** Rounded key-cap style indicator; filled with the accent when @p active. */
-void nexus_draw_pill(int x, int y, int w, int h, bool active, const char *text);
 
 /**
  * Letter-spaced text, centred. Tracking is what makes a small uppercase label

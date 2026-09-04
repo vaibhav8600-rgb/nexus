@@ -531,12 +531,10 @@ static const uint8_t icons[GFX_ICON_COUNT][FONT_W] = {
 	[GFX_ICON_USB]  = { 0x0F, 0x49, 0x79, 0x49, 0x0F },
 	/* Padlock: shackle over a solid body. */
 	[GFX_ICON_LOCK] = { 0x7E, 0x79, 0x71, 0x79, 0x7E },
-	/* Modifiers, drawn as the symbols the keys are actually printed with
-	 * rather than the initials C/S/A/G, which needed a legend to read. */
-	[GFX_ICON_CTRL]  = { 0x10, 0x08, 0x04, 0x08, 0x10 }, /* caret     */
-	[GFX_ICON_SHIFT] = { 0x04, 0x06, 0x3F, 0x06, 0x04 }, /* up arrow  */
-	[GFX_ICON_ALT]   = { 0x30, 0x18, 0x0D, 0x07, 0x03 }, /* option    */
-	[GFX_ICON_GUI]   = { 0x36, 0x36, 0x00, 0x36, 0x36 }, /* four panes*/
+	/* The modifier symbols used to live here too, at 5x7. They are now
+	 * 11x11 in home.c and drawn with gfx_glyph(): a caret, an option
+	 * stroke and a four-pane flag have no legible 5x7 form, and scaling
+	 * a smudge only makes a bigger smudge. */
 	[GFX_ICON_MOUSE] = { 0x7F, 0x3E, 0x3C, 0x58, 0x10 }, /* cursor   */
 };
 
@@ -569,6 +567,52 @@ void gfx_icon(int x, int y, enum gfx_icon icon, int scale, gfx_color c,
 			}
 			gfx_rect(x + col * scale, y + row * scale, scale, scale,
 				 c, a);
+		}
+	}
+}
+
+void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
+	       gfx_color c, uint8_t a)
+{
+	if (rows == NULL || w <= 0 || h <= 0) {
+		return;
+	}
+	if (scale < 1) {
+		scale = 1;
+	}
+	if (y + h * scale <= band_y0 || y >= gfx_band_y1()) {
+		return;
+	}
+
+	for (int row = 0; row < h; row++) {
+		uint16_t bits = rows[row];
+
+		if (bits == 0) {
+			continue;
+		}
+
+		/*
+		 * Coalesce horizontal runs into one gfx_rect instead of one
+		 * per pixel. These shapes are mostly solid bars - the Windows
+		 * flag is two 5-wide runs per row - so this is roughly a 5x
+		 * cut in blend calls for the same output.
+		 */
+		int col = 0;
+
+		while (col < w) {
+			if (!(bits & (1u << col))) {
+				col++;
+				continue;
+			}
+
+			int run = 0;
+
+			while (col + run < w && (bits & (1u << (col + run)))) {
+				run++;
+			}
+			gfx_rect(x + col * scale, y + row * scale, run * scale,
+				 scale, c, a);
+			col += run;
 		}
 	}
 }

@@ -69,7 +69,7 @@
 	};
 
 	/* --- WIRING VARIANT: BL on a GPIO (Section 5 prose table) ------------
-	 * Move LCD CS to P0.10 in the &spi0 node below, then uncomment this
+	 * Move LCD CS to P0.10 in the &spi3 node below, then uncomment this
 	 * block and add `nexus-backlight = &nexus_bl_led;` to aliases above.
 	 *
 	 * nexus_backlight: nexus-backlight {
@@ -121,7 +121,25 @@
 	pinctrl-names = "default", "sleep";
 };
 
-&spi0 {
+/*
+ * SPIM3, not SPIM0, and this is worth 4x on every pixel pushed.
+ *
+ * On the nRF52840 only SPIM3 can run above 8 MHz - nrf52840.dtsi gives spi0,
+ * spi1 and spi2 `max-frequency = DT_FREQ_M(8)` and spi3 `DT_FREQ_M(32)`. The
+ * driver silently CLAMPS to that ceiling rather than complaining
+ * (`MIN(spi_cfg->frequency, max_freq)` in spi_nrfx_spim.c), so asking spi0 for
+ * the 30 MHz below got 8 MHz and no warning. At 8 MHz a full 240x240 RGB565
+ * frame is 115,200 bytes = ~115 ms of bus time, which is what capped a full
+ * repaint - and Tetris redraws the whole panel every gravity step.
+ *
+ * spi3 is free on a nice_nano (the board claims only spi1) and, unlike spi0,
+ * does not share a peripheral block with i2c0.
+ *
+ * If a panel misbehaves on SPIM3, changing this node and the spi-dev phandle
+ * below back to &spi0 restores the old behaviour exactly - at a quarter of the
+ * throughput. Nothing else in the module depends on which instance this is.
+ */
+&spi3 {
 	status = "okay";
 	compatible = "nordic,nrf-spim";
 	pinctrl-0 = <&nexus_spi_default>;
@@ -140,7 +158,7 @@
 	 */
 	nexus_mipi_dbi: mipi-dbi {
 		compatible = "zephyr,mipi-dbi-spi";
-		spi-dev = <&spi0>;
+		spi-dev = <&spi3>;
 		dc-gpios = <&gpio0 24 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
 		write-only;

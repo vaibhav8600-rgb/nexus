@@ -28,26 +28,63 @@
 #define COL_R (COL_L + COL_W + NEXUS_GAP)        /* 123 */
 #define COL_RW (GFX_W - NEXUS_PAD - COL_R)       /* 108 */
 
+/*
+ * Vertical budget, reworked so every label can be NEXUS_TXT_LABEL.
+ *
+ * At scale 1 a label is 5x7 - seven pixels tall on a 240px panel, which is
+ * unreadable at desk distance and was the complaint. Scale 2 is 14 tall, so
+ * each card needs about 6 more rows; the brand plate gives up 6 (its wordmark
+ * only ever needed 42) and the battery cards 4.
+ */
+/*
+ * Gutters are 5 here, not NEXUS_GAP's 7. Scale-2 labels need 6 more rows per
+ * card than scale-1 ones did, and 240 pixels is 240 pixels: three gutters
+ * giving up 2px each buys back most of one card's growth, and nobody has ever
+ * looked at a dashboard and wished the gaps were wider.
+ */
+#define ROW_GAP 5
+
 #define BRAND_Y NEXUS_PAD                        /*   9 */
-#define BRAND_H 56
-#define ROW1_Y (BRAND_Y + BRAND_H + NEXUS_GAP)   /*  72 */
-#define ROW1_H 38
-#define ROW2_Y (ROW1_Y + ROW1_H + NEXUS_GAP)     /* 117 */
-#define ROW2_H 38
-#define BAT_Y (ROW2_Y + ROW2_H + NEXUS_GAP)      /* 162 */
-#define BAT_H 69                                 /* ends at 231 */
+#define BRAND_H 48                               /* ends at  57 */
+#define ROW1_Y (BRAND_Y + BRAND_H + ROW_GAP)     /*  62 */
+#define ROW1_H 52                                /* ends at 114 */
+#define ROW2_Y (ROW1_Y + ROW1_H + ROW_GAP)       /* 119 */
+#define ROW2_H 44                                /* ends at 163 */
+#define BAT_Y (ROW2_Y + ROW2_H + ROW_GAP)        /* 168 */
+#define BAT_H 63                                 /* ends at 231 */
 
 #define INNER 8 /* padding inside a card */
+
+/*
+ * Modifier symbols, 11x11, drawn at scale 2 so they land at 22x22 - the same
+ * size snake-module uses, and about four times the linear size of the 5x7
+ * icons that were here. Four of them plus 3px gaps come to 97px, which is
+ * exactly the width inside a column card.
+ *
+ * Row-major, bit N = column N. 88 bytes of flash, no RAM.
+ */
+#define MOD_GLYPH_W 11
+#define MOD_GLYPH_H 11
+#define MOD_SCALE 2
+
+static const uint16_t mod_glyphs[4][MOD_GLYPH_H] = {
+	/* CTRL: the caret, widening downward. */
+	{ 0x000, 0x000, 0x020, 0x070, 0x0D8, 0x18C, 0x306, 0x603, 0x000,
+	  0x000, 0x000 },
+	/* SHIFT: filled up arrow, head over a stem. */
+	{ 0x020, 0x070, 0x0F8, 0x1FC, 0x3FE, 0x7FF, 0x070, 0x070, 0x070,
+	  0x070, 0x000 },
+	/* ALT: the option stroke - bar over a stepped diagonal. */
+	{ 0x7CF, 0x7DF, 0x018, 0x038, 0x030, 0x070, 0x060, 0x0E0, 0x0C0,
+	  0x7C0, 0x780 },
+	/* GUI: four panes. The Windows key is what is printed on the key. */
+	{ 0x7DF, 0x7DF, 0x7DF, 0x7DF, 0x7DF, 0x000, 0x7DF, 0x7DF, 0x7DF,
+	  0x7DF, 0x7DF },
+};
 
 static const uint8_t mod_bits[4] = {
 	NEXUS_MOD_CTRL, NEXUS_MOD_SHIFT, NEXUS_MOD_ALT, NEXUS_MOD_GUI
 };
-/* The symbols printed on the keys themselves. "C S A G" needed a legend;
- * a caret, an up arrow, an option stroke and four panes do not. */
-static const enum gfx_icon mod_icons[4] = {
-	GFX_ICON_CTRL, GFX_ICON_SHIFT, GFX_ICON_ALT, GFX_ICON_GUI
-};
-
 /* ---- drawing ----------------------------------------------------------- */
 
 /*
@@ -130,41 +167,43 @@ static void draw_link(const struct nexus_status *st)
 		ble_c = t->error;                   /* bonded, not connected */
 	}
 
-	int y = ROW1_Y + 5;
+	/* Scale 3: 15x21 per symbol. Snake draws its transports at 2-4 and is
+	 * readable across a desk; at scale 2 these were not. */
+	const int ts = 3;
+	int y = ROW1_Y + 4;
 	int usb_x = COL_L + INNER;
-	int ble_x = usb_x + gfx_icon_w(2) + 10;
+	int ble_x = usb_x + gfx_icon_w(ts) + 9;
 
-	gfx_icon(usb_x, y, GFX_ICON_USB, 2, usb_c, GFX_OPAQUE);
-	gfx_icon(ble_x, y, GFX_ICON_BT, 2, ble_c, GFX_OPAQUE);
+	gfx_icon(usb_x, y, GFX_ICON_USB, ts, usb_c, GFX_OPAQUE);
+	gfx_icon(ble_x, y, GFX_ICON_BT, ts, ble_c, GFX_OPAQUE);
 
 	char prof[4];
 
 	gfx_utoa((uint32_t)st->bt_profile + 1U, prof, sizeof(prof), 0);
-	gfx_text(ble_x + gfx_icon_w(2) + 3, y, prof, NEXUS_TXT_BODY, ble_c,
-		 GFX_OPAQUE);
+	gfx_text(ble_x + gfx_icon_w(ts) + 3, y, prof, ts, ble_c, GFX_OPAQUE);
 
 	/* Underline marks the endpoint actually in use. */
-	int uy = y + gfx_text_h(NEXUS_TXT_BODY) + 1;
+	int uy = y + gfx_text_h(ts) + 2;
 
 	if (on_usb) {
-		gfx_rect(usb_x, uy, gfx_icon_w(2), 2, t->accent, GFX_OPAQUE);
+		gfx_rect(usb_x, uy, gfx_icon_w(ts), 3, t->accent, GFX_OPAQUE);
 	} else if (on_ble) {
-		gfx_rect(ble_x, uy, gfx_icon_w(2), 2, t->accent, GFX_OPAQUE);
+		gfx_rect(ble_x, uy, gfx_icon_w(ts), 3, t->accent, GFX_OPAQUE);
 	}
 
 	/* Locks and the jiggler along the bottom. The padlock IS caps. */
 	int lx = COL_L + INNER;
-	int ly = ROW1_Y + ROW1_H - 6 - gfx_text_h(NEXUS_TXT_CAPTION);
+	int ly = ROW1_Y + ROW1_H - 5 - gfx_text_h(NEXUS_TXT_LABEL);
 
-	gfx_icon(lx, ly, GFX_ICON_LOCK, 1,
+	gfx_icon(lx, ly, GFX_ICON_LOCK, NEXUS_TXT_LABEL,
 		 st->caps_lock ? t->warning : t->muted, GFX_OPAQUE);
-	gfx_text(lx + 9, ly, "N", NEXUS_TXT_CAPTION,
+	gfx_text(lx + 15, ly, "N", NEXUS_TXT_LABEL,
 		 st->num_lock ? t->warning : t->muted, GFX_OPAQUE);
-	gfx_text(lx + 16, ly, "S", NEXUS_TXT_CAPTION,
+	gfx_text(lx + 28, ly, "S", NEXUS_TXT_LABEL,
 		 st->scroll_lock ? t->warning : t->muted, GFX_OPAQUE);
 
 	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
-		gfx_icon(lx + 25, ly, GFX_ICON_MOUSE, 1,
+		gfx_icon(lx + 43, ly, GFX_ICON_MOUSE, NEXUS_TXT_LABEL,
 			 st->anti_idle ? t->accent : t->muted, GFX_OPAQUE);
 	}
 }
@@ -176,7 +215,7 @@ static void draw_layer(const struct nexus_status *st)
 	const char *name = st->layer_name;
 
 	nexus_draw_card(COL_R, ROW1_Y, COL_RW, ROW1_H);
-	nexus_draw_caption(COL_R + INNER, ROW1_Y + 6, "LAYER");
+	nexus_draw_label(COL_R + INNER, ROW1_Y + 5, "LAYER");
 
 	if (name == NULL || name[0] == '\0') {
 		/* An unnamed layer shows its index. Never invent "DEFAULT" for
@@ -188,29 +227,36 @@ static void draw_layer(const struct nexus_status *st)
 
 	int avail = COL_RW - 2 * INNER;
 
-	gfx_text(COL_R + INNER, ROW1_Y + 17, name,
-		 fit_scale(name, avail, NEXUS_TXT_BODY), t->value, GFX_OPAQUE);
+	gfx_text(COL_R + INNER, ROW1_Y + 26, name,
+		 fit_scale(name, avail, NEXUS_TXT_VALUE), t->value, GFX_OPAQUE);
 }
 
 static void draw_mods(const struct nexus_status *st)
 {
-	const int pw = 19;
-	const int ph = 22;
-	const int gap = 4;
-	int x = COL_L + INNER;
-	int y = ROW2_Y + (ROW2_H - ph) / 2;
+	const struct nexus_theme *t = nexus_theme();
+	const int gw = MOD_GLYPH_W * MOD_SCALE; /* 22 */
+	const int gh = MOD_GLYPH_H * MOD_SCALE; /* 22 */
+	const int gap = 3;
+	int x = COL_L + INNER - 3; /* 4*22 + 3*3 = 97 fills the card */
+	int y = ROW2_Y + 7;
 
 	nexus_draw_card(COL_L, ROW2_Y, COL_W, ROW2_H);
 
 	for (int i = 0; i < 4; i++) {
 		bool on = (st->modifiers & mod_bits[i]) != 0;
 
-		nexus_draw_pill(x, y, pw, ph, on, NULL);
-		gfx_icon(x + (pw - gfx_icon_w(1)) / 2,
-			 y + (ph - gfx_text_h(1)) / 2, mod_icons[i], 1,
-			 on ? nexus_theme()->value : nexus_theme()->muted,
-			 GFX_OPAQUE);
-		x += pw + gap;
+		gfx_glyph(x, y, mod_glyphs[i], MOD_GLYPH_W, MOD_GLYPH_H,
+			  MOD_SCALE, on ? t->value : t->muted, GFX_OPAQUE);
+
+		/*
+		 * An accent bar under the held ones. Section 106: state must
+		 * not be carried by colour alone, and a dim glyph next to a
+		 * bright one is exactly that.
+		 */
+		if (on) {
+			gfx_rect(x, y + gh + 3, gw, 3, t->accent, GFX_OPAQUE);
+		}
+		x += gw + gap;
 	}
 }
 
@@ -220,7 +266,7 @@ static void draw_wpm(const struct nexus_status *st)
 	char buf[8];
 
 	nexus_draw_card(COL_R, ROW2_Y, COL_RW, ROW2_H);
-	nexus_draw_caption(COL_R + INNER, ROW2_Y + 5, "WPM");
+	nexus_draw_label(COL_R + INNER, ROW2_Y + 4, "WPM");
 
 	/* Zero-padded to three digits so the numerals never shift sideways as
 	 * the value crosses 10 or 100 (Section 27). */
@@ -228,7 +274,7 @@ static void draw_wpm(const struct nexus_status *st)
 
 	int right = COL_R + COL_RW - INNER;
 
-	gfx_text(right - gfx_text_w(buf, NEXUS_TXT_VALUE), ROW2_Y + 14, buf,
+	gfx_text(right - gfx_text_w(buf, NEXUS_TXT_VALUE), ROW2_Y + 20, buf,
 		 NEXUS_TXT_VALUE, t->accent, GFX_OPAQUE);
 }
 
@@ -239,7 +285,7 @@ static void draw_battery(int x, int w, const char *label, uint8_t pct)
 	bool known = (pct != NEXUS_BATTERY_UNKNOWN && pct <= 100);
 
 	nexus_draw_card(x, BAT_Y, w, BAT_H);
-	nexus_draw_caption(x + INNER, BAT_Y + 7, label);
+	nexus_draw_label(x + INNER, BAT_Y + 5, label);
 
 	if (known) {
 		gfx_utoa(pct, buf, sizeof(buf), 0);
@@ -251,17 +297,17 @@ static void draw_battery(int x, int w, const char *label, uint8_t pct)
 		buf[2] = '\0';
 	}
 
-	gfx_text(x + INNER, BAT_Y + 19, buf, NEXUS_TXT_BIG,
+	gfx_text(x + INNER, BAT_Y + 21, buf, NEXUS_TXT_BIG,
 		 known ? t->value : t->muted, GFX_OPAQUE);
 
 	if (known) {
 		gfx_text(x + INNER + gfx_text_w(buf, NEXUS_TXT_BIG) + 4,
-			 BAT_Y + 19 + gfx_text_h(NEXUS_TXT_BIG) -
+			 BAT_Y + 21 + gfx_text_h(NEXUS_TXT_BIG) -
 				 gfx_text_h(NEXUS_TXT_BODY),
 			 "%", NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
 	}
 
-	nexus_draw_meter(x + INNER, BAT_Y + BAT_H - 15, w - 2 * INNER, 7,
+	nexus_draw_meter(x + INNER, BAT_Y + BAT_H - 11, w - 2 * INNER, 8,
 			 known ? pct : 0, batt_color(t, pct));
 }
 

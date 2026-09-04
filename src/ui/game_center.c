@@ -26,8 +26,8 @@
 #define ICON_CY (CARD_Y + 48)
 #define NAME_Y (CARD_Y + CARD_H - 34)
 #define ARROW_Y (CARD_Y + CARD_H / 2 - 10)
-#define HINT_Y 162
-#define HIGH_Y 176
+#define HINT_Y 160
+#define HIGH_Y 178
 
 static uint8_t g_selected;
 
@@ -38,8 +38,8 @@ static void gc_draw(void)
 	uint8_t count = nexus_game_count();
 	char buf[12];
 
-	if (gfx_hits(TITLE_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
-		nexus_draw_caption(NEXUS_PAD, TITLE_Y, "GAME CENTER");
+	if (gfx_hits(TITLE_Y, gfx_text_h(NEXUS_TXT_LABEL))) {
+		nexus_draw_label(NEXUS_PAD, TITLE_Y, "GAME CENTER");
 
 		/* "01/03" - position in the list, so a second game is visibly
 		 * expected rather than a surprise. */
@@ -53,8 +53,8 @@ static void gc_draw(void)
 		gfx_utoa(count, &buf[n], (int)sizeof(buf) - n, 2);
 
 		gfx_text(NEXUS_PAD + NEXUS_CONTENT_W -
-				 gfx_text_w(buf, NEXUS_TXT_CAPTION),
-			 TITLE_Y, buf, NEXUS_TXT_CAPTION, t->caption,
+				 gfx_text_w(buf, NEXUS_TXT_LABEL),
+			 TITLE_Y, buf, NEXUS_TXT_LABEL, t->caption,
 			 GFX_OPAQUE);
 	}
 
@@ -87,16 +87,19 @@ static void gc_draw(void)
 			 ARROW_Y, ">", NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
 	}
 
-	if (gfx_hits(HINT_Y, gfx_text_h(NEXUS_TXT_CAPTION))) {
-		nexus_draw_caption_c(GFX_W / 2, HINT_Y,
-				     count ? "ACTION=PLAY   HOLD=HOME"
-					   : "HOLD=HOME");
+	if (gfx_hits(HINT_Y, gfx_text_h(NEXUS_TXT_LABEL))) {
+		/* "TAP", not "ACTION": at label size the longer string is
+		 * 274px wide on a 240px panel. */
+		gfx_text_c(GFX_W / 2, HINT_Y,
+			   count ? "TAP=PLAY  HOLD=HOME" : "HOLD=HOME",
+			   NEXUS_TXT_LABEL, t->caption, GFX_OPAQUE);
 	}
 
 	if (gfx_hits(HIGH_Y, 46)) {
 		nexus_draw_card(NEXUS_PAD, HIGH_Y, NEXUS_CONTENT_W, 46);
-		nexus_draw_caption_c(GFX_W / 2, HIGH_Y + 8, "HIGH SCORE");
-		gfx_text_c(GFX_W / 2, HIGH_Y + 20,
+		gfx_text_c(GFX_W / 2, HIGH_Y + 6, "HIGH SCORE",
+			   NEXUS_TXT_LABEL, t->caption, GFX_OPAQUE);
+		gfx_text_c(GFX_W / 2, HIGH_Y + 22,
 			   gfx_utoa(game ? nexus_game_highscore(game) : 0, buf,
 				    sizeof(buf), 0),
 			   NEXUS_TXT_VALUE, t->value, GFX_OPAQUE);

@@ -154,11 +154,16 @@ static void stat_card(int y, int h, const char *caption, uint32_t value,
 	}
 
 	nexus_draw_card(SIDE_X, y, SIDE_W, h);
-	nexus_draw_caption(SIDE_X + SIDE_IN, y + 7, caption);
+	nexus_draw_label(SIDE_X + SIDE_IN, y + 4, caption);
 
+	/*
+	 * 3px off the bottom, not 8. A NEXUS_TXT_LABEL heading is 14 rows
+	 * where the old caption was 7, and these cards did not grow - the
+	 * value has to give the difference back or it lands on the heading.
+	 */
 	gfx_utoa(value, buf, sizeof(buf), 0);
 	gfx_text(SIDE_X + SIDE_W - SIDE_IN - gfx_text_w(buf, scale),
-		 y + h - 8 - gfx_text_h(scale), buf, scale, color, GFX_OPAQUE);
+		 y + h - 3 - gfx_text_h(scale), buf, scale, color, GFX_OPAQUE);
 }
 
 static void draw_next(void)
@@ -170,7 +175,7 @@ static void draw_next(void)
 	}
 
 	nexus_draw_card(SIDE_X, NEXT_Y, SIDE_W, NEXT_H);
-	nexus_draw_caption(SIDE_X + SIDE_IN, NEXT_Y + 7, "NEXT");
+	nexus_draw_label(SIDE_X + SIDE_IN, NEXT_Y + 4, "NEXT");
 
 	int box = 4 * NEXT_CELL;
 	int ox = SIDE_X + (SIDE_W - box) / 2;
@@ -252,8 +257,8 @@ static void tetris_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_CAPTION))) {
-		nexus_draw_caption(NEXUS_PAD, 8, "TETRIS");
+	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
+		nexus_draw_label(NEXUS_PAD, 8, "TETRIS");
 
 		/*
 		 * One physical button has to mean two things, so the screen has
@@ -262,8 +267,8 @@ static void tetris_draw(void)
 		 * press just toggles pause, so it looks like the dongle is
 		 * stuck (Section 12).
 		 */
-		nexus_draw_caption(GFX_W - NEXUS_PAD -
-					   gfx_text_w("HOLD=EXIT", NEXUS_TXT_CAPTION),
+		nexus_draw_label(GFX_W - NEXUS_PAD -
+					   gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
 				   8, "HOLD=EXIT");
 	}
 
