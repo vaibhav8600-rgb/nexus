@@ -102,10 +102,21 @@ at boot do not talk over the splash fanfare. The one after it will sound.
 ## Split
 
 **Switching BT profile does not change the number on screen.**
-Fixed. `refresh_endpoint()` used to compare only the endpoint and the link
+Fixed twice over. `refresh_endpoint()` compared only the endpoint and the link
 state before marking the dashboard dirty, so `&bt BT_SEL n` updated the model
-and returned without repainting. If you are on an older build, the number
-catches up the next time anything else changes.
+and returned without repainting; and the profile fields were read only while
+BLE was the *selected* endpoint, so on USB they were frozen. Both are now
+handled - the profile is read on every refresh and is part of the change
+check.
+
+**`BT_SEL 4` does nothing.**
+Count your profiles. On a dongle there are `CONFIG_BT_MAX_PAIRED` minus
+`CONFIG_ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS` of them - `7 - 2 = 5` here, so
+`BT_SEL 0..4` is exactly the valid range and anything higher selects nothing.
+
+**The BLE tile shows a cross while I am happily typing over USB.**
+Fixed. The tile reports the BLE profile's own state now; being on USB is shown
+by the USB symbol being the lit one, not by declaring BLE broken.
 
 **Halves will not pair.**
 Flash `settings_reset` to all three boards, one at a time, then reflash. This

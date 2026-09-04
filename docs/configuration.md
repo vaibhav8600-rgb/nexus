@@ -63,6 +63,34 @@ rather than a speaker, and its output peaks somewhere near 2-4 kHz: the same
 why snake-module's effects live on B6 and E7, and why pitching NEXUS's tables
 up an octave did more for how they sound than any change to the notes.
 
+### BLE profiles
+
+The dashboard reads `zmk_ble_active_profile_index()`, `_is_open()` and
+`_is_connected()` on every endpoint change, **not** only while BLE is the
+selected endpoint. So the profile number and its status tile stay live while
+you are typing over USB, and `&bt BT_SEL n` updates the screen either way.
+
+| tile | meaning |
+| --- | --- |
+| dashed | open - never paired, advertising |
+| cross | bonded, not connected right now |
+| tick | bonded and connected |
+
+The tile is the *profile's* state; the lit transport symbol is which endpoint
+you are typing through. They are deliberately separate, because "USB is
+selected and my BLE profile is fine" is a real and common state.
+
+`&bt BT_CLR` and `&bt BT_CLR_ALL` both reach the screen: clearing a bond goes
+through ZMK's `set_profile_address()`, which raises
+`zmk_ble_active_profile_changed`. Clearing a profile that was already open
+raises nothing, which is correct - nothing changed.
+
+Profile count on a dongle is `CONFIG_BT_MAX_PAIRED` minus
+`CONFIG_ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS`. With this repo's `7 - 2` that is
+five, matching `BT_SEL 0` through `BT_SEL 4` in the keymap. Raise
+`CONFIG_BT_MAX_PAIRED` if you add profiles, or the extra `BT_SEL` keys will
+select profiles that do not exist.
+
 ### Half connect and disconnect
 
 Four cues, deliberately systematic rather than four unrelated jingles - rising

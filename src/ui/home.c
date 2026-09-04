@@ -212,7 +212,7 @@ static void draw_link(const struct nexus_status *st)
 
 	gfx_utoa((uint32_t)st->bt_profile + 1U, prof, sizeof(prof), 0);
 	gfx_text(num_x, y + 1, prof, NEXUS_TXT_BIG,
-		 on_usb ? t->muted : t->accent, GFX_OPAQUE);
+		 on_usb ? t->caption : t->accent, GFX_OPAQUE);
 
 	/*
 	 * Status tile, on the same line rather than under it. Two 30px rows
@@ -226,7 +226,7 @@ static void draw_link(const struct nexus_status *st)
 	if (!st->bt_profile_bonded) {
 		tile = st_open;                 /* open, waiting to pair */
 		tile_c = t->warning;
-	} else if (st->link_host == NEXUS_LINK_CONNECTED && !on_usb) {
+	} else if (st->bt_connected) {
 		tile = st_ok;                   /* bonded and connected  */
 		tile_c = t->success;
 	} else {

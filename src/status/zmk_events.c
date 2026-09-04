@@ -136,6 +136,23 @@ static void refresh_endpoint(void)
 	enum nexus_link_state host = NEXUS_LINK_DISCONNECTED;
 	uint8_t profile = st->bt_profile;
 	bool bonded = st->bt_profile_bonded;
+	bool bt_conn = st->bt_connected;
+
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+	/*
+	 * Outside the switch on purpose. These used to be read only in the
+	 * ZMK_TRANSPORT_BLE branch, so while the endpoint was USB the profile
+	 * number and its bond state froze at whatever they were when BLE was
+	 * last selected - and the status tile went on reporting that stale
+	 * state as if it were live. BT_SEL and BT_CLR both raise
+	 * zmk_ble_active_profile_changed regardless of which endpoint is
+	 * active (via set_profile_address()), so there is no reason to look
+	 * at only half of them.
+	 */
+	profile = (uint8_t)zmk_ble_active_profile_index();
+	bonded = !zmk_ble_active_profile_is_open();
+	bt_conn = zmk_ble_active_profile_is_connected();
+#endif
 	/*
 	 * ZMK API pin point: endpoint selection. This is the spelling used by
 	 * the shipping dongle code this project already builds against; some
@@ -166,9 +183,7 @@ static void refresh_endpoint(void)
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 	case ZMK_TRANSPORT_BLE:
 		ep = NEXUS_ENDPOINT_BLE;
-		profile = (uint8_t)zmk_ble_active_profile_index();
-		bonded = !zmk_ble_active_profile_is_open();
-		if (zmk_ble_active_profile_is_connected()) {
+		if (bt_conn) {
 			host = NEXUS_LINK_CONNECTED;
 		} else {
 			host = bonded ? NEXUS_LINK_RECONNECTING
@@ -190,7 +205,8 @@ static void refresh_endpoint(void)
 	 * the whole of "switching BT profile does nothing on screen".
 	 */
 	if (st->endpoint == ep && st->link_host == host &&
-	    st->bt_profile == profile && st->bt_profile_bonded == bonded) {
+	    st->bt_profile == profile && st->bt_profile_bonded == bonded &&
+	    st->bt_connected == bt_conn) {
 		return;
 	}
 
@@ -203,6 +219,7 @@ static void refresh_endpoint(void)
 	st->link_host = host;
 	st->bt_profile = profile;
 	st->bt_profile_bonded = bonded;
+	st->bt_connected = bt_conn;
 	nexus_status_mark(NEXUS_STATUS_ENDPOINT);
 
 	if (became) {

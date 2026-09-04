@@ -77,6 +77,12 @@ struct nexus_status {
 	enum nexus_endpoint endpoint;
 	uint8_t bt_profile;      /* 0-based active BLE profile */
 	bool bt_profile_bonded;
+	/* Whether that profile is actually connected right now. Tracked apart
+	 * from link_host because the two answer different questions: you can
+	 * be typing over USB while a BLE profile sits bonded and connected
+	 * behind it, and the dashboard should say so rather than reporting
+	 * BLE as broken whenever USB happens to be selected. */
+	bool bt_connected;
 
 	/* USB HID readiness, independent of which endpoint is selected - the
 	 * dashboard reports each transport's own health, so "USB is plugged
