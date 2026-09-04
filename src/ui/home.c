@@ -100,62 +100,71 @@ static void draw_brand(void)
 static void draw_link(const struct nexus_status *st)
 {
 	const struct nexus_theme *t = nexus_theme();
-	bool live = (st->link_host == NEXUS_LINK_CONNECTED);
 	bool on_usb = (st->endpoint == NEXUS_ENDPOINT_USB);
 	bool on_ble = (st->endpoint == NEXUS_ENDPOINT_BLE);
-	gfx_color usb_c = on_usb ? (live ? t->success : t->warning) : t->muted;
-	gfx_color ble_c = on_ble ? (live ? t->success : t->warning) : t->muted;
 
 	nexus_draw_card(COL_L, ROW1_Y, COL_W, ROW1_H);
 
 	/*
-	 * Both transports at body size. At caption size this was the smallest
-	 * thing on the panel and it is the thing you most often glance at -
-	 * "am I on USB or BLE, and is it up?".
+	 * Snake's model, which is better than "show the winner": each
+	 * transport is coloured by ITS OWN state, so the cluster answers
+	 * "is USB live?" and "is my BLE profile bonded and connected?"
+	 * independently. A single highlighted label could not.
+	 *
+	 *   green  connected        amber  bonded but not connected, or
+	 *   grey   nothing there           an unpaired (open) profile
+	 *
+	 * The active endpoint gets an underline instead of a colour, so
+	 * "which one am I typing through" never competes with "which one is
+	 * healthy" for the same channel.
 	 */
-	int x = COL_L + INNER;
+	bool usb_live = st->usb_present;
+	gfx_color usb_c = usb_live ? t->success : t->muted;
+	gfx_color ble_c;
+
+	if (!st->bt_profile_bonded) {
+		ble_c = t->warning;                 /* open, waiting to pair */
+	} else if (on_ble && st->link_host == NEXUS_LINK_CONNECTED) {
+		ble_c = t->success;
+	} else {
+		ble_c = t->error;                   /* bonded, not connected */
+	}
+
 	int y = ROW1_Y + 5;
+	int usb_x = COL_L + INNER;
+	int ble_x = usb_x + gfx_icon_w(2) + 10;
 
-	gfx_icon(x, y, GFX_ICON_USB, 2, usb_c, GFX_OPAQUE);
-	x += gfx_icon_w(2) + 3;
-	gfx_text(x, y, "USB", NEXUS_TXT_BODY, usb_c, GFX_OPAQUE);
-	x += gfx_text_w("USB", NEXUS_TXT_BODY) + 8;
+	gfx_icon(usb_x, y, GFX_ICON_USB, 2, usb_c, GFX_OPAQUE);
+	gfx_icon(ble_x, y, GFX_ICON_BT, 2, ble_c, GFX_OPAQUE);
 
-	gfx_icon(x, y, GFX_ICON_BT, 2, ble_c, GFX_OPAQUE);
-	x += gfx_icon_w(2) + 3;
-
-	/* Profile number rides with the rune; "BT 2" would read wrong while USB
-	 * is the active endpoint. */
 	char prof[4];
 
 	gfx_utoa((uint32_t)st->bt_profile + 1U, prof, sizeof(prof), 0);
-	gfx_text(x, y, prof, NEXUS_TXT_BODY, ble_c, GFX_OPAQUE);
+	gfx_text(ble_x + gfx_icon_w(2) + 3, y, prof, NEXUS_TXT_BODY, ble_c,
+		 GFX_OPAQUE);
 
-	/*
-	 * Locks along the bottom. The padlock IS caps - the reference leads its
-	 * indicator row with one - so num and scroll are the only two that
-	 * still need a letter.
-	 */
+	/* Underline marks the endpoint actually in use. */
+	int uy = y + gfx_text_h(NEXUS_TXT_BODY) + 1;
+
+	if (on_usb) {
+		gfx_rect(usb_x, uy, gfx_icon_w(2), 2, t->accent, GFX_OPAQUE);
+	} else if (on_ble) {
+		gfx_rect(ble_x, uy, gfx_icon_w(2), 2, t->accent, GFX_OPAQUE);
+	}
+
+	/* Locks and the jiggler along the bottom. The padlock IS caps. */
 	int lx = COL_L + INNER;
 	int ly = ROW1_Y + ROW1_H - 6 - gfx_text_h(NEXUS_TXT_CAPTION);
 
 	gfx_icon(lx, ly, GFX_ICON_LOCK, 1,
 		 st->caps_lock ? t->warning : t->muted, GFX_OPAQUE);
-	lx += gfx_icon_w(1) + 5;
-
-	gfx_text(lx, ly, "N", NEXUS_TXT_CAPTION,
+	gfx_text(lx + 9, ly, "N", NEXUS_TXT_CAPTION,
 		 st->num_lock ? t->warning : t->muted, GFX_OPAQUE);
-	gfx_text(lx + 7, ly, "S", NEXUS_TXT_CAPTION,
+	gfx_text(lx + 16, ly, "S", NEXUS_TXT_CAPTION,
 		 st->scroll_lock ? t->warning : t->muted, GFX_OPAQUE);
 
-	/*
-	 * Mouse jiggler. Lit in the accent colour so it is obvious at a
-	 * glance - a jiggler you cannot see the state of is one you leave
-	 * running into a meeting. Drawn dim rather than hidden when off, so
-	 * the row does not change width as it toggles.
-	 */
 	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
-		gfx_icon(lx + 16, ly, GFX_ICON_MOUSE, 1,
+		gfx_icon(lx + 25, ly, GFX_ICON_MOUSE, 1,
 			 st->anti_idle ? t->accent : t->muted, GFX_OPAQUE);
 	}
 }

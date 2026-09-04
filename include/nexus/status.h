@@ -78,6 +78,11 @@ struct nexus_status {
 	uint8_t bt_profile;      /* 0-based active BLE profile */
 	bool bt_profile_bonded;
 
+	/* USB HID readiness, independent of which endpoint is selected - the
+	 * dashboard reports each transport's own health, so "USB is plugged
+	 * in but I am typing over BLE" is a state it can show. */
+	bool usb_present;
+
 	uint8_t modifiers;       /* NEXUS_MOD_* */
 	bool caps_lock;
 	bool num_lock;

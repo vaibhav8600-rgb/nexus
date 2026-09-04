@@ -142,6 +142,15 @@ static void refresh_endpoint(void)
 	 */
 	struct zmk_endpoint_instance selected = zmk_endpoint_get_selected();
 
+#if IS_ENABLED(CONFIG_ZMK_USB)
+	bool usb_ready = zmk_usb_is_hid_ready();
+
+	if (st->usb_present != usb_ready) {
+		st->usb_present = usb_ready;
+		nexus_status_mark(NEXUS_STATUS_ENDPOINT);
+	}
+#endif
+
 	switch (selected.transport) {
 #if IS_ENABLED(CONFIG_ZMK_USB)
 	case ZMK_TRANSPORT_USB:

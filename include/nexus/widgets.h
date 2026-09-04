@@ -47,6 +47,14 @@ void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill);
 void nexus_draw_pill(int x, int y, int w, int h, bool active, const char *text);
 
 /**
+ * Letter-spaced text, centred. Tracking is what makes a small uppercase label
+ * read as a label rather than a cramped word - the reference leans on it hard.
+ */
+void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
+			gfx_color c);
+int nexus_tracked_w(const char *text, int scale, int track);
+
+/**
  * The product wordmark: a weighted face over a soft drop shadow, with an
  * accent rule beneath.
  *
@@ -57,6 +65,16 @@ void nexus_draw_pill(int x, int y, int w, int h, bool active, const char *text);
  * the rule under it does the job the extrusion was there for.
  */
 void nexus_draw_wordmark(int cx, int y, const char *text, int scale);
+
+/**
+ * Wordmark with a lit letter, for the splash.
+ *
+ * @param lit index of the letter to highlight, or negative for none. Advance
+ *            it on a tick and the highlight sweeps along the word - one
+ *            integer of animation state, no buffers, no easing tables.
+ */
+void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
+			     int lit);
 
 /** Total height of a wordmark, including its rule. */
 int nexus_wordmark_h(int scale);

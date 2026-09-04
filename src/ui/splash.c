@@ -62,6 +62,9 @@ static int block_h(const struct nexus_splash_art *art)
 	       nexus_wordmark_h(mark_scale()) + sub_h();
 }
 
+/* Which letter the highlight is on. One integer of animation state. */
+static int8_t g_lit;
+
 static void splash_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
@@ -78,23 +81,52 @@ static void splash_draw(void)
 		y += art->h + MARK_GAP;
 	}
 
+	/*
+	 * Brand: tracked small caps, the quiet line above the name. Letter
+	 * spacing is what stops a short word at this size reading as a cramped
+	 * blob - it is the treatment the reference uses on every caption.
+	 */
 	if (sizeof(NEXUS_BRAND) > 1) {
-		gfx_text_c(GFX_W / 2, y, NEXUS_BRAND, NEXUS_TXT_BODY,
-			   t->caption, GFX_OPAQUE);
+		nexus_draw_tracked(GFX_W / 2, y, NEXUS_BRAND, NEXUS_TXT_BODY, 3,
+				   t->caption);
 		y += gfx_text_h(NEXUS_TXT_BODY) + BRAND_GAP;
 	}
 
-	nexus_draw_wordmark(GFX_W / 2, y, NEXUS_PRODUCT, scale);
+	nexus_draw_wordmark_lit(GFX_W / 2, y, NEXUS_PRODUCT, scale, g_lit);
 	y += nexus_wordmark_h(scale);
 
+	/* Subtitle sits on its own plate so it reads as a strapline rather
+	 * than as a third loose line of text. */
 	if (sizeof(NEXUS_SUBTITLE) > 1) {
-		gfx_text_c(GFX_W / 2, y + SUB_GAP, NEXUS_SUBTITLE,
-			   NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
+		int w = nexus_tracked_w(NEXUS_SUBTITLE, NEXUS_TXT_CAPTION, 2);
+		int h = gfx_text_h(NEXUS_TXT_CAPTION) + 10;
+
+		gfx_round_rect((GFX_W - w) / 2 - 10, y + SUB_GAP - 5, w + 20, h,
+			       h / 2, t->panel, t->panel_alpha);
+		gfx_round_frame((GFX_W - w) / 2 - 10, y + SUB_GAP - 5, w + 20, h,
+				h / 2, t->border, t->border_alpha);
+		nexus_draw_tracked(GFX_W / 2, y + SUB_GAP, NEXUS_SUBTITLE,
+				   NEXUS_TXT_CAPTION, 2, t->value);
 	}
+}
+
+/* Sweep the highlight along the name, then pause on the far side so it reads
+ * as a shimmer rather than a spinner. */
+static void splash_tick(void)
+{
+	int n = (int)sizeof(NEXUS_PRODUCT) - 1;
+
+	if (n < 1) {
+		return;
+	}
+	g_lit = (int8_t)((g_lit + 1) % (n + 3));
+	nexus_screen_invalidate();
 }
 
 static void splash_enter(void)
 {
+	g_lit = -1;
+
 	if (IS_ENABLED(CONFIG_NEXUS_SOUND_STARTUP)) {
 		nexus_sound_play(NEXUS_SOUND_STARTUP);
 	}
@@ -116,7 +148,8 @@ const struct nexus_screen nexus_screen_splash_def = {
 	.enter = splash_enter,
 	.draw = splash_draw,
 	.action = splash_action,
-	.refresh = NEXUS_REFRESH_IDLE,
+	.tick = splash_tick,
+	.refresh = NEXUS_REFRESH_NORMAL,
 	.btn_short = NEXUS_ACTION_SELECT,
 	.btn_long = NEXUS_ACTION_SELECT,
 };

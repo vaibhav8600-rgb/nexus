@@ -52,10 +52,10 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define NEXT_H 64
 #define NEXT_CELL 8
 
-#define OVER_X 20
-#define OVER_Y 70
-#define OVER_W 200
-#define OVER_H 108
+#define OVER_X 16
+#define OVER_Y 62
+#define OVER_W 208
+#define OVER_H 118
 
 extern const struct nexus_game nexus_game_tetris;
 
@@ -194,48 +194,57 @@ static void draw_overlay(void)
 	const struct nexus_theme *t = nexus_theme();
 	char buf[12];
 
-	if (g_over_title == NULL || !gfx_hits(OVER_Y, OVER_H)) {
+	if (g_over_title == NULL || !gfx_hits(0, GFX_H)) {
 		return;
 	}
 
-	/* Dim the board behind the card so the text is readable over whatever
-	 * the stack happens to look like. */
-	gfx_rect(0, OVER_Y - 10, GFX_W, OVER_H + 20, t->bg_bot, 205);
-	nexus_draw_card_sel(OVER_X, OVER_Y, OVER_W, OVER_H, true);
+	/*
+	 * Dim the WHOLE panel, not a band behind the card. A partial scrim
+	 * left the well bright on either side and the overlay read as a
+	 * sticker rather than a modal - that was the "presence" problem.
+	 */
+	gfx_rect(0, 0, GFX_W, GFX_H, t->bg_bot, 215);
 
-	gfx_text_c(GFX_W / 2, OVER_Y + 12, g_over_title, NEXUS_TXT_VALUE,
-		   t->accent, GFX_OPAQUE);
+	if (!gfx_hits(OVER_Y, OVER_H)) {
+		return;
+	}
+
+	nexus_draw_card(OVER_X, OVER_Y, OVER_W, OVER_H);
+	gfx_round_frame(OVER_X, OVER_Y, OVER_W, OVER_H, nexus_theme()->radius,
+			t->accent, GFX_OPAQUE);
+
+	/* Title, tracked, over its own rule - the same lockup the wordmark
+	 * uses, so the game's modal belongs to the same product. */
+	int y = OVER_Y + 14;
+	int tw = nexus_tracked_w(g_over_title, NEXUS_TXT_VALUE, 2);
+
+	nexus_draw_tracked(GFX_W / 2, y, g_over_title, NEXUS_TXT_VALUE, 2,
+			   t->accent);
+	y += gfx_text_h(NEXUS_TXT_VALUE) + 6;
+	gfx_round_rect((GFX_W - tw) / 2, y, tw, 2, 1, t->accent, 150);
+	y += 12;
 
 	if (g_state == NEXUS_GAME_OVER) {
-		/* Score and best side by side, each caption over its own value
-		 * so the two columns line up (Section 50). */
-		const int col = 46;
-
-		nexus_draw_caption_c(GFX_W / 2 - col, OVER_Y + 40, "SCORE");
-		gfx_text_c(GFX_W / 2 - col, OVER_Y + 52,
+		nexus_draw_caption_c(GFX_W / 2 - 46, y, "SCORE");
+		nexus_draw_caption_c(GFX_W / 2 + 46, y, "BEST");
+		gfx_text_c(GFX_W / 2 - 46, y + 12,
 			   gfx_utoa(g_t.score, buf, sizeof(buf), 0),
 			   NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
-
-		nexus_draw_caption_c(GFX_W / 2 + col, OVER_Y + 40, "BEST");
-		gfx_text_c(GFX_W / 2 + col, OVER_Y + 52,
+		gfx_text_c(GFX_W / 2 + 46, y + 12,
 			   gfx_utoa(nexus_game_highscore(&nexus_game_tetris),
 				    buf, sizeof(buf), 0),
 			   NEXUS_TXT_BODY, t->accent, GFX_OPAQUE);
+		y += 32;
 	}
 
-	/*
-	 * Body size, two lines. These are the only instructions the game ever
-	 * gives, and at caption size they were the smallest text on a panel
-	 * you read from across a desk - so the one screen that has to tell you
-	 * what the button does was the hardest thing on it to read.
-	 */
 	if (g_over_hint) {
-		gfx_text_c(GFX_W / 2, OVER_Y + OVER_H - 40, g_over_hint,
-			   NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
+		gfx_text_c(GFX_W / 2, y, g_over_hint, NEXUS_TXT_BODY, t->value,
+			   GFX_OPAQUE);
+		y += gfx_text_h(NEXUS_TXT_BODY) + 5;
 	}
 	if (g_over_hint2) {
-		gfx_text_c(GFX_W / 2, OVER_Y + OVER_H - 22, g_over_hint2,
-			   NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
+		nexus_draw_tracked(GFX_W / 2, y, g_over_hint2,
+				   NEXUS_TXT_CAPTION, 2, t->caption);
 	}
 }
 

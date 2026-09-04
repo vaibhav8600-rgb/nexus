@@ -38,26 +38,33 @@ struct note {
 #define C6 1047
 #define D6 1175
 #define E6 1319
+#define F6 1397
 #define G6 1568
 #define REST 0
 
 /*
- * Startup: a real phrase rather than four rising notes.
+ * Startup: an original chiptune fanfare.
  *
- * C major arpeggio up to the octave, a beat of air, then a bright
- * G-B-D-G turnaround that lands back on the tonic - about 1.6 s, which fits
- * comfortably inside the default 3.5 s splash. Sequenced on a work item like
- * every other effect, so it never holds up the boot it plays over
- * (Sections 18, 108).
+ * Written for this project rather than borrowed - the obvious references are
+ * somebody's trademark or somebody's copyright, and a keyboard dongle is not
+ * worth either. The idiom is the 8-bit one it is meant to evoke: a springy
+ * dotted pickup, a rising triad answered a fourth higher, then a two-note
+ * cadence that lands hard on the tonic.
+ *
+ * Short notes with 20-30 ms of silence between them, because a passive buzzer
+ * has no envelope of its own - the gaps ARE the articulation, and without
+ * them a run of notes smears into one tone.
+ *
+ * About 1.7 s, comfortably inside the 3.5 s splash it plays under.
  */
 static const struct note s_startup[]   = {
-	{C5,110},{E5,110},{G5,110},{C6,190},
-	{REST,60},
-	{G5,90},{B5,90},{D6,90},{G6,260},
-	{REST,50},
-	{C6,300},
+	{E5,90},{REST,25},{E5,90},{REST,25},{G5,150},{REST,30},
+	{C6,110},{REST,20},{E6,110},{REST,20},{G6,220},{REST,60},
+	{F6,110},{REST,20},{D6,110},{REST,20},
+	{G5,90},{REST,25},{C6,340},
 	N_END
 };
+
 static const struct note s_select[]    = { {A5,25}, N_END };
 static const struct note s_back[]      = { {E5,25}, N_END };
 static const struct note s_connect[]   = { {G5,60},{C6,90}, N_END };

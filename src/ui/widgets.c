@@ -140,6 +140,29 @@ void nexus_draw_pill(int x, int y, int w, int h, bool active, const char *text)
 	}
 }
 
+int nexus_tracked_w(const char *text, int scale, int track)
+{
+	int n = 0;
+
+	for (const char *p = text; p && *p; p++) {
+		n++;
+	}
+	return n ? gfx_text_w(text, scale) + (n - 1) * track : 0;
+}
+
+void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
+			gfx_color c)
+{
+	int x = cx - nexus_tracked_w(text, scale, track) / 2;
+	char one[2] = { 0, 0 };
+
+	for (const char *p = text; p && *p; p++) {
+		one[0] = *p;
+		gfx_text(x, y, one, scale, c, GFX_OPAQUE);
+		x += gfx_text_w(one, scale) + scale + track;
+	}
+}
+
 #define WORDMARK_RULE_GAP 4
 #define WORDMARK_RULE_H 3
 
@@ -148,29 +171,61 @@ int nexus_wordmark_h(int scale)
 	return gfx_text_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
 }
 
-void nexus_draw_wordmark(int cx, int y, const char *text, int scale)
+void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
+			     int lit)
 {
 	const struct nexus_theme *t = nexus_theme();
 	int w = gfx_text_w(text, scale);
 	int x = cx - w / 2;
+	int n = 0;
+	char one[2] = { 0, 0 };
 
-	/* A single soft shadow for lift, not a stack of them. */
+	for (const char *p = text; p && *p; p++) {
+		n++;
+	}
+	if (n == 0) {
+		return;
+	}
+
+	/* One soft shadow for lift, not a stack of them. */
 	gfx_text(x + 2, y + 3, text, scale, t->wordmark[4], 90);
 
 	/*
-	 * Faux bold. A 5x7 face has one-pixel strokes however far you scale
-	 * it, so it always looks thin next to the big numerals; stamping it
-	 * four times at one-pixel offsets thickens every stroke by one scaled
-	 * pixel and costs four cheap text passes.
+	 * Each letter takes its colour from a ramp across the word, so the
+	 * mark has movement standing still - a flat block of one colour was
+	 * the thing that never looked finished. gfx_mix walks accent_alt to
+	 * accent left to right.
+	 *
+	 * Faux bold on top: a 5x7 face keeps one-pixel strokes however far it
+	 * scales, so stamping each glyph 2x2 is what actually makes it read as
+	 * bold rather than as big-and-thin.
 	 */
-	for (int dy = 0; dy <= 1; dy++) {
-		for (int dx = 0; dx <= 1; dx++) {
-			gfx_text(x + dx, y + dy, text, scale, t->wordmark[2],
-				 GFX_OPAQUE);
+	int pen = x;
+
+	for (int i = 0; i < n; i++) {
+		uint8_t mixv = (uint8_t)((i * 255) / (n > 1 ? n - 1 : 1));
+		gfx_color c = gfx_mix(t->wordmark[2], t->accent, mixv);
+
+		if (i == lit) {
+			c = t->value; /* the sweeping highlight */
 		}
+
+		one[0] = text[i];
+		for (int dy = 0; dy <= 1; dy++) {
+			for (int dx = 0; dx <= 1; dx++) {
+				gfx_text(pen + dx, y + dy, one, scale, c,
+					 GFX_OPAQUE);
+			}
+		}
+		pen += gfx_text_w(one, scale) + scale;
 	}
 
-	/* Accent rule: what actually reads as "this is a product name". */
+	/* Accent rule: what reads as "this is a product name". */
 	gfx_round_rect(x, y + gfx_text_h(scale) + WORDMARK_RULE_GAP, w,
 		       WORDMARK_RULE_H, 1, t->accent, GFX_OPAQUE);
+}
+
+void nexus_draw_wordmark(int cx, int y, const char *text, int scale)
+{
+	nexus_draw_wordmark_lit(cx, y, text, scale, -1);
 }
