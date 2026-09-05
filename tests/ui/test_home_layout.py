@@ -97,16 +97,33 @@ def main():
     ok(cards[-1][1] + cards[-1][2] <= PANEL - 6,
        'bottom margin %d px' % (PANEL - (cards[-1][1] + cards[-1][2])))
 
-    print('\nBrand plate')
-    # wordmark: text_h(scale) + WORDMARK_RULE_GAP(4) + WORDMARK_RULE_H(3)
-    for scale in (5, 4):
-        wh = text_h(scale) + 4 + 3
-        ww = text_w('NEXUS', scale)
-        y = C['BRAND_Y'] + (C['BRAND_H'] - wh) // 2
-        if ww <= C.get('NEXUS_CONTENT_W', 222) - 2 * C['INNER'] - 4:
-            fits('wordmark s%d (%dpx wide)' % (scale, ww), y, y + wh,
-                 C['BRAND_Y'], C['BRAND_H'])
-            break
+    print('\nBrand plate - 10x14 display face, not the 5x7 body font')
+    FACE_W, FACE_H = 10, 14
+
+    def face_w(t, sc):
+        # one column of air between glyphs, none after the last
+        return len(t) * (FACE_W + 1) * sc - sc
+
+    gfx = open(os.path.join(root, 'src', 'ui', 'gfx.c'), encoding='utf-8').read()
+    ok('font10x14.h' in gfx, 'gfx.c includes the display face')
+    ok('gfx_face_w' in src, 'the brand plate measures with the display face')
+
+    avail = C.get('NEXUS_CONTENT_W', 222) - 2 * C['INNER'] - 4
+    scale = 2
+    while scale > 1 and face_w('NEXUS', scale) > avail:
+        scale -= 1
+    # wordmark: face_h(scale) + WORDMARK_RULE_GAP(4) + WORDMARK_RULE_H(3)
+    wh = FACE_H * scale + 4 + 3
+    ww = face_w('NEXUS', scale)
+    y = C['BRAND_Y'] + (C['BRAND_H'] - wh) // 2
+    fits('wordmark s%d (%dx%d)' % (scale, ww, FACE_H * scale), y, y + wh,
+         C['BRAND_Y'], C['BRAND_H'])
+    ok(ww <= avail, 'wordmark %dpx inside %dpx of plate' % (ww, avail))
+    # the face is twice the width per glyph, so a scale carried over from the
+    # body font would silently overflow rather than fail
+    ok(face_w('NEXUS', 5) > 240,
+       'scale 5 would be %dpx - proof the old scale had to change'
+       % face_w('NEXUS', 5))
 
     print('\nRow 1 - link cluster (snake model: symbols, number, tile)')
     TR_W, TR_H, TR_S = C['TR_W'], C['TR_H'], C['TR_SCALE']

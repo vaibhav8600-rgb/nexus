@@ -135,6 +135,22 @@ void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
 	       gfx_color c, uint8_t a);
 
 /**
+ * Draw text in the 10x14 display face (src/ui/font10x14.h).
+ *
+ * A real display face rather than the 5x7 body font scaled up: two-pixel
+ * stems and flat terminals, so the wordmark has weight instead of looking
+ * like magnified pixel art. Uppercase and digits only (ASCII 32..90) -
+ * anything outside that range is drawn from the 5x7 font at the same nominal
+ * height, so a product name with lowercase in it still renders.
+ */
+void gfx_face_text(int x, int y, const char *s, int scale, gfx_color c,
+		   uint8_t a);
+/** Width of @p s in the display face, matching gfx_face_text(). */
+int gfx_face_w(const char *s, int scale);
+/** Height of one line of the display face. */
+int gfx_face_h(int scale);
+
+/**
  * Unsigned to decimal, without printf.
  *
  * picolibc's "%u" drags in the double-capable formatter, which can burn 1-2 KB

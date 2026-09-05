@@ -210,16 +210,33 @@ static void refresh_endpoint(void)
 		return;
 	}
 
-	bool became = (host == NEXUS_LINK_CONNECTED &&
-		       st->link_host != NEXUS_LINK_CONNECTED);
-	bool lost = (st->link_host == NEXUS_LINK_CONNECTED &&
-		     host != NEXUS_LINK_CONNECTED);
+
+	/*
+	 * Reachability, not the selected endpoint. link_host describes whichever
+	 * transport is currently selected, so when a BLE link dropped and ZMK
+	 * moved the endpoint to USB, link_host went from "BLE connected" to
+	 * "USB connecting" - a change, so the disconnect cue fired - and on the
+	 * way back it went "USB connecting" to "BLE connected" only if the
+	 * endpoint switched back in the same event. When it did not, the tile
+	 * updated (it reads bt_connected directly) but the cue did not. That is
+	 * the whole of "disconnect always plays, connect only played once".
+	 */
+	bool up = bt_conn;
+
+#if IS_ENABLED(CONFIG_ZMK_USB)
+	up = up || (ep == NEXUS_ENDPOINT_USB &&
+		    zmk_usb_get_conn_state() == ZMK_USB_CONN_HID);
+#endif
+
+	bool became = up && !st->host_up;
+	bool lost = !up && st->host_up;
 
 	st->endpoint = ep;
 	st->link_host = host;
 	st->bt_profile = profile;
 	st->bt_profile_bonded = bonded;
 	st->bt_connected = bt_conn;
+	st->host_up = up;
 	nexus_status_mark(NEXUS_STATUS_ENDPOINT);
 
 	/*

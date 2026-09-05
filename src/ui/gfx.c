@@ -12,6 +12,7 @@
 #include <zephyr/sys/util.h>
 
 #include "font5x7.h"
+#include "font10x14.h"
 
 LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 
@@ -577,6 +578,61 @@ void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
 				 scale, c, a);
 			col += run;
 		}
+	}
+}
+
+int gfx_face_h(int scale)
+{
+	return FACE_H * (scale < 1 ? 1 : scale);
+}
+
+int gfx_face_w(const char *s, int scale)
+{
+	int n = 0;
+
+	for (const char *p = s; p && *p; p++) {
+		n++;
+	}
+	if (scale < 1) {
+		scale = 1;
+	}
+	/* One column of air between glyphs, none after the last. */
+	return n ? n * (FACE_W + 1) * scale - scale : 0;
+}
+
+void gfx_face_text(int x, int y, const char *s, int scale, gfx_color c,
+		   uint8_t a)
+{
+	if (scale < 1) {
+		scale = 1;
+	}
+	if (y + FACE_H * scale <= band_y0 || y >= gfx_band_y1()) {
+		return;
+	}
+
+	for (const char *p = s; p && *p; p++) {
+		unsigned char ch = (unsigned char)*p;
+
+		if (ch >= FACE_FIRST && ch <= FACE_LAST) {
+			gfx_glyph(x, y, font10x14[ch - FACE_FIRST], FACE_W,
+				  FACE_H, scale, c, a);
+		} else {
+			/*
+			 * Outside the face. Drawn from the 5x7 font, scaled to
+			 * the same cap height and centred in the cell, so a
+			 * lowercase product name degrades to "one odd glyph"
+			 * rather than to a hole in the word.
+			 */
+			char one[2] = { *p, 0 };
+			int fs = (FACE_H * scale) / FONT_H;
+
+			if (fs < 1) {
+				fs = 1;
+			}
+			gfx_text(x + (FACE_W * scale - FONT_W * fs) / 2, y, one,
+				 fs, c, a);
+		}
+		x += (FACE_W + 1) * scale;
 	}
 }
 

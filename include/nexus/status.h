@@ -89,6 +89,13 @@ struct nexus_status {
 	 * in but I am typing over BLE" is a state it can show. */
 	bool usb_present;
 
+	/* "can a host hear us right now", independent of which endpoint is
+	 * selected. The connect/disconnect cues key off this rather than off
+	 * link_host: when a BLE link drops, ZMK may switch the selected
+	 * endpoint to USB in the same breath, and link_host then describes USB
+	 * instead - so the drop chirped but the return never did. */
+	bool host_up;
+
 	uint8_t modifiers;       /* NEXUS_MOD_* */
 	bool caps_lock;
 	bool num_lock;

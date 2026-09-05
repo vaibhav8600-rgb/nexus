@@ -45,11 +45,18 @@ static int sub_h(void)
 		       : 0;
 }
 
-/* Wordmark scale that fits the panel width, and the whole block's height. */
+/*
+ * Wordmark scale that fits the panel width.
+ *
+ * Measured with gfx_face_w, not gfx_text_w: the display face is 10 columns
+ * wide where the body font is 5, so the same scale number is a very different
+ * word. Starting the search at 4 rather than 5 is that same arithmetic -
+ * NEXUS at face scale 4 is 216px on a 240px panel, and scale 5 would be 270.
+ */
 static int mark_scale(void)
 {
-	for (int sc = 5; sc > 1; sc--) {
-		if (gfx_text_w(NEXUS_PRODUCT, sc) <= GFX_W - 2 * NEXUS_PAD - 8) {
+	for (int sc = 4; sc > 1; sc--) {
+		if (gfx_face_w(NEXUS_PRODUCT, sc) <= GFX_W - 2 * NEXUS_PAD - 6) {
 			return sc;
 		}
 	}

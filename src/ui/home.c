@@ -99,7 +99,10 @@ static const uint16_t tr_ble[TR_H] = {
  */
 #define ST_W 9
 #define ST_H 9
-#define ST_SCALE 2
+/* Scale 3, not 2. At 2 the tile was 18x18 beside 18x30 transports - the same
+ * width but two thirds the height, which reads as a smaller-class icon rather
+ * than a peer. 27x27 is what snake-module uses and it sits properly. */
+#define ST_SCALE 3
 
 static const uint16_t st_ok[ST_H] = {   /* tick: bonded and connected */
 	0x1FF, 0x101, 0x141, 0x161, 0x175, 0x11D, 0x109, 0x101, 0x1FF,
@@ -166,12 +169,17 @@ static void draw_brand(void)
 	nexus_draw_card(COL_L, BRAND_Y, NEXUS_CONTENT_W, BRAND_H);
 
 	/*
-	 * Scale 5 where it fits: at NEXUS_TXT_BIG the wordmark was a caption
-	 * with a shadow rather than the product's name. Five characters come
-	 * to 145x35, which fills the plate the way the reference does, and
-	 * fit_scale() still steps down for a longer CONFIG_NEXUS_PRODUCT.
+	 * The display face, so the plate carries the same letterforms as the
+	 * splash rather than a scaled-up body font. Scale 2 is 108x28 for five
+	 * characters, which fits the 50px plate with its rule; a longer
+	 * CONFIG_NEXUS_PRODUCT steps down from there.
 	 */
-	int scale = fit_scale(NEXUS_PRODUCT, NEXUS_CONTENT_W - 2 * INNER - 4, 5);
+	int avail = NEXUS_CONTENT_W - 2 * INNER - 4;
+	int scale = 2;
+
+	while (scale > 1 && gfx_face_w(NEXUS_PRODUCT, scale) > avail) {
+		scale--;
+	}
 
 	nexus_draw_wordmark(GFX_W / 2,
 			    BRAND_Y + (BRAND_H - nexus_wordmark_h(scale)) / 2,

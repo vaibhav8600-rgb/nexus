@@ -154,14 +154,14 @@ void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
 
 int nexus_wordmark_h(int scale)
 {
-	return gfx_text_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
+	return gfx_face_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
 }
 
 void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 			     int lit)
 {
 	const struct nexus_theme *t = nexus_theme();
-	int w = gfx_text_w(text, scale);
+	int w = gfx_face_w(text, scale);
 	int x = cx - w / 2;
 	int n = 0;
 	char one[2] = { 0, 0 };
@@ -174,7 +174,7 @@ void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 	}
 
 	/* One soft shadow for lift, not a stack of them. */
-	gfx_text(x + 2, y + 3, text, scale, t->wordmark[4], 90);
+	gfx_face_text(x + 2, y + 3, text, scale, t->wordmark[4], 90);
 
 	/*
 	 * Each letter takes its colour from a ramp across the word, so the
@@ -182,9 +182,10 @@ void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 	 * the thing that never looked finished. gfx_mix walks accent_alt to
 	 * accent left to right.
 	 *
-	 * Faux bold on top: a 5x7 face keeps one-pixel strokes however far it
-	 * scales, so stamping each glyph 2x2 is what actually makes it read as
-	 * bold rather than as big-and-thin.
+	 * No faux-bold stamp any more. That trick existed to thicken a 5x7
+	 * face whose strokes stayed one pixel wide however far it scaled;
+	 * font10x14 is drawn with two-pixel stems, so stamping it 2x2 would
+	 * only blur the letterforms it was designed to give us.
 	 */
 	int pen = x;
 
@@ -197,17 +198,12 @@ void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 		}
 
 		one[0] = text[i];
-		for (int dy = 0; dy <= 1; dy++) {
-			for (int dx = 0; dx <= 1; dx++) {
-				gfx_text(pen + dx, y + dy, one, scale, c,
-					 GFX_OPAQUE);
-			}
-		}
-		pen += gfx_text_w(one, scale) + scale;
+		gfx_face_text(pen, y, one, scale, c, GFX_OPAQUE);
+		pen += gfx_face_w(one, scale) + scale;
 	}
 
 	/* Accent rule: what reads as "this is a product name". */
-	gfx_round_rect(x, y + gfx_text_h(scale) + WORDMARK_RULE_GAP, w,
+	gfx_round_rect(x, y + gfx_face_h(scale) + WORDMARK_RULE_GAP, w,
 		       WORDMARK_RULE_H, 1, t->accent, GFX_OPAQUE);
 }
 
