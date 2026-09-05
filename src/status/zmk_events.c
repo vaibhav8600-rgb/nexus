@@ -222,6 +222,22 @@ static void refresh_endpoint(void)
 	st->bt_connected = bt_conn;
 	nexus_status_mark(NEXUS_STATUS_ENDPOINT);
 
+	/*
+	 * Not while the machine is still coming up.
+	 *
+	 * This is why the splash fanfare only ever played its first two or
+	 * three notes: the host endpoint settles during boot - USB enumerates,
+	 * the endpoint goes NONE -> USB - and that raised a connect cue right
+	 * on top of the tune. The sound engine plays the newest effect and
+	 * drops whatever was mid-flight, so a 1.7 s fanfare became a beep.
+	 *
+	 * Same window the split cues use, for the same reason: nothing that
+	 * happens while the dongle is booting is news.
+	 */
+	if (k_uptime_get() <= CONFIG_NEXUS_SOUND_SETTLE_MS) {
+		return;
+	}
+
 	if (became) {
 		nexus_sound_play(NEXUS_SOUND_CONNECT);
 	} else if (lost) {

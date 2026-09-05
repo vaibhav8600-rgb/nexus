@@ -240,48 +240,31 @@ static void draw_link(const struct nexus_status *st)
 }
 
 /*
- * Locks and the jiggler, as corner dots on the brand plate.
+ * One dot: the mouse jiggler, on the corner of the brand plate.
  *
- * They used to sit along the bottom of the link card, which made that card
- * answer four unrelated questions at once - which transport, which profile,
- * is it healthy, and by the way is caps lock on. The link cluster reads much
- * faster with only its own three facts on it.
+ * The lock dots that were beside it are gone. Three outlined circles sat on
+ * the plate permanently, and on any desktop keyboard Num Lock is simply ON,
+ * so one of them was a solid amber dot that never changed and never meant
+ * anything - it read as a warning light stuck on rather than as status. A
+ * lock state you cannot act on is not worth a permanent fixture on a 240px
+ * panel; the host already shows it.
  *
- * These are glanceable state, not something you read: a dot is on or it is
- * not, and that is the whole message. Snake puts its jiggler indicator in a
- * corner for the same reason.
+ * The jiggler is different: it is a mode YOU turned on, it is invisible
+ * otherwise, and forgetting it is running is the actual failure mode. So it
+ * gets the corner, green, with a soft halo - lit when active, and nothing at
+ * all when it is not.
  */
 static void draw_flags(const struct nexus_status *st)
 {
-	const struct nexus_theme *t = nexus_theme();
-	const int r = 4;
-	int y = BRAND_Y + 9;
-
-	/* Locks on the left, in keyboard order. */
-	static const int lock_x[3] = { 0, 11, 22 };
-	const bool lock_on[3] = { st->caps_lock, st->num_lock, st->scroll_lock };
-
-	for (int i = 0; i < 3; i++) {
-		int x = COL_L + 10 + lock_x[i];
-
-		if (lock_on[i]) {
-			gfx_disc(x, y, r, t->warning, GFX_OPAQUE);
-		} else {
-			gfx_round_frame(x - r, y - r, r * 2, r * 2, r, t->border,
-					t->border_alpha);
-		}
-	}
-
-	/* Jiggler on the right, green when it is holding the host awake. */
 	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
+		const struct nexus_theme *t = nexus_theme();
+		const int r = 4;
+		int y = BRAND_Y + 9;
 		int x = COL_L + NEXUS_CONTENT_W - 10;
 
 		if (st->anti_idle) {
-			gfx_disc(x, y, r + 2, t->success, 70);
+			gfx_disc(x, y, r + 3, t->success, 60);
 			gfx_disc(x, y, r, t->success, GFX_OPAQUE);
-		} else {
-			gfx_round_frame(x - r, y - r, r * 2, r * 2, r,
-					t->border, t->border_alpha);
 		}
 	}
 }

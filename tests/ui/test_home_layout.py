@@ -137,8 +137,10 @@ def main():
     ok('caps_lock' not in link and 'anti_idle' not in link,
        'link card carries only transport, profile and tile')
     flags = src[src.index('static void draw_flags'):]
-    for f in ('caps_lock', 'num_lock', 'scroll_lock', 'anti_idle'):
-        ok(f in flags, 'draw_flags still shows %s' % f)
+    ok('anti_idle' in flags, 'the jiggler still has its corner dot')
+    ok('num_lock' not in flags,
+       'no permanent lock dots - Num Lock is on by default on a desktop, so '
+       'that one was a solid amber dot that never changed')
 
     print('\nRow 1 - layer card')
     fits('LAYER caption', C['ROW1_Y'] + 6,

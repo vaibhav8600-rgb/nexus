@@ -131,7 +131,7 @@ only played the first time.**
 One cause. Bringing up a split keyboard produces several link transitions
 while the central does discovery; announcing them beeped, and because the
 sound engine plays the newest effect and drops what was playing, those chirps
-cut off the splash fanfare. `CONFIG_NEXUS_SOUND_SPLIT_SETTLE_MS` (8 s) ignores
+cut off the splash fanfare. `CONFIG_NEXUS_SOUND_SETTLE_MS` (8 s) ignores
 link changes until the links have settled.
 
 

@@ -93,7 +93,7 @@ static uint32_t set_link(int slot, enum nexus_link_state to)
 	*link = to;
 
 	if (IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT) && was_up != now_up &&
-	    k_uptime_get() > CONFIG_NEXUS_SOUND_SPLIT_SETTLE_MS) {
+	    k_uptime_get() > CONFIG_NEXUS_SOUND_SETTLE_MS) {
 		nexus_sound_play(now_up ? (left ? NEXUS_SOUND_HALF_L_CONNECT
 					        : NEXUS_SOUND_HALF_R_CONNECT)
 					: (left ? NEXUS_SOUND_HALF_L_DISCONNECT

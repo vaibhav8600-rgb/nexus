@@ -262,12 +262,12 @@ config NEXUS_SPLIT_SWAP_SIDES
 	  ZMK numbers peripherals by pairing order, not by physical side. Flip
 	  this if your dashboard shows the halves the wrong way round.
 
-config NEXUS_SOUND_SPLIT_SETTLE_MS
-	int "Ignore split link changes for the first N ms after boot"
+config NEXUS_SOUND_SETTLE_MS
+	int "Ignore connection changes for the first N ms after boot"
 	default 8000
-	depends on NEXUS_SOUND_SPLIT
+	depends on NEXUS_SOUND
 	help
-	  Bringing up a split keyboard is not a quiet process. Both halves
+	  Bringing up a keyboard is not a quiet process. Both halves
 	  connect, and ZMK's central may drop and retry a link while it does
 	  service discovery, so the first few seconds after a reset can produce
 	  several link transitions that are all just "booting".
@@ -290,7 +290,7 @@ config NEXUS_SOUND_SPLIT
 	  right) plus a slower pair for deep sleep and wake.
 
 	  Nothing is played while the links are still settling after a reset;
-	  see NEXUS_SOUND_SPLIT_SETTLE_MS.
+	  see NEXUS_SOUND_SETTLE_MS.
 
 	  Both directions are real events, not inference: they come from
 	  Zephyr connection callbacks on the dongle's own BLE links, so a

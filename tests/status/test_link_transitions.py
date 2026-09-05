@@ -211,7 +211,7 @@ def main():
     for frag, why in [
         ("if (*link == to) {", "no-op guard on an unchanged state"),
         ("was_up != now_up", "chirps only across the CONNECTED boundary"),
-        ("CONFIG_NEXUS_SOUND_SPLIT_SETTLE_MS", "boot settling window"),
+        ("CONFIG_NEXUS_SOUND_SETTLE_MS", "boot settling window"),
         ("slot_is_left(slot)", "side comes from the one shared mapping"),
     ]:
         if frag not in body:
