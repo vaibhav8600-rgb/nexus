@@ -524,52 +524,15 @@ void gfx_text_c(int cx, int y, const char *s, int scale, gfx_color c, uint8_t a)
 /* ---- icons ------------------------------------------------------------- */
 
 /* Same column-major, bit-0-is-top layout as font5x7. */
-static const uint8_t icons[GFX_ICON_COUNT][FONT_W] = {
-	/* Bluetooth rune: vertical stem with the two crossed triangles. */
-	[GFX_ICON_BT]   = { 0x14, 0x08, 0x7F, 0x2A, 0x14 },
-	/* Monitor on a stand - "there is a host on the other end of a wire". */
-	[GFX_ICON_USB]  = { 0x0F, 0x49, 0x79, 0x49, 0x0F },
-	/* Padlock: shackle over a solid body. */
-	[GFX_ICON_LOCK] = { 0x7E, 0x79, 0x71, 0x79, 0x7E },
-	/* The modifier symbols used to live here too, at 5x7. They are now
-	 * 11x11 in home.c and drawn with gfx_glyph(): a caret, an option
-	 * stroke and a four-pane flag have no legible 5x7 form, and scaling
-	 * a smudge only makes a bigger smudge. */
-	[GFX_ICON_MOUSE] = { 0x7F, 0x3E, 0x3C, 0x58, 0x10 }, /* cursor   */
-};
+/*
+ * The 5x7 icon table used to live here: a Bluetooth rune, a USB monitor, a
+ * padlock and a cursor. Every one of them has been replaced by something the
+ * screen can actually carry - the transports by 9x15 glyphs on the link card,
+ * the locks and the jiggler by corner dots on the brand plate - so the table,
+ * gfx_icon() and gfx_icon_w() are gone with them.
+ */
 
-int gfx_icon_w(int scale)
-{
-	return FONT_W * (scale < 1 ? 1 : scale);
-}
 
-void gfx_icon(int x, int y, enum gfx_icon icon, int scale, gfx_color c,
-	      uint8_t a)
-{
-	if (icon >= GFX_ICON_COUNT) {
-		return;
-	}
-	if (scale < 1) {
-		scale = 1;
-	}
-	if (y + FONT_H * scale <= band_y0 || y >= gfx_band_y1()) {
-		return;
-	}
-
-	const uint8_t *g = icons[icon];
-
-	for (int col = 0; col < FONT_W; col++) {
-		uint8_t bits = g[col];
-
-		for (int row = 0; row < FONT_H; row++) {
-			if (!(bits & (1u << row))) {
-				continue;
-			}
-			gfx_rect(x + col * scale, y + row * scale, scale, scale,
-				 c, a);
-		}
-	}
-}
 
 void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
 	       gfx_color c, uint8_t a)

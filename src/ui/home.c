@@ -196,7 +196,7 @@ static void draw_link(const struct nexus_status *st)
 	 * so the transport you are on is obvious at a glance and the tile is
 	 * free to carry health on its own.
 	 */
-	int y = ROW1_Y + 4;
+	int y = ROW1_Y + (ROW1_H - TR_H * TR_SCALE) / 2;
 	int usb_x = COL_L + 6;
 	int ble_x = usb_x + TR_W * TR_SCALE + 5;
 
@@ -237,20 +237,52 @@ static void draw_link(const struct nexus_status *st)
 		  y + (TR_H * TR_SCALE - ST_H * ST_SCALE) / 2, tile,
 		  ST_W, ST_H, ST_SCALE, tile_c, GFX_OPAQUE);
 
-	/* Locks and the jiggler along the bottom. The padlock IS caps. */
-	int lx = COL_L + 7;
-	int ly = ROW1_Y + ROW1_H - 4 - gfx_text_h(NEXUS_TXT_CAPTION);
+}
 
-	gfx_icon(lx, ly, GFX_ICON_LOCK, NEXUS_TXT_CAPTION,
-		 st->caps_lock ? t->warning : t->muted, GFX_OPAQUE);
-	gfx_text(lx + 10, ly, "N", NEXUS_TXT_CAPTION,
-		 st->num_lock ? t->warning : t->muted, GFX_OPAQUE);
-	gfx_text(lx + 18, ly, "S", NEXUS_TXT_CAPTION,
-		 st->scroll_lock ? t->warning : t->muted, GFX_OPAQUE);
+/*
+ * Locks and the jiggler, as corner dots on the brand plate.
+ *
+ * They used to sit along the bottom of the link card, which made that card
+ * answer four unrelated questions at once - which transport, which profile,
+ * is it healthy, and by the way is caps lock on. The link cluster reads much
+ * faster with only its own three facts on it.
+ *
+ * These are glanceable state, not something you read: a dot is on or it is
+ * not, and that is the whole message. Snake puts its jiggler indicator in a
+ * corner for the same reason.
+ */
+static void draw_flags(const struct nexus_status *st)
+{
+	const struct nexus_theme *t = nexus_theme();
+	const int r = 4;
+	int y = BRAND_Y + 9;
 
+	/* Locks on the left, in keyboard order. */
+	static const int lock_x[3] = { 0, 11, 22 };
+	const bool lock_on[3] = { st->caps_lock, st->num_lock, st->scroll_lock };
+
+	for (int i = 0; i < 3; i++) {
+		int x = COL_L + 10 + lock_x[i];
+
+		if (lock_on[i]) {
+			gfx_disc(x, y, r, t->warning, GFX_OPAQUE);
+		} else {
+			gfx_round_frame(x - r, y - r, r * 2, r * 2, r, t->border,
+					t->border_alpha);
+		}
+	}
+
+	/* Jiggler on the right, green when it is holding the host awake. */
 	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
-		gfx_icon(lx + 28, ly, GFX_ICON_MOUSE, NEXUS_TXT_CAPTION,
-			 st->anti_idle ? t->accent : t->muted, GFX_OPAQUE);
+		int x = COL_L + NEXUS_CONTENT_W - 10;
+
+		if (st->anti_idle) {
+			gfx_disc(x, y, r + 2, t->success, 70);
+			gfx_disc(x, y, r, t->success, GFX_OPAQUE);
+		} else {
+			gfx_round_frame(x - r, y - r, r * 2, r * 2, r,
+					t->border, t->border_alpha);
+		}
 	}
 }
 
@@ -390,6 +422,7 @@ static void home_draw(void)
 	 */
 	if (gfx_hits(BRAND_Y, BRAND_H)) {
 		draw_brand();
+		draw_flags(st);
 	}
 	if (gfx_hits(ROW1_Y, ROW1_H)) {
 		draw_link(st);
@@ -411,8 +444,13 @@ static void on_status(const struct nexus_status *st, uint32_t changed)
 {
 	ARG_UNUSED(st);
 
-	if (changed & (NEXUS_STATUS_ENDPOINT | NEXUS_STATUS_LOCKS |
-		       NEXUS_STATUS_LAYER | NEXUS_STATUS_JIGGLE)) {
+	/* Locks and the jiggler live on the brand band now, not row 1. Marking
+	 * the wrong band is not a crash, it is worse: the dot simply never
+	 * updates and the bug looks like the feature is broken. */
+	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_JIGGLE)) {
+		nexus_screen_invalidate_rows(BRAND_Y, BRAND_Y + BRAND_H);
+	}
+	if (changed & (NEXUS_STATUS_ENDPOINT | NEXUS_STATUS_LAYER)) {
 		nexus_screen_invalidate_rows(ROW1_Y, ROW1_Y + ROW1_H);
 	}
 	if (changed & (NEXUS_STATUS_MODS | NEXUS_STATUS_WPM)) {

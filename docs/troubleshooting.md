@@ -107,6 +107,34 @@ at boot do not talk over the splash fanfare. The one after it will sound.
 
 ## Split
 
+**BLE will not advertise or connect at all.**
+First suspect is the SPI instance. NEXUS briefly drove the panel from SPIM3
+for a 4x throughput win; BLE broke on that build and the panel is back on
+SPIM0, which is what snake-module uses and what is known to work on this
+board. If you re-enable spi3 in `nexus_dongle.overlay`, re-test pairing.
+
+If BLE is still dead on SPIM0, it is not the display bus. Check next:
+`&bt BT_CLR` (a profile bonded to a device you no longer use never advertises
+as discoverable), then whether `CONFIG_ZMK_STUDIO` and its USB snippet have
+squeezed the BLE stack for heap - `CONFIG_HEAP_MEM_POOL_SIZE` in
+`central_dongle.conf` is the knob.
+
+**The connect chirp never fires but the disconnect one does.**
+Fixed. A BLE peripheral does not have to reappear under the same address -
+privacy rotates it - and the first slot allocator only matched on the recorded
+address, then took a free slot, then gave up. After one reconnect both slots
+were claimed by stale addresses, so it returned -1 and dropped the cue. An
+unknown address now reclaims a slot whose link is down.
+
+**Two or three beeps a few seconds after every restart, and the splash tune
+only played the first time.**
+One cause. Bringing up a split keyboard produces several link transitions
+while the central does discovery; announcing them beeped, and because the
+sound engine plays the newest effect and drops what was playing, those chirps
+cut off the splash fanfare. `CONFIG_NEXUS_SOUND_SPLIT_SETTLE_MS` (8 s) ignores
+link changes until the links have settled.
+
+
 **Switching BT profile does not change the number on screen.**
 Fixed twice over. `refresh_endpoint()` compared only the endpoint and the link
 state before marking the dashboard dirty, so `&bt BT_SEL n` updated the model

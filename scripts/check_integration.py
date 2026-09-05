@@ -21,12 +21,16 @@ d_if = [m.start() for m in re.finditer(r'^#ifdef NEXUS_DONGLE', km, re.M)]
 d_el = [m.start() for m in re.finditer(r'^#else', km, re.M)]
 d_en = [m.start() for m in re.finditer(r'^#endif', km, re.M)]
 ok(len(d_if) == 1, 'exactly one #ifdef NEXUS_DONGLE directive')
-ok(len(d_el) == 1, 'exactly one #else directive')
 ok(len(d_en) == 1, 'exactly one #endif directive')
-i, e, n = d_if[0], d_el[0], d_en[0]
-ok(i < e < n, '#ifdef / #else / #endif are in order')
+i, n = d_if[0], d_en[0]
+ok(i < n, '#ifdef precedes #endif')
 
-nexus_branch, snake_branch = km[i:e], km[e:n]
+# The snake dongle lives on its own branch now, so this keymap carries one
+# conditional layer and a fallback - no #else. If an #else comes back, the
+# branch between them has to be a full layer like the others.
+nexus_branch = km[i:(d_el[0] if d_el else n)]
+snake_branch = km[d_el[0]:n] if d_el else None
+ok(snake_branch is None, 'no snake branch on this keymap (it has its own repo branch)')
 
 
 ALIAS_RE = re.compile(r'^#define\s+([A-Z][A-Z0-9_]*)\s+&', re.M)
@@ -71,28 +75,19 @@ fallback = fallback[fallback.rindex('game_layer'):]
 aliases = set(ALIAS_RE.findall(km))
 print('   (%d keymap aliases expanded: %s...)'
       % (len(aliases), ', '.join(sorted(aliases)[:4])))
-for name, block in (('NEXUS branch', nexus_branch),
-                    ('snake branch', snake_branch),
-                    ('fallback grid', fallback)):
+blocks = [('NEXUS branch', nexus_branch), ('fallback grid', fallback)]
+if snake_branch is not None:
+    blocks.insert(1, ('snake branch', snake_branch))
+for name, block in blocks:
     n_b = count_bindings(block, aliases)
     ok(n_b == 60, '%s has %s bindings (need 60)' % (name, n_b))
 
-ok('&{/keymap/game_layer}' in snake_branch,
-   'snake branch overrides the layer by PATH (the node has no label, and the'
-   ' name is not unique)')
-ok('&snake_dir' in snake_branch, 'snake branch binds the direction keys')
-ok('&dongle_action_behavior' in snake_branch, 'snake branch binds the action key')
-ok('&anti_idle' in snake_branch, 'snake branch keeps the jiggler toggle')
 ok('nexus_action' in nexus_branch, 'NEXUS branch binds nexus_action')
-ok('&snake_dir' not in nexus_branch, 'NEXUS branch does not bind snake keys')
-ok('sensor-bindings' in snake_branch, 'snake branch keeps its encoders')
-
-# behaviours referenced by the snake branch must be declared unconditionally
-for beh in ('snake_dir', 'dongle_action_behavior', 'anti_idle'):
-    decl = re.search(r'\b' + beh + r':\s*' + beh + r'\s*\{', km)
-    ok(bool(decl), '%s is declared in the keymap' % beh)
-    if decl:
-        ok(decl.start() < i, '%s is declared outside the #ifdef' % beh)
+# the behaviour node stays declared (harmless, and the snake branch merges
+# cleaner for it); what must be gone is any layer that BINDS it
+bound = re.findall(r'bindings\s*=\s*<[^>]*&snake_dir', km, re.S)
+ok(not bound, 'no layer binds &snake_dir (its dongle has its own branch)')
+ok('sensor-bindings' in nexus_branch, 'NEXUS layer keeps its encoders')
 
 # ------------------------------------------------------------- sound -------
 print('\nSOUND: nothing may play on a timer or on a state NEXUS cannot observe')

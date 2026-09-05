@@ -69,7 +69,7 @@
 	};
 
 	/* --- WIRING VARIANT: BL on a GPIO (Section 5 prose table) ------------
-	 * Move LCD CS to P0.10 in the &spi3 node below, then uncomment this
+	 * Move LCD CS to P0.10 in the &spi0 node below, then uncomment this
 	 * block and add `nexus-backlight = &nexus_bl_led;` to aliases above.
 	 *
 	 * nexus_backlight: nexus-backlight {
@@ -122,24 +122,27 @@
 };
 
 /*
- * SPIM3, not SPIM0, and this is worth 4x on every pixel pushed.
+ * SPIM0, the same instance snake-module drives, and deliberately back from
+ * SPIM3.
  *
- * On the nRF52840 only SPIM3 can run above 8 MHz - nrf52840.dtsi gives spi0,
- * spi1 and spi2 `max-frequency = DT_FREQ_M(8)` and spi3 `DT_FREQ_M(32)`. The
- * driver silently CLAMPS to that ceiling rather than complaining
- * (`MIN(spi_cfg->frequency, max_freq)` in spi_nrfx_spim.c), so asking spi0 for
- * the 30 MHz below got 8 MHz and no warning. At 8 MHz a full 240x240 RGB565
- * frame is 115,200 bytes = ~115 ms of bus time, which is what capped a full
- * repaint - and Tetris redraws the whole panel every gravity step.
+ * SPIM3 is the only instance on an nRF52840 that exceeds 8 MHz
+ * (nrf52840.dtsi: spi0/1/2 are `max-frequency = DT_FREQ_M(8)`, spi3 is
+ * `DT_FREQ_M(32)`), and the driver clamps silently rather than complaining -
+ * `MIN(spi_cfg->frequency, max_freq)` in spi_nrfx_spim.c. So the 30 MHz below
+ * is really 8, a full 240x240 frame is ~115 ms of bus time instead of ~31 ms,
+ * and moving to spi3 was a genuine 4x on every pixel pushed.
  *
- * spi3 is free on a nice_nano (the board claims only spi1) and, unlike spi0,
- * does not share a peripheral block with i2c0.
+ * It is reverted anyway, because BLE stopped working on the build that
+ * introduced it and a dongle that renders quickly but will not pair is not a
+ * dongle. This is the ONLY hardware-level difference between NEXUS and the
+ * snake firmware that is known to work on this board, so it goes back first
+ * and stays back until BLE is confirmed good.
  *
- * If a panel misbehaves on SPIM3, changing this node and the spi-dev phandle
- * below back to &spi0 restores the old behaviour exactly - at a quarter of the
- * throughput. Nothing else in the module depends on which instance this is.
+ * To try the optimisation again once BLE is proven: change this node and the
+ * spi-dev phandle below to &spi3. Nothing else in the module cares which
+ * instance it is. If BLE survives that, keep it - the speed is real.
  */
-&spi3 {
+&spi0 {
 	status = "okay";
 	compatible = "nordic,nrf-spim";
 	pinctrl-0 = <&nexus_spi_default>;
@@ -158,7 +161,7 @@
 	 */
 	nexus_mipi_dbi: mipi-dbi {
 		compatible = "zephyr,mipi-dbi-spi";
-		spi-dev = <&spi3>;
+		spi-dev = <&spi0>;
 		dc-gpios = <&gpio0 24 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
 		write-only;

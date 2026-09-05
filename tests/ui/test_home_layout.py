@@ -25,10 +25,6 @@ def text_h(scale):
     return FONT_H * scale
 
 
-def icon_w(scale):
-    return FONT_W * scale
-
-
 def consts(src):
     """Pull the #define constants out of home.c and resolve them."""
     raw = {}
@@ -115,7 +111,7 @@ def main():
     print('\nRow 1 - link cluster (snake model: symbols, number, tile)')
     TR_W, TR_H, TR_S = C['TR_W'], C['TR_H'], C['TR_SCALE']
     ST_W, ST_H, ST_S = C['ST_W'], C['ST_H'], C['ST_SCALE']
-    y = C['ROW1_Y'] + 4
+    y = C['ROW1_Y'] + (C['ROW1_H'] - TR_H * TR_S) // 2
     tr_bot = y + TR_H * TR_S
     fits('transports %dx%d' % (TR_W * TR_S, TR_H * TR_S), y, tr_bot,
          C['ROW1_Y'], C['ROW1_H'])
@@ -136,13 +132,13 @@ def main():
     ok(num_end < tile_x, 'number(%d) clears tile(%d)' % (num_end, tile_x))
     ok(ble_x >= usb_x + TR_W * TR_S, 'BLE clears USB')
 
-    ly = C['ROW1_Y'] + C['ROW1_H'] - 4 - text_h(C['NEXUS_TXT_CAPTION'])
-    fits('lock row', ly, ly + text_h(C['NEXUS_TXT_CAPTION']),
-         C['ROW1_Y'], C['ROW1_H'])
-    ok(ly >= tr_bot, 'locks(%d) clear transports(%d)' % (ly, tr_bot))
-    lx = C['COL_L'] + 7
-    ok(lx + 28 + icon_w(C['NEXUS_TXT_CAPTION']) <= C['COL_L'] + C['COL_W'] - 2,
-       'lock row fits the card width')
+    ok('draw_flags' in src, 'locks and jiggler moved off the link card')
+    link = src[src.index('static void draw_link'):src.index('static void draw_flags')]
+    ok('caps_lock' not in link and 'anti_idle' not in link,
+       'link card carries only transport, profile and tile')
+    flags = src[src.index('static void draw_flags'):]
+    for f in ('caps_lock', 'num_lock', 'scroll_lock', 'anti_idle'):
+        ok(f in flags, 'draw_flags still shows %s' % f)
 
     print('\nRow 1 - layer card')
     fits('LAYER caption', C['ROW1_Y'] + 6,

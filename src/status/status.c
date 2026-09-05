@@ -34,7 +34,6 @@ static atomic_t g_pending;
 
 /* Last time each peripheral said anything, for the staleness sweep. */
 static int64_t g_seen[2];
-static bool g_announced[2];
 
 static void notify_work_cb(struct k_work *work)
 {
@@ -93,17 +92,12 @@ static uint32_t set_link(int slot, enum nexus_link_state to)
 
 	*link = to;
 
-	if (IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT) && was_up != now_up) {
-		/* Nothing on the very first report: the halves connecting as
-		 * the dongle boots is not news, and it would collide with the
-		 * splash fanfare. */
-		if (g_announced[slot]) {
-			nexus_sound_play(now_up ? (left ? NEXUS_SOUND_HALF_L_CONNECT
-						       : NEXUS_SOUND_HALF_R_CONNECT)
-						: (left ? NEXUS_SOUND_HALF_L_DISCONNECT
-						       : NEXUS_SOUND_HALF_R_DISCONNECT));
-		}
-		g_announced[slot] = true;
+	if (IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT) && was_up != now_up &&
+	    k_uptime_get() > CONFIG_NEXUS_SOUND_SPLIT_SETTLE_MS) {
+		nexus_sound_play(now_up ? (left ? NEXUS_SOUND_HALF_L_CONNECT
+					        : NEXUS_SOUND_HALF_R_CONNECT)
+					: (left ? NEXUS_SOUND_HALF_L_DISCONNECT
+					        : NEXUS_SOUND_HALF_R_DISCONNECT));
 	}
 
 	return NEXUS_STATUS_LINKS;

@@ -41,7 +41,27 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
  */
 static bt_addr_le_t g_peer[2];
 static bool g_used[2];
+static bool g_up[2];
 
+/*
+ * Address -> slot, with a fallback that matters more than the fast path.
+ *
+ * A BLE peer does not have to present the same address every time. With
+ * privacy enabled a peripheral advertises a resolvable private address that
+ * rotates, and what `bt_conn_get_dst()` hands back can differ between one
+ * connection and the next for the same physical half.
+ *
+ * The first version of this only matched on the address and then took a free
+ * slot. After one disconnect/reconnect cycle that produced exactly the bug
+ * reported: the disconnect matched the recorded address and chirped, the
+ * reconnect arrived under a new address, found no match and no free slot,
+ * returned -1, and the connect cue was silently dropped. "Disconnect works,
+ * connect does not" is that -1.
+ *
+ * So an unrecognised address now claims a slot that is currently down, which
+ * is almost certainly the same half coming back under a new address. Only a
+ * genuine third peripheral - two halves already connected - is refused.
+ */
 static int slot_for(const bt_addr_le_t *addr)
 {
 	for (int i = 0; i < 2; i++) {
@@ -56,8 +76,14 @@ static int slot_for(const bt_addr_le_t *addr)
 			return i;
 		}
 	}
+	for (int i = 0; i < 2; i++) {
+		if (!g_up[i]) {
+			bt_addr_le_copy(&g_peer[i], addr);
+			return i;
+		}
+	}
 	/* ponytail: two halves is the only split topology NEXUS renders.
-	 * A third peripheral is ignored rather than evicting a known one. */
+	 * A third peripheral is ignored rather than evicting a live one. */
 	return -1;
 }
 
@@ -85,6 +111,7 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 
 	if (slot >= 0) {
 		LOG_DBG("half %d connected", slot);
+		g_up[slot] = true;
 		nexus_status_half_link(slot, true);
 	}
 }
@@ -101,6 +128,7 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 
 	if (slot >= 0) {
 		LOG_DBG("half %d disconnected (reason %u)", slot, reason);
+		g_up[slot] = false;
 		nexus_status_half_link(slot, false);
 	}
 }

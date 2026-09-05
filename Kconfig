@@ -262,6 +262,25 @@ config NEXUS_SPLIT_SWAP_SIDES
 	  ZMK numbers peripherals by pairing order, not by physical side. Flip
 	  this if your dashboard shows the halves the wrong way round.
 
+config NEXUS_SOUND_SPLIT_SETTLE_MS
+	int "Ignore split link changes for the first N ms after boot"
+	default 8000
+	depends on NEXUS_SOUND_SPLIT
+	help
+	  Bringing up a split keyboard is not a quiet process. Both halves
+	  connect, and ZMK's central may drop and retry a link while it does
+	  service discovery, so the first few seconds after a reset can produce
+	  several link transitions that are all just "booting".
+
+	  Announcing those gave two symptoms that looked unrelated: a couple of
+	  random beeps a moment after every restart, and a splash fanfare that
+	  only ever played on the first boot after flashing - the chirps were
+	  cutting it off, because the sound engine plays the newest effect and
+	  drops what was playing.
+
+	  Must comfortably outlast NEXUS_SPLASH_DURATION_MS. The default gives
+	  the 3.5 s splash room plus a few seconds for the links to settle.
+
 config NEXUS_SOUND_SPLIT
 	bool "Chirp when a half connects or disconnects, and on sleep/wake"
 	depends on NEXUS_SOUND
@@ -270,8 +289,8 @@ config NEXUS_SOUND_SPLIT
 	  Four half cues (rising = arrived, falling = gone; left a fifth below
 	  right) plus a slower pair for deep sleep and wake.
 
-	  Nothing is played for the halves connecting during boot - that is
-	  not news, and it would collide with the splash fanfare.
+	  Nothing is played while the links are still settling after a reset;
+	  see NEXUS_SOUND_SPLIT_SETTLE_MS.
 
 	  Both directions are real events, not inference: they come from
 	  Zephyr connection callbacks on the dongle's own BLE links, so a
