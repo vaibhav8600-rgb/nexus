@@ -15,7 +15,6 @@ Run: python tests/status/test_ble_profile.py
 """
 
 import os
-import re
 import sys
 
 NONE, USB, BLE = range(3)

@@ -40,9 +40,16 @@ jobs:
 
       - name: Python syntax and style
         run: |
-          python3 -m py_compile scripts/png2c.py tests/splash/test_png2c.py
+          python3 -m py_compile scripts/*.py tests/*/*.py
           pip install --quiet flake8
-          flake8 --max-line-length 100 --extend-ignore=E203,W503 scripts/ tests/splash/
+          flake8 --max-line-length 100 --extend-ignore=E203,W503 scripts/ tests/
+
+      - name: Unit tests
+        run: |
+          for t in tests/*/test_*.py; do
+            echo "--- $t"
+            python3 "$t" || exit 1
+          done
 
       - name: No hardware pins outside the shield overlays
         # Requirement D: UI and game code must never name a GPIO.

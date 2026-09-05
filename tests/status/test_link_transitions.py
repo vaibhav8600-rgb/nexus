@@ -19,7 +19,6 @@ Run: python tests/status/test_link_transitions.py
 """
 
 import os
-import re
 import sys
 
 DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING = range(4)
