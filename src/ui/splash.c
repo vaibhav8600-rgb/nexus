@@ -54,6 +54,7 @@ static void splash_draw(void)
 {
 	const struct nexus_splash_art *art = &nexus_splash_art;
 
+#if IS_ENABLED(CONFIG_NEXUS_SPLASH_TEXT)
 	/*
 	 * Fixed positions, not a centred flow.
 	 *
@@ -85,6 +86,18 @@ static void splash_draw(void)
 		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE,
 				   NEXUS_TXT_BODY, 1, SPLASH_COL_PRODUCT);
 	}
+#else
+	/*
+	 * A supplied image IS the splash. It is centred on a cleared panel and
+	 * nothing is drawn over it: an image small enough to leave a margin
+	 * gets a clean border rather than NEXUS's own lettering crossing it.
+	 */
+	gfx_rect(0, 0, GFX_W, GFX_H, nexus_theme()->bg_bot, GFX_OPAQUE);
+
+	if (art->h) {
+		art->draw((GFX_W - art->w) / 2, (GFX_H - art->h) / 2);
+	}
+#endif
 }
 
 /* Sweep the highlight along the name, then pause on the far side so it reads

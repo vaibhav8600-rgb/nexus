@@ -153,3 +153,59 @@ come up again for any artwork someone wants to drop in:
   leaves.
 
 Same picture, no widget tree, no font conversion, no second lifecycle.
+
+## Using your own image
+
+Drop a PNG in your config directory and point at it. The build converts it -
+no C arrays to generate, no NEXUS source to edit.
+
+```
+# config/nexus_dongle.conf
+CONFIG_NEXUS_SPLASH_IMAGE="nexus/splash/splash.png"
+CONFIG_NEXUS_SPLASH_MAX_DIM=240
+```
+
+The path is relative to your zmk-config's `config/` directory. A missing file
+is a `FATAL_ERROR` at configure time, not a silent fallback to the default.
+
+**PNG, not JPEG.** `scripts/png2c.py` is stdlib-only on purpose - Pillow is not
+in ZMK's build container, and adding a pip dependency to a firmware build to
+read one image is a bad trade. It reads 8-bit grayscale, grayscale+alpha, RGB,
+RGBA and palette PNGs with all five scanline filters. Interlaced PNGs are
+rejected rather than mangled. Export or convert to PNG first; any image editor
+will do it, and so will `magick photo.jpg splash.png`.
+
+### What it costs
+
+RGB565, so two bytes a pixel, uncompressed, in flash:
+
+| `MAX_DIM` | size | flash | share of the 792 KB app partition |
+| --- | --- | --- | --- |
+| 160 | 160x160 | 51,200 B | 6.3% |
+| 200 | 200x200 | 80,000 B | 9.9% |
+| 240 | 240x240 | 115,200 B | 14.2% |
+
+`MAX_DIM` is a ceiling on the longer side; the converter box-downscales to fit
+and prints the final size and byte count during the build, so the number is
+never a surprise. The built-in badge costs a few hundred bytes by comparison -
+that is the whole reason it is drawn rather than shipped as a bitmap.
+
+### Your image is the whole splash
+
+Setting `NEXUS_SPLASH_IMAGE` turns `CONFIG_NEXUS_SPLASH_TEXT` off by default.
+
+A supplied image is almost always a finished design with its own lettering, and
+drawing `NEXUS_BRAND` and `NEXUS_PRODUCT` on top of that is not a splash
+screen, it is two of them. With the text off the image is centred on a cleared
+panel and nothing is drawn over it - an image smaller than 240x240 gets a clean
+border instead of NEXUS's type crossing it.
+
+Set `CONFIG_NEXUS_SPLASH_TEXT=y` if your image is a bare mark meant to sit
+above the standard three lines.
+
+### Photographs
+
+A photograph will band. RGB565 has 5 bits of red and blue and 6 of green, so
+smooth gradients - skies, studio backdrops, skin - quantise visibly, and there
+is no dithering step here. Artwork with flat colour and hard edges survives the
+format; a photo is worth previewing on the panel before committing to it.

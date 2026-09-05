@@ -123,6 +123,21 @@ config NEXUS_SPLASH_DURATION_MS
 	int "Splash duration in ms (0 disables)"
 	default 3000
 
+config NEXUS_SPLASH_TEXT
+	bool "Draw the brand, product and subtitle lines on the splash"
+	depends on NEXUS_SPLASH
+	default n if NEXUS_SPLASH_IMAGE != ""
+	default y
+	help
+	  The built-in badge is artwork plus three lines of type at fixed
+	  positions, so it needs this on.
+
+	  It defaults OFF as soon as NEXUS_SPLASH_IMAGE is set, because a
+	  supplied image is almost always a finished design with its own
+	  lettering already in it - drawing NEXUS_BRAND and NEXUS_PRODUCT over
+	  the top of that is not a splash screen, it is two of them. Turn it
+	  back on if your image is a bare mark meant to sit above the text.
+
 config NEXUS_SPLASH_IMAGE
 	string "Path to a splash PNG, relative to your zmk-config dir"
 	default ""
