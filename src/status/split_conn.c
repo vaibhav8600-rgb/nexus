@@ -101,13 +101,41 @@ static bool is_peripheral_half(struct bt_conn *conn)
 	return info.role == BT_CONN_ROLE_CENTRAL;
 }
 
+/* Slot for an address we have already seen, or -1. No allocation. */
+static int known_slot(const bt_addr_le_t *addr)
+{
+	for (int i = 0; i < 2; i++) {
+		if (g_used[i] && bt_addr_le_cmp(&g_peer[i], addr) == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
-	if (err != 0U || !is_peripheral_half(conn)) {
+	if (err != 0U) {
 		return;
 	}
 
-	int slot = slot_for(bt_conn_get_dst(conn));
+	const bt_addr_le_t *addr = bt_conn_get_dst(conn);
+	int slot = known_slot(addr);
+
+	/*
+	 * An address we have already accepted as a half is a half, whatever
+	 * bt_conn_get_info() reports this time round. The role test is only
+	 * needed to tell a NEW peer from the host, and leaning on it for every
+	 * event made the connect path strictly more fragile than the
+	 * disconnect path - which is the shape of the bug being chased here:
+	 * powering a half off chirps every time, powering it back on does not.
+	 */
+	if (slot < 0) {
+		if (!is_peripheral_half(conn)) {
+			LOG_DBG("ignoring connection: not a peripheral half");
+			return;
+		}
+		slot = slot_for(addr);
+	}
 
 	if (slot >= 0) {
 		LOG_DBG("half %d connected", slot);
@@ -120,11 +148,15 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	ARG_UNUSED(reason);
 
-	if (!is_peripheral_half(conn)) {
-		return;
-	}
+	const bt_addr_le_t *addr = bt_conn_get_dst(conn);
+	int slot = known_slot(addr);
 
-	int slot = slot_for(bt_conn_get_dst(conn));
+	if (slot < 0) {
+		if (!is_peripheral_half(conn)) {
+			return;
+		}
+		slot = slot_for(addr);
+	}
 
 	if (slot >= 0) {
 		LOG_DBG("half %d disconnected (reason %u)", slot, reason);

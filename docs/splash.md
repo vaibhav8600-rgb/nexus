@@ -119,3 +119,37 @@ python scripts/png2c.py --max-size 160 splash.png splash.c
 There is no byte-order flag. The generated array is native-endian `uint16_t`
 and the compositor swaps once per band on flush, so the one thing that used to
 be easy to get wrong by hand no longer exists.
+
+## The default badge
+
+The built-in artwork is the badge composition: two large circles hung off
+opposite corners and clipped by the panel, a halo, a ringed disc with an inner
+hairline, an angular N, and three lines of type at fixed positions (132 / 152 /
+192).
+
+It is a **fixed** layout, not a centred flow. The lines hang off the disc at
+measured offsets, so re-centring the block whenever a string length changed
+would slide the type against the artwork - which is the one thing the design
+does not tolerate.
+
+Everything is a solid fill. There is no gradient in the composition, so there
+is no RGB565 banding to dither away.
+
+### Why it is not LVGL
+
+The design arrived as an LVGL widget tree. It is drawn with compositor
+primitives instead, for three reasons that are worth stating because they will
+come up again for any artwork someone wants to drop in:
+
+- **RAM.** NEXUS removed its LVGL UI to reclaim it. `CONFIG_LV_Z_VDB_SIZE` is
+  pinned at 10 and LVGL holds one empty object. Ten live objects with their own
+  styles is the thing that was taken out, not something to add back.
+- **Fonts.** The LVGL version needs three `lv_font_conv` subsets - about 2 KB
+  of flash plus an external toolchain step in the build. The 10x14 display face
+  added for the wordmark already draws these glyphs at these sizes.
+- **Lifecycle.** It called the status screen directly and owned its own
+  teardown timer. NEXUS's screen stack already sequences that transition, and
+  two things driving the same transition is how you get a splash that never
+  leaves.
+
+Same picture, no widget tree, no font conversion, no second lifecycle.

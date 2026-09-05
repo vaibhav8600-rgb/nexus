@@ -76,6 +76,16 @@ int nexus_tracked_w(const char *text, int scale, int track);
 void nexus_draw_wordmark(int cx, int y, const char *text, int scale);
 
 /**
+ * The wordmark without its accent rule.
+ *
+ * The rule is what makes the name read as a product lockup on its own. On the
+ * badge splash the disc above IS the mark, and an underline as well made it
+ * two logos stacked, so that layout asks for the letters only.
+ */
+void nexus_draw_wordmark_plain(int cx, int y, const char *text, int scale,
+			       int lit);
+
+/**
  * Wordmark with a lit letter, for the splash.
  *
  * @param lit index of the letter to highlight, or negative for none. Advance

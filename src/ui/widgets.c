@@ -157,7 +157,7 @@ int nexus_wordmark_h(int scale)
 	return gfx_face_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
 }
 
-void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
+static void wordmark_letters(int cx, int y, const char *text, int scale,
 			     int lit)
 {
 	const struct nexus_theme *t = nexus_theme();
@@ -173,20 +173,8 @@ void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 		return;
 	}
 
-	/* One soft shadow for lift, not a stack of them. */
 	gfx_face_text(x + 2, y + 3, text, scale, t->wordmark[4], 90);
 
-	/*
-	 * Each letter takes its colour from a ramp across the word, so the
-	 * mark has movement standing still - a flat block of one colour was
-	 * the thing that never looked finished. gfx_mix walks accent_alt to
-	 * accent left to right.
-	 *
-	 * No faux-bold stamp any more. That trick existed to thicken a 5x7
-	 * face whose strokes stayed one pixel wide however far it scaled;
-	 * font10x14 is drawn with two-pixel stems, so stamping it 2x2 would
-	 * only blur the letterforms it was designed to give us.
-	 */
 	int pen = x;
 
 	for (int i = 0; i < n; i++) {
@@ -194,17 +182,32 @@ void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 		gfx_color c = gfx_mix(t->wordmark[2], t->accent, mixv);
 
 		if (i == lit) {
-			c = t->value; /* the sweeping highlight */
+			c = t->value;
 		}
 
 		one[0] = text[i];
 		gfx_face_text(pen, y, one, scale, c, GFX_OPAQUE);
 		pen += gfx_face_w(one, scale) + scale;
 	}
+}
+
+void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
+			     int lit)
+{
+	const struct nexus_theme *t = nexus_theme();
+	int w = gfx_face_w(text, scale);
+
+	wordmark_letters(cx, y, text, scale, lit);
 
 	/* Accent rule: what reads as "this is a product name". */
-	gfx_round_rect(x, y + gfx_face_h(scale) + WORDMARK_RULE_GAP, w,
+	gfx_round_rect(cx - w / 2, y + gfx_face_h(scale) + WORDMARK_RULE_GAP, w,
 		       WORDMARK_RULE_H, 1, t->accent, GFX_OPAQUE);
+}
+
+void nexus_draw_wordmark_plain(int cx, int y, const char *text, int scale,
+			       int lit)
+{
+	wordmark_letters(cx, y, text, scale, lit);
 }
 
 void nexus_draw_wordmark(int cx, int y, const char *text, int scale)

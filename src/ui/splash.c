@@ -20,54 +20,27 @@
 #include <nexus/widgets.h>
 #include <zephyr/kernel.h>
 
+/*
+ * Badge layout, in the supplied design's own coordinates. The disc occupies
+ * 24..120; these are the three lines below it.
+ */
+#define BRAND_Y 132
+#define WORD_Y 152
+#define WORD_SCALE 2
+#define SUB_Y 192
+
+#define SPLASH_COL_BRAND NEXUS_C(0x565D85u)
+#define SPLASH_COL_PRODUCT NEXUS_C(0x7C87C4u)
+
 #define MARK_GAP 12
 #define BRAND_GAP 10   /* below the mark, above the wordmark */
 #define SUB_GAP 10     /* below the wordmark                 */
 
 /*
- * Everything except the wordmark used to be caption-sized, so on hardware the
- * brand and subtitle simply did not register - the splash read as "logo, then
- * NEXUS, then two smudges". They are body size now, and the block is measured
- * before it is drawn so the whole thing stays centred whatever the strings and
- * the artwork add up to.
+ * The old measure-then-centre helpers (brand_h, sub_h, mark_scale, block_h)
+ * are gone with the flow layout they served. The badge is a fixed
+ * composition; see splash_draw().
  */
-static int brand_h(void)
-{
-	return sizeof(NEXUS_BRAND) > 1
-		       ? gfx_text_h(NEXUS_TXT_BODY) + BRAND_GAP
-		       : 0;
-}
-
-static int sub_h(void)
-{
-	return sizeof(NEXUS_SUBTITLE) > 1
-		       ? gfx_text_h(NEXUS_TXT_BODY) + SUB_GAP
-		       : 0;
-}
-
-/*
- * Wordmark scale that fits the panel width.
- *
- * Measured with gfx_face_w, not gfx_text_w: the display face is 10 columns
- * wide where the body font is 5, so the same scale number is a very different
- * word. Starting the search at 4 rather than 5 is that same arithmetic -
- * NEXUS at face scale 4 is 216px on a 240px panel, and scale 5 would be 270.
- */
-static int mark_scale(void)
-{
-	for (int sc = 4; sc > 1; sc--) {
-		if (gfx_face_w(NEXUS_PRODUCT, sc) <= GFX_W - 2 * NEXUS_PAD - 6) {
-			return sc;
-		}
-	}
-	return 1;
-}
-
-static int block_h(const struct nexus_splash_art *art)
-{
-	return (art->h ? art->h + MARK_GAP : 0) + brand_h() +
-	       nexus_wordmark_h(mark_scale()) + sub_h();
-}
 
 /* Which letter the highlight is on. One integer of animation state. */
 static int8_t g_lit;
@@ -79,46 +52,38 @@ int nexus_splash_phase(void)
 
 static void splash_draw(void)
 {
-	const struct nexus_theme *t = nexus_theme();
 	const struct nexus_splash_art *art = &nexus_splash_art;
-	int scale = mark_scale();
-	int y = (GFX_H - block_h(art)) / 2;
 
-	if (y < NEXUS_PAD) {
-		y = NEXUS_PAD;
+	/*
+	 * Fixed positions, not a centred flow.
+	 *
+	 * The badge composition is a designed layout: the disc sits at 24..120
+	 * and the three lines hang off it at 132 / 152 / 192. Re-centring the
+	 * block would slide the text relative to the disc whenever a string
+	 * length changed, which is exactly what the design does not want. The
+	 * artwork paints the ground and everything above the text.
+	 */
+	if (art->h) {
+		art->draw(0, 0);
 	}
 
-	if (art->h) {
-		art->draw((GFX_W - art->w) / 2, y);
-		y += art->h + MARK_GAP;
+	if (sizeof(NEXUS_BRAND) > 1) {
+		nexus_draw_tracked(GFX_W / 2, BRAND_Y, NEXUS_BRAND,
+				   NEXUS_TXT_BODY, 2, SPLASH_COL_BRAND);
 	}
 
 	/*
-	 * Brand: tracked small caps, the quiet line above the name. Letter
-	 * spacing is what stops a short word at this size reading as a cramped
-	 * blob - it is the treatment the reference uses on every caption.
+	 * The wordmark in the display face, per-letter ramp, with the sweep on
+	 * top. No accent rule under it - the disc above is the mark, and a
+	 * second graphic element under the name made the badge read as two
+	 * logos stacked.
 	 */
-	if (sizeof(NEXUS_BRAND) > 1) {
-		nexus_draw_tracked(GFX_W / 2, y, NEXUS_BRAND, NEXUS_TXT_BODY, 3,
-				   t->caption);
-		y += gfx_text_h(NEXUS_TXT_BODY) + BRAND_GAP;
-	}
+	nexus_draw_wordmark_plain(GFX_W / 2, WORD_Y, NEXUS_PRODUCT,
+				  WORD_SCALE, g_lit);
 
-	nexus_draw_wordmark_lit(GFX_W / 2, y, NEXUS_PRODUCT, scale, g_lit);
-	y += nexus_wordmark_h(scale);
-
-	/* Subtitle sits on its own plate so it reads as a strapline rather
-	 * than as a third loose line of text. */
 	if (sizeof(NEXUS_SUBTITLE) > 1) {
-		int w = nexus_tracked_w(NEXUS_SUBTITLE, NEXUS_TXT_CAPTION, 2);
-		int h = gfx_text_h(NEXUS_TXT_CAPTION) + 10;
-
-		gfx_round_rect((GFX_W - w) / 2 - 10, y + SUB_GAP - 5, w + 20, h,
-			       h / 2, t->panel, t->panel_alpha);
-		gfx_round_frame((GFX_W - w) / 2 - 10, y + SUB_GAP - 5, w + 20, h,
-				h / 2, t->border, t->border_alpha);
-		nexus_draw_tracked(GFX_W / 2, y + SUB_GAP, NEXUS_SUBTITLE,
-				   NEXUS_TXT_CAPTION, 2, t->value);
+		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE,
+				   NEXUS_TXT_BODY, 1, SPLASH_COL_PRODUCT);
 	}
 }
 
