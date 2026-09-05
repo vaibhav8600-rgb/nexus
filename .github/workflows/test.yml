@@ -44,6 +44,12 @@ jobs:
           pip install --quiet flake8
           flake8 --max-line-length 100 --extend-ignore=E203,W503 scripts/ tests/
 
+      - name: Borrowed macros have their headers
+        # ARG_UNUSED without <zephyr/kernel.h> is only a warning at compile
+        # time and an undefined reference at final link, hundreds of steps
+        # later. Catch it at the file that caused it.
+        run: python3 scripts/check_headers.py
+
       - name: No empty source files
         # A 0-byte .py passes both py_compile and flake8 without a murmur.
         # One got committed that way after `open(p,'w').write(open(p).read())`

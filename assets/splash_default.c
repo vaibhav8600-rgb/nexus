@@ -25,6 +25,7 @@
  */
 
 #include <nexus/gfx.h>
+#include <zephyr/kernel.h>   /* ARG_UNUSED */
 #include <nexus/splash.h>
 #include <nexus/theme.h>
 
