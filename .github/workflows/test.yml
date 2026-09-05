@@ -44,6 +44,16 @@ jobs:
           pip install --quiet flake8
           flake8 --max-line-length 100 --extend-ignore=E203,W503 scripts/ tests/
 
+      - name: No empty source files
+        # A 0-byte .py passes both py_compile and flake8 without a murmur.
+        # One got committed that way after `open(p,'w').write(open(p).read())`
+        # truncated it before the read ran.
+        run: |
+          if find scripts tests src include -type f -empty | grep .; then
+            echo "::error::empty file committed"
+            exit 1
+          fi
+
       - name: Unit tests
         run: |
           for t in tests/*/test_*.py; do
