@@ -34,6 +34,14 @@ void nexus_status_peripheral_battery(uint8_t source, uint8_t level);
  * @param slot ZMK peripheral index, 0 or 1.
  */
 void nexus_status_half_link(int slot, bool connected);
+
+/**
+ * Allow nexus_status_mark() to submit work.
+ *
+ * Called once the NEXUS work queue is known to be running. Before this,
+ * status changes are accumulated but not dispatched - see status.c.
+ */
+void nexus_status_ready(void);
 void nexus_status_init(void);
 void nexus_status_seed(void);
 

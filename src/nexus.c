@@ -60,6 +60,11 @@ struct k_work_q *nexus_workq(void)
 static void seed_work(struct k_work *work)
 {
 	ARG_UNUSED(work);
+
+	/* The queue is demonstrably running - this handler is on it - so the
+	 * status model may start dispatching. Anything a BLE callback recorded
+	 * before now is still in g_pending and lands in this first seed. */
+	nexus_status_ready();
 	nexus_status_seed();
 }
 static K_WORK_DELAYABLE_DEFINE(g_seed, seed_work);

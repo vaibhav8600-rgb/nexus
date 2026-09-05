@@ -158,9 +158,35 @@ const struct nexus_status *nexus_status_get(void)
 	return &g_status;
 }
 
+/*
+ * Set once NEXUS's own init has run. Until then the changed-bits are recorded
+ * but nothing is submitted.
+ *
+ * This matters because of who calls in here. nexus_workq() is ZMK's display
+ * work queue, and split_conn.c reaches nexus_status_mark() from Zephyr's
+ * Bluetooth RX thread the instant a half's link comes up - which can be
+ * before that queue has been started. Submitting to a queue whose thread does
+ * not exist yet is undefined, and undefined inside the BT RX thread takes
+ * Bluetooth down with it rather than failing somewhere you would look.
+ *
+ * Nothing is lost by waiting: g_pending is atomic and cumulative, and
+ * nexus_status_seed() marks NEXUS_STATUS_ALL once init completes, so the
+ * first real paint reflects whatever arrived early.
+ */
+static bool g_ready;
+
+void nexus_status_ready(void)
+{
+	g_ready = true;
+}
+
 void nexus_status_mark(uint32_t changed)
 {
 	atomic_or(&g_pending, (atomic_val_t)changed);
+
+	if (!g_ready) {
+		return;
+	}
 	k_work_submit_to_queue(nexus_workq(), &g_notify_work);
 }
 
