@@ -367,26 +367,31 @@ class UI:
             self.cv.text(x, y, ch, scale, c)
             x += text_w(ch, scale) + scale + track
 
-    def wordmark(self, cx, y, s, scale, glow_a=70):
+    def wordmark(self, cx, y, s, scale, glow_a=70, lit=-1):
         """gfx_face_text_glass(), per letter, as wordmark_letters() does."""
         t, cv = self.t, self.cv
         wm = t['wordmark']
         pen = cx - face_w(s, scale) // 2
         fy = y + 2 * scale
-        for ch in s:
+        for i, ch in enumerate(s):
             o = ord(ch.upper())
             g = F10[o - 32] if 32 <= o <= 90 else F10[0]
+            top, bot, glow = wm[0], wm[1], glow_a
+            if lit >= 0 and i == lit:
+                # The splash walks this along the word: the lit letter goes
+                # flat white and its halo comes up to full.
+                top = bot = t['value']
+                glow = 255
             h1 = dilate(g, FACE_H)
             h2 = dilate(h1, FACE_H + 2)
             cv.glyph(pen - 2 * scale, fy - 2 * scale, h2, FACE_W + 4,
-                     FACE_H + 4, scale, wm[2], glow_a // 2)
+                     FACE_H + 4, scale, wm[2], glow // 2)
             cv.glyph(pen - scale, fy - scale, h1, FACE_W + 2, FACE_H + 2,
-                     scale, wm[2], glow_a)
+                     scale, wm[2], glow)
             cv.glyph(pen, fy + 2, g, FACE_W, FACE_H, scale, wm[4], 90)
             cv.glyph(pen, fy + 1, g, FACE_W, FACE_H, scale, wm[3], 200)
             cv.glyph(pen, fy - 1, g, FACE_W, FACE_H, scale, t['edge_hi'], 220)
-            cv.glyph(pen, fy, g, FACE_W, FACE_H, scale, wm[0], OPAQUE,
-                     bot=wm[1])
+            cv.glyph(pen, fy, g, FACE_W, FACE_H, scale, top, OPAQUE, bot=bot)
             pen += face_w(ch, scale) + scale
 
 
@@ -708,13 +713,21 @@ SNK = defines(read('src/games/snake/snake.c'),
                'FRAME_X', 'FRAME_Y', 'FRAME_W', 'FRAME_H'])
 
 
-def snake(cv, t):
+# The static renders pass nothing and get the scene below; render_anim.py
+# drives the same functions frame by frame. Defaults must not change, or CI's
+# PNG diff turns every animation tweak into a docs failure.
+SNAKE_BODY = [(8, 3), (8, 4), (8, 5), (8, 6), (7, 6), (6, 6), (6, 7), (6, 8),
+              (6, 9), (7, 9), (8, 9), (9, 9), (10, 9), (10, 10)]
+
+
+def snake(cv, t, body=None, food=(3, 12), score='120'):
     u, K = UI(cv, t), SNK
+    body = SNAKE_BODY if body is None else body
     u.ground()
     u.label(PAD, 8, 'SNAKE')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
-    cv.text(PAD + 40, 24, '120', BODY, t['value'])
+    cv.text(PAD + 40, 24, score, BODY, t['value'])
     cv.text(W - PAD - text_w('WRAP', CAPTION), 26, 'WRAP', CAPTION,
             t['caption'])
 
@@ -722,8 +735,6 @@ def snake(cv, t):
                    t['border'], t['border_alpha'])
     cv.rect(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'], t['track'], 120)
 
-    body = [(8, 3), (8, 4), (8, 5), (8, 6), (7, 6), (6, 6), (6, 7), (6, 8),
-            (6, 9), (7, 9), (8, 9), (9, 9), (10, 9), (10, 10)]
     for r, c in body:
         x = K['WELL_X'] + c * K['CELL']
         y = K['WELL_Y'] + r * K['CELL']
@@ -734,9 +745,11 @@ def snake(cv, t):
     cv.round_rect(K['WELL_X'] + hc * K['CELL'] + 1,
                   K['WELL_Y'] + hr * K['CELL'] + 1,
                   K['CELL'] - 2, K['CELL'] - 2, 3, t['value'])
-    cv.disc(K['WELL_X'] + 12 * K['CELL'] + K['CELL'] // 2,
-            K['WELL_Y'] + 3 * K['CELL'] + K['CELL'] // 2,
-            K['CELL'] // 2 - 2, t['warning'])
+    if food:
+        fr, fc = food
+        cv.disc(K['WELL_X'] + fc * K['CELL'] + K['CELL'] // 2,
+                K['WELL_Y'] + fr * K['CELL'] + K['CELL'] // 2,
+                K['CELL'] // 2 - 2, t['warning'])
 
 
 # -------------------------------------------------------------- breakout
@@ -746,20 +759,23 @@ BRK = defines(read('src/games/breakout/breakout.c'),
                'PADDLE_H', 'BALL_R'])
 
 
-def breakout(cv, t):
+BRK_GONE = {(0, 2), (0, 3), (1, 5), (2, 0), (2, 1), (3, 6), (4, 3), (4, 4)}
+
+
+def breakout(cv, t, ball=None, paddle=None, gone=None, score='340', lives=3):
     u, K = UI(cv, t), BRK
+    gone = BRK_GONE if gone is None else gone
     paddle_y = K['FIELD_Y'] + K['FIELD_H'] - 10
     u.ground()
     u.label(PAD, 8, 'BREAKOUT')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(PAD, 24, '340', BODY, t['value'])
-    for i in range(3):
+    cv.text(PAD, 24, score, BODY, t['value'])
+    for i in range(lives):
         cv.disc(W - PAD - 6 - i * 12, 30, 4, t['accent'])
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
 
-    gone = {(0, 2), (0, 3), (1, 5), (2, 0), (2, 1), (3, 6), (4, 3), (4, 4)}
     for r in range(K['BRICK_ROWS']):
         for c in range(K['BRICK_COLS']):
             if (r, c) in gone:
@@ -772,10 +788,11 @@ def breakout(cv, t):
             cv.hline(x + 1, y + 1, K['BRICK_W'] - 2, t['edge_hi'],
                      t['edge_hi_alpha'])
 
-    px_ = K['FIELD_X'] + 96
+    px_ = K['FIELD_X'] + (96 if paddle is None else paddle)
     cv.round_rect(px_, paddle_y, K['PADDLE_W'], K['PADDLE_H'],
                   K['PADDLE_H'] // 2, t['value'])
-    cv.disc(K['FIELD_X'] + 128, K['FIELD_Y'] + 120, K['BALL_R'], t['warning'])
+    bx, by = (128, 120) if ball is None else ball
+    cv.disc(K['FIELD_X'] + bx, K['FIELD_Y'] + by, K['BALL_R'], t['warning'])
 
 
 # ---------------------------------------------------------------- splash
@@ -785,7 +802,7 @@ SPL = defines(read('assets/splash_default.c'),
                'N_SCALE', 'HALO_OPA', 'HAIRLINE_OPA'])
 
 
-def splash(cv, t):
+def splash(cv, t, lit=-1):
     """assets/splash_default.c - fixed palette, it ignores the theme."""
     K = SPL
     BG, PURPLE, WINE = C(0x0A0912), C(0x3B2079), C(0x59203E)
@@ -814,7 +831,7 @@ def splash(cv, t):
     cv.glyph(nx + 1, ny, g, FACE_W, FACE_H, ns, ACCENT)
     cv.glyph(nx, ny, g, FACE_W, FACE_H, ns, WHITE)
 
-    u.wordmark(W // 2, K['WORD_Y'], 'NEXUS', K['WORD_SCALE'])
+    u.wordmark(W // 2, K['WORD_Y'], 'NEXUS', K['WORD_SCALE'], lit=lit)
     u.tracked(W // 2, K['SUB_Y'], 'SMART ZMK DONGLE', CAPTION, 2, PROD_C)
     cv.rect(W // 2 - K['RULE_W'] // 2, K['RULE_Y'], K['RULE_W'], 1, ACCENT, 110)
     u.tracked(W // 2, K['BRAND_Y'], 'VAIBHAV TECH', BODY, 2, BRAND_C)

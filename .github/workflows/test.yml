@@ -58,6 +58,7 @@ jobs:
         run: |
           python3 scripts/gen_doc_images.py
           python3 scripts/render_ui.py
+          python3 scripts/render_anim.py
           if ! git diff --exit-code -- docs/images/; then
             echo "::error::docs/images is stale - run scripts/render_ui.py and scripts/gen_doc_images.py"
             exit 1

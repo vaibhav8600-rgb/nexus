@@ -28,6 +28,7 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 - **Game Center** with three playable games -- Tetris, Snake and Breakout.
   Real rules, real scoring, persistent high scores, and a difficulty knob in
   Settings so you never reflash to change how a game feels.
+  ([watch them play](docs/ui.md#games))
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
   nRF52840 to blur a framebuffer.
 

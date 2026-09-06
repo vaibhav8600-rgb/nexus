@@ -53,7 +53,7 @@ coming. Everywhere else a tap dispatches the instant the button comes up.
 
 ## Home
 
-<img src="images/screens/home.png" width="240" align="right" alt="Home">
+<img src="images/anim/home.gif" width="240" align="right" alt="The dashboard while typing">
 
 Four rows in a 240x240 square:
 
@@ -234,8 +234,8 @@ See [themes.md](themes.md) for what every field means and how to add a palette.
   <img src="images/screens/tetris.png" width="170" alt="Tetris">
 </p>
 <p align="center">
-  <img src="images/screens/snake.png" width="170" alt="Snake">
-  <img src="images/screens/breakout.png" width="170" alt="Breakout">
+  <img src="images/anim/snake.gif" width="170" alt="Snake">
+  <img src="images/anim/breakout.gif" width="170" alt="Breakout">
 </p>
 
 Three, all reached from the Game Center. `J`/`L` page between them, the button
@@ -254,7 +254,7 @@ Full rules, controls and tuning: [games.md](games.md).
 
 ## Splash
 
-<img src="images/screens/splash.png" width="240" align="right" alt="Splash">
+<img src="images/anim/splash.gif" width="240" align="right" alt="The splash, animating">
 
 <br clear="right">
 
@@ -280,8 +280,22 @@ strings; an empty one hides its line.
 ```sh
 python3 scripts/render_ui.py       # full screens -> docs/images/screens/
 python3 scripts/gen_doc_images.py  # glyphs and palettes -> docs/images/ui/
+python3 scripts/render_anim.py     # animations    -> docs/images/anim/
 ```
 
-Both read the firmware source and both are stdlib only -- no Pillow, for the
-same reason `png2c.py` has none. CI runs them and fails on any diff, so an
-image here cannot quietly stop matching the code.
+All three read the firmware source and all three are stdlib only -- no Pillow,
+for the same reason `png2c.py` has none, and that includes the GIF encoder in
+`scripts/gif.py`. CI runs them and fails on any diff, so an image here cannot
+quietly stop matching the code.
+
+The animations are driven by the games' own rules rather than drawn by hand:
+Snake frees its tail before the collision test and wraps at the edges,
+Breakout runs the same 8.8 fixed-point ball with the paddle deflection that
+steers it, and the frame delays are the real tick intervals -- so they play at
+the speed the hardware does.
+
+Every frame after the first stores only the rectangle that changed, which is
+what keeps a 90-frame Breakout under 40 KB instead of 660. `tests/ui/test_gif.py`
+decodes the result with an independent decoder and composites it back, because
+a wrong offset there leaves frame 1 perfect and quietly displaces everything
+after it.
