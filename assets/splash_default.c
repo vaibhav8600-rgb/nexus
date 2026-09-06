@@ -28,6 +28,8 @@
 #include <zephyr/kernel.h>   /* ARG_UNUSED */
 #include <nexus/splash.h>
 #include <nexus/theme.h>
+#include <nexus/nexus.h>
+#include <nexus/widgets.h>
 
 /* The badge palette, verbatim. */
 #define COL_BG NEXUS_C(0x0A0912u)
@@ -44,7 +46,16 @@
 /* The mark occupies the full panel: the two background circles are placed
  * past its edges on purpose and clip against it. */
 #define MARK_W 240
-#define MARK_H 128 /* down to the disc's baseline; text follows in splash.c */
+#define MARK_H 240 /* the badge is the whole panel, type included */
+
+/* The three lines, at the design's own y positions. */
+#define BRAND_Y 132
+#define WORD_Y 152
+#define WORD_SCALE 2
+#define SUB_Y 192
+
+#define COL_BRAND NEXUS_C(0x565D85u)
+#define COL_PRODUCT NEXUS_C(0x7C87C4u)
 
 #define N_SCALE 3 /* 10x14 face -> 30x42, the original's 38px cap */
 
@@ -68,6 +79,8 @@ static void draw_default_mark(int x, int y)
 {
 	int lit = nexus_splash_phase();
 
+	/* Full-panel composition: it ignores the centring offset splash.c
+	 * offers, because there is nothing to centre. */
 	ARG_UNUSED(x);
 	ARG_UNUSED(y);
 
@@ -106,6 +119,31 @@ static void draw_default_mark(int x, int y)
 	gfx_face_text(nx + 1, ny, "N", N_SCALE, COL_ACCENT, GFX_OPAQUE);
 	gfx_face_text(nx, ny, "N", N_SCALE, lit == 0 ? COL_ACCENT : COL_WHITE,
 		      GFX_OPAQUE);
+
+	/*
+	 * The type, drawn here rather than by splash.c, because it belongs to
+	 * this composition and to nothing else. The lines hang off the disc at
+	 * measured offsets - 132 / 152 / 192 - so they are fixed, not centred
+	 * as a block: re-centring would slide them against the disc whenever a
+	 * string length changed.
+	 *
+	 * A supplied PNG replaces this whole function, so it replaces the text
+	 * with it. That is the point.
+	 */
+	if (sizeof(NEXUS_BRAND) > 1) {
+		nexus_draw_tracked(GFX_W / 2, BRAND_Y, NEXUS_BRAND,
+				   NEXUS_TXT_BODY, 2, COL_BRAND);
+	}
+
+	/* No accent rule under the wordmark: the disc above is the mark, and a
+	 * second graphic element under the name read as two logos stacked. */
+	nexus_draw_wordmark_plain(GFX_W / 2, WORD_Y, NEXUS_PRODUCT, WORD_SCALE,
+				  lit);
+
+	if (sizeof(NEXUS_SUBTITLE) > 1) {
+		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE,
+				   NEXUS_TXT_BODY, 1, COL_PRODUCT);
+	}
 }
 
 const struct nexus_splash_art nexus_splash_art = {

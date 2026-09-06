@@ -24,17 +24,8 @@
  * Badge layout, in the supplied design's own coordinates. The disc occupies
  * 24..120; these are the three lines below it.
  */
-#define BRAND_Y 132
-#define WORD_Y 152
-#define WORD_SCALE 2
-#define SUB_Y 192
 
-#define SPLASH_COL_BRAND NEXUS_C(0x565D85u)
-#define SPLASH_COL_PRODUCT NEXUS_C(0x7C87C4u)
 
-#define MARK_GAP 12
-#define BRAND_GAP 10   /* below the mark, above the wordmark */
-#define SUB_GAP 10     /* below the wordmark                 */
 
 /*
  * The old measure-then-centre helpers (brand_h, sub_h, mark_scale, block_h)
@@ -54,50 +45,28 @@ static void splash_draw(void)
 {
 	const struct nexus_splash_art *art = &nexus_splash_art;
 
-#if IS_ENABLED(CONFIG_NEXUS_SPLASH_TEXT)
 	/*
-	 * Fixed positions, not a centred flow.
+	 * The artwork is the entire splash. This function does not draw one
+	 * pixel of its own.
 	 *
-	 * The badge composition is a designed layout: the disc sits at 24..120
-	 * and the three lines hang off it at 132 / 152 / 192. Re-centring the
-	 * block would slide the text relative to the disc whenever a string
-	 * length changed, which is exactly what the design does not want. The
-	 * artwork paints the ground and everything above the text.
-	 */
-	if (art->h) {
-		art->draw(0, 0);
-	}
-
-	if (sizeof(NEXUS_BRAND) > 1) {
-		nexus_draw_tracked(GFX_W / 2, BRAND_Y, NEXUS_BRAND,
-				   NEXUS_TXT_BODY, 2, SPLASH_COL_BRAND);
-	}
-
-	/*
-	 * The wordmark in the display face, per-letter ramp, with the sweep on
-	 * top. No accent rule under it - the disc above is the mark, and a
-	 * second graphic element under the name made the badge read as two
-	 * logos stacked.
-	 */
-	nexus_draw_wordmark_plain(GFX_W / 2, WORD_Y, NEXUS_PRODUCT,
-				  WORD_SCALE, g_lit);
-
-	if (sizeof(NEXUS_SUBTITLE) > 1) {
-		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE,
-				   NEXUS_TXT_BODY, 1, SPLASH_COL_PRODUCT);
-	}
-#else
-	/*
-	 * A supplied image IS the splash. It is centred on a cleared panel and
-	 * nothing is drawn over it: an image small enough to leave a margin
-	 * gets a clean border rather than NEXUS's own lettering crossing it.
+	 * The brand, product and subtitle lines used to be drawn here, over
+	 * whatever the artwork had painted. That is correct for the built-in
+	 * badge, where the type belongs to the composition - and wrong for
+	 * every supplied image, which is normally a finished design with its
+	 * own lettering already in it. The result was NEXUS printing its
+	 * wordmark across somebody's artwork.
+	 *
+	 * A Kconfig switch would have papered over it. This is structural
+	 * instead: the badge draws its own text (assets/splash_default.c), a
+	 * converted PNG draws only its pixels (scripts/png2c.py), and there is
+	 * no setting anybody can get wrong. "Nothing is painted over a custom
+	 * splash" stops being a promise and becomes a property of the code.
 	 */
 	gfx_rect(0, 0, GFX_W, GFX_H, nexus_theme()->bg_bot, GFX_OPAQUE);
 
 	if (art->h) {
 		art->draw((GFX_W - art->w) / 2, (GFX_H - art->h) / 2);
 	}
-#endif
 }
 
 /* Sweep the highlight along the name, then pause on the far side so it reads

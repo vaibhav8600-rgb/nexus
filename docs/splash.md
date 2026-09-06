@@ -190,18 +190,25 @@ and prints the final size and byte count during the build, so the number is
 never a surprise. The built-in badge costs a few hundred bytes by comparison -
 that is the whole reason it is drawn rather than shipped as a bitmap.
 
-### Your image is the whole splash
+### Your image is the whole splash, structurally
 
-Setting `NEXUS_SPLASH_IMAGE` turns `CONFIG_NEXUS_SPLASH_TEXT` off by default.
+There is no setting for this and there does not need to be one.
 
-A supplied image is almost always a finished design with its own lettering, and
-drawing `NEXUS_BRAND` and `NEXUS_PRODUCT` on top of that is not a splash
-screen, it is two of them. With the text off the image is centred on a cleared
-panel and nothing is drawn over it - an image smaller than 240x240 gets a clean
-border instead of NEXUS's type crossing it.
+`src/ui/splash.c` clears the panel, centres `nexus_splash_art` and calls its
+`draw()`. That is the entire function - it draws no text of its own. The
+badge's brand, wordmark and subtitle live inside
+`assets/splash_default.c`'s draw function, because they belong to that
+composition and to nothing else.
 
-Set `CONFIG_NEXUS_SPLASH_TEXT=y` if your image is a bare mark meant to sit
-above the standard three lines.
+`CMakeLists.txt` compiles **exactly one** of `assets/splash_default.c` or the
+PNG converted by `scripts/png2c.py`, both providing the same
+`nexus_splash_art` symbol. So supplying an image does not disable the badge's
+text; it replaces the function that drew it. The default splash is not merely
+hidden, it is not in the binary.
+
+An earlier version had a `CONFIG_NEXUS_SPLASH_TEXT` switch for this. A switch
+can be set wrong, and "nothing is painted over a custom splash" is better as a
+property of the code than as a promise in a config file.
 
 ### Photographs
 
