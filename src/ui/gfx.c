@@ -535,8 +535,8 @@ void gfx_text_c(int cx, int y, const char *s, int scale, gfx_color c, uint8_t a)
 
 
 
-void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
-	       gfx_color c, uint8_t a)
+void gfx_glyph_grad(int x, int y, const uint16_t *rows, int w, int h,
+		    int scale, gfx_color top, gfx_color bot, uint8_t a)
 {
 	if (rows == NULL || w <= 0 || h <= 0) {
 		return;
@@ -553,6 +553,19 @@ void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
 
 		if (bits == 0) {
 			continue;
+		}
+
+		/*
+		 * The ramp is per SOURCE row, so it is the letterform that
+		 * shades rather than the screen: the same glyph gets the same
+		 * gradient at every scale, and it does not shift when the
+		 * wordmark straddles two compositor bands.
+		 */
+		gfx_color c = top;
+
+		if (top != bot) {
+			c = gfx_mix(top, bot,
+				    (uint8_t)(h > 1 ? row * 255 / (h - 1) : 0));
 		}
 
 		/*
@@ -579,6 +592,12 @@ void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
 			col += run;
 		}
 	}
+}
+
+void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
+	       gfx_color c, uint8_t a)
+{
+	gfx_glyph_grad(x, y, rows, w, h, scale, c, c, a);
 }
 
 int gfx_face_h(int scale)
@@ -632,6 +651,97 @@ void gfx_face_text(int x, int y, const char *s, int scale, gfx_color c,
 			gfx_text(x + (FACE_W * scale - FONT_W * fs) / 2, y, one,
 				 fs, c, a);
 		}
+		x += (FACE_W + 1) * scale;
+	}
+}
+
+/*
+ * A 3x3 dilation of one glyph, shifted one column right into a (w+2) field.
+ *
+ * This is how the outline is drawn: one extra pass over a fattened copy of the
+ * bitmap, rather than four passes at +/-1 offsets. It is both cheaper and more
+ * correct for this artwork - dilating at SOURCE resolution makes the outline
+ * exactly one letter-pixel thick, so it grows with the wordmark instead of
+ * staying a hairline, which is what the blocky arcade references actually do.
+ *
+ * Bit 0 is the leftmost column, so << moves right. The glyph sits at offset 1
+ * and the caller draws at x - scale to put it back where it belongs.
+ */
+static void face_dilate(const uint16_t *src, uint16_t *dst)
+{
+	for (int r = 0; r < FACE_H + 2; r++) {
+		uint16_t m = 0;
+
+		/*
+		 * Output row r holds source row r-1, so the three rows that
+		 * dilate into it are r-2, r-1 and r. Growing the field by a
+		 * row top and bottom is not cosmetic: a letter whose stem
+		 * reaches row 0 - N, E, U - would otherwise have no outline
+		 * along its cap or its foot, which is exactly the edge the
+		 * references make brightest.
+		 */
+		for (int k = 0; k < 3; k++) {
+			int sr = r - 2 + k;
+
+			if (sr >= 0 && sr < FACE_H) {
+				m |= src[sr];
+			}
+		}
+		dst[r] = (uint16_t)(m | (m << 1) | (m << 2));
+	}
+}
+
+void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
+		      gfx_color bot, gfx_color outline, gfx_color extrude,
+		      int depth)
+{
+	uint16_t halo[FACE_H + 2];
+
+	if (scale < 1) {
+		scale = 1;
+	}
+	if (depth < 0) {
+		depth = 0;
+	}
+
+	for (const char *p = s; p && *p; p++) {
+		unsigned char ch = (unsigned char)*p;
+
+		if (ch < FACE_FIRST || ch > FACE_LAST) {
+			/* Outside the display face. One flat glyph rather than
+			 * a hole in the word - same fallback gfx_face_text
+			 * makes, and nothing here is worth three passes. */
+			char one[2] = { *p, 0 };
+			int fs = (FACE_H * scale) / FONT_H;
+
+			gfx_text(x + (FACE_W * scale - FONT_W * (fs ? fs : 1)) / 2,
+				 y, one, fs ? fs : 1, top, GFX_OPAQUE);
+			x += (FACE_W + 1) * scale;
+			continue;
+		}
+
+		const uint16_t *g = font10x14[ch - FACE_FIRST];
+
+		face_dilate(g, halo);
+
+		/*
+		 * Extrude the OUTLINED silhouette, not the bare letter: the
+		 * side of a block is as wide as its face, and extruding the
+		 * face alone leaves the outline sitting on nothing - the
+		 * letter reads as a sticker rather than as a solid.
+		 */
+		for (int d = depth; d >= 1; d--) {
+			gfx_glyph(x - scale + d, y - scale + d, halo,
+				  FACE_W + 2, FACE_H + 2, scale, extrude,
+				  GFX_OPAQUE);
+		}
+
+		gfx_glyph(x - scale, y - scale, halo, FACE_W + 2, FACE_H + 2,
+			  scale, outline, GFX_OPAQUE);
+
+		gfx_glyph_grad(x, y, g, FACE_W, FACE_H, scale, top, bot,
+			       GFX_OPAQUE);
+
 		x += (FACE_W + 1) * scale;
 	}
 }

@@ -143,6 +143,25 @@ void gfx_glyph(int x, int y, const uint16_t *rows, int w, int h, int scale,
  * anything outside that range is drawn from the 5x7 font at the same nominal
  * height, so a product name with lowercase in it still renders.
  */
+/**
+ * One glyph with a vertical gradient, mixed per source row.
+ *
+ * gfx_glyph() is this with both stops the same colour.
+ */
+void gfx_glyph_grad(int x, int y, const uint16_t *rows, int w, int h,
+		    int scale, gfx_color top, gfx_color bot, uint8_t a);
+
+/**
+ * The display face as extruded arcade lettering: a gradient face, a bright
+ * outline one letter-pixel thick, and @p depth pixels of extrusion down and
+ * right. Advances exactly as gfx_face_text() does, so gfx_face_w() still
+ * measures it - the outline and the extrusion both live in the space the
+ * layout already leaves between glyphs.
+ */
+void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
+		      gfx_color bot, gfx_color outline, gfx_color extrude,
+		      int depth);
+
 void gfx_face_text(int x, int y, const char *s, int scale, gfx_color c,
 		   uint8_t a);
 /** Width of @p s in the display face, matching gfx_face_text(). */

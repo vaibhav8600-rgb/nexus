@@ -152,42 +152,76 @@ void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
 #define WORDMARK_RULE_GAP 4
 #define WORDMARK_RULE_H 3
 
+/*
+ * Extruded arcade lettering, per the supplied references.
+ *
+ * The old wordmark was flat glyphs over a soft 90-alpha drop shadow, with the
+ * colour ramping left-to-right across the word. That reads as a caption set
+ * large. The references read as OBJECTS: each letter is a solid block with a
+ * bright edge, shaded top-to-bottom, sitting on its own extrusion.
+ *
+ * Three things do that, and the ramp direction is one of them - shading down
+ * the letter is light falling on it, shading across the word is a gradient
+ * applied to text. The horizontal ramp is gone.
+ *
+ * The palette is the theme's existing wordmark[] with no new fields:
+ *
+ *   [1]  the bright edge      lightest stop in every theme
+ *   [2]  face, top
+ *   [3]  face, bottom
+ *   [4]  the extrusion        darkest stop in every theme
+ *
+ * ([0] is each theme's ground and stays unused, as it was before.)
+ */
+static int wordmark_depth(int scale)
+{
+	/* One pixel of extrusion per scale step: a fixed depth would vanish on
+	 * the big About wordmark and swamp a small one. */
+	return scale < 1 ? 1 : scale;
+}
+
+/* Face, plus the halo cell above and below, plus the extrusion. */
+static int wordmark_ink_h(int scale)
+{
+	int s = scale < 1 ? 1 : scale;
+
+	return gfx_face_h(s) + 2 * s + wordmark_depth(s);
+}
+
 int nexus_wordmark_h(int scale)
 {
-	return gfx_face_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
+	return wordmark_ink_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
 }
 
 static void wordmark_letters(int cx, int y, const char *text, int scale,
 			     int lit)
 {
 	const struct nexus_theme *t = nexus_theme();
-	int w = gfx_face_w(text, scale);
-	int x = cx - w / 2;
-	int n = 0;
+	int s = scale < 1 ? 1 : scale;
+	int w = gfx_face_w(text, s);
+	int pen = cx - w / 2;
 	char one[2] = { 0, 0 };
 
+	/* y is the top of the INK, and the halo owns the cell above the face.
+	 * Callers centre with nexus_wordmark_h(), so the outline and the
+	 * extrusion are inside the box they measured rather than bleeding out
+	 * of the card the wordmark sits in. */
+	int fy = y + s;
+
 	for (const char *p = text; p && *p; p++) {
-		n++;
-	}
-	if (n == 0) {
-		return;
-	}
+		gfx_color top = t->wordmark[2];
+		gfx_color bot = t->wordmark[3];
 
-	gfx_face_text(x + 2, y + 3, text, scale, t->wordmark[4], 90);
-
-	int pen = x;
-
-	for (int i = 0; i < n; i++) {
-		uint8_t mixv = (uint8_t)((i * 255) / (n > 1 ? n - 1 : 1));
-		gfx_color c = gfx_mix(t->wordmark[2], t->accent, mixv);
-
-		if (i == lit) {
-			c = t->value;
+		if (lit >= 0 && (p - text) == lit) {
+			/* The splash walks this along the word. Flat, not
+			 * shaded: the point is that one letter is lit. */
+			top = bot = t->value;
 		}
 
-		one[0] = text[i];
-		gfx_face_text(pen, y, one, scale, c, GFX_OPAQUE);
-		pen += gfx_face_w(one, scale) + scale;
+		one[0] = *p;
+		gfx_face_text_3d(pen, fy, one, s, top, bot, t->wordmark[1],
+				 t->wordmark[4], wordmark_depth(s));
+		pen += gfx_face_w(one, s) + s;
 	}
 }
 
@@ -199,9 +233,10 @@ void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 
 	wordmark_letters(cx, y, text, scale, lit);
 
-	/* Accent rule: what reads as "this is a product name". */
-	gfx_round_rect(cx - w / 2, y + gfx_face_h(scale) + WORDMARK_RULE_GAP, w,
-		       WORDMARK_RULE_H, 1, t->accent, GFX_OPAQUE);
+	/* Accent rule: what reads as "this is a product name". Below the ink,
+	 * not below the face - otherwise the extrusion lands on it. */
+	gfx_round_rect(cx - w / 2, y + wordmark_ink_h(scale) + WORDMARK_RULE_GAP,
+		       w, WORDMARK_RULE_H, 1, t->accent, GFX_OPAQUE);
 }
 
 void nexus_draw_wordmark_plain(int cx, int y, const char *text, int scale,

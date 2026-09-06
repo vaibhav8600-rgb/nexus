@@ -56,8 +56,14 @@ struct nexus_theme {
 	gfx_color warning;
 	gfx_color error;
 
-	/* Extruded wordmark: [0] is the face, [1..4] the shadow steps drawn one
-	 * pixel lower each. The signature element of the reference design. */
+	/*
+	 * The extruded wordmark, brightest to darkest:
+	 *   [0] unused (each theme's ground, kept for palette symmetry)
+	 *   [1] the bright outline edge
+	 *   [2] face, top       [3] face, bottom
+	 *   [4] the extrusion
+	 * The signature element of the reference design.
+	 */
 	gfx_color wordmark[5];
 
 	uint8_t radius; /* card corner radius */

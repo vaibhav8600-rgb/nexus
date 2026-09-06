@@ -680,7 +680,15 @@ static void about_draw(void)
 
 	nexus_draw_card(NEXUS_PAD, 14, NEXUS_CONTENT_W, 62);
 	nexus_draw_caption_c(GFX_W / 2, 21, NEXUS_BRAND);
-	nexus_draw_wordmark(GFX_W / 2, 33, NEXUS_PRODUCT, 4);
+	/*
+	 * Scale 2, not 4. At 4 the face alone is 56px tall from y=33, so it
+	 * ran to 89 inside a card that ends at 76 - and the FIRMWARE card is
+	 * drawn after it, painting over the bottom of the word and its rule.
+	 * It has been clipped that way the whole time; the extrusion only made
+	 * it more obvious. 2 fits the card it was given, with the face landing
+	 * on the same y=33 it always had.
+	 */
+	nexus_draw_wordmark(GFX_W / 2, 31, NEXUS_PRODUCT, 2);
 
 	nexus_draw_card(NEXUS_PAD, 84, NEXUS_CONTENT_W, 38);
 	nexus_draw_caption_c(GFX_W / 2, 91, "FIRMWARE");

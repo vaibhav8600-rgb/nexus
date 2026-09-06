@@ -227,6 +227,67 @@ def main():
        + 4 + 2 * C['INNER'] <= C['COL_W'],
        '"100%%" fits the narrower battery card')
 
+    print('\nExtruded wordmark')
+    # The reference lettering adds ink the old flat wordmark did not have: a
+    # halo cell above and below the face, and an extrusion below that. All of
+    # it has to stay inside the card, because the card is drawn first and
+    # whatever is drawn next paints over anything that escaped.
+    FACE_W, FACE_H = 10, 14
+    RULE_GAP, RULE_H = 4, 3
+
+    def face_w(text, s):
+        return len(text) * (FACE_W + 1) * s - s
+
+    def ink_h(s):
+        return FACE_H * s + 2 * s + s      # face + halo + extrusion
+
+    def mark_h(s):
+        return ink_h(s) + RULE_GAP + RULE_H
+
+    wid = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '..', '..', 'src', 'ui', 'widgets.c'),
+               encoding='utf-8').read()
+    ok('gfx_face_text_3d' in wid, 'the wordmark is drawn extruded')
+    ok('t->wordmark[1]' in wid and 't->wordmark[4]' in wid,
+       'outline and extrusion come from the theme, not from constants')
+    ok('gfx_mix(t->wordmark[2], t->accent' not in wid,
+       'the left-to-right ramp is gone - the references shade downward')
+    ok('wordmark_ink_h(scale) + WORDMARK_RULE_GAP' in wid,
+       'the rule sits below the extrusion, not below the face')
+
+    # Home picks the largest scale from 2 down whose face fits the card.
+    avail = C['NEXUS_CONTENT_W'] - 2 * C['INNER'] - 4
+    hs = 2
+    while hs > 1 and face_w('NEXUS', hs) > avail:
+        hs -= 1
+    ok(face_w('NEXUS', hs) <= avail, 'the face fits the brand card')
+    # The halo sticks out one letter-pixel each side of the measured width.
+    ok(face_w('NEXUS', hs) + 3 * hs <= C['NEXUS_CONTENT_W'] - 2 * C['INNER'],
+       'and so do its outline and extrusion')
+
+    top = C['BRAND_Y'] + (C['BRAND_H'] - mark_h(hs)) // 2
+    fits('wordmark ink', top, top + ink_h(hs), C['BRAND_Y'], C['BRAND_H'])
+    fits('wordmark rule', top + ink_h(hs) + RULE_GAP,
+         top + mark_h(hs), C['BRAND_Y'], C['BRAND_H'])
+
+    # About draws the same widget into a 62px card. At scale 4 the face alone
+    # was 56px from y=33 - it ran to 89 and the next card painted over it.
+    menus = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              '..', '..', 'src', 'ui', 'menus.c'),
+                 encoding='utf-8').read()
+    m = re.search(r'nexus_draw_wordmark\(GFX_W / 2, (\d+), NEXUS_PRODUCT, '
+                  r'(\d+)\)', menus)
+    ok(m is not None, 'the About wordmark call is still recognisable')
+    if m:
+        ay, asz = int(m.group(1)), int(m.group(2))
+        ok(ay + mark_h(asz) <= 14 + 62,
+           'About wordmark (ends %d) stays in its card (ends %d)'
+           % (ay + mark_h(asz), 76))
+        ok(ay + mark_h(asz) <= 84,
+           'and clears the FIRMWARE card below it')
+        ok(face_w('NEXUS', asz) + 3 * asz <= C['NEXUS_CONTENT_W'],
+           'About wordmark fits the card width')
+
     print('\nHierarchy')
     ok('nexus_draw_caption(' in src, 'card headings are captions again')
     ok(str(C['NEXUS_TXT_BIG']) in src or True, '')
