@@ -94,6 +94,7 @@ buzzer and two tactile switches.
 | [hardware.md](docs/hardware.md) | Pin map, the pin conflict, wiring, backlight variants |
 | [installation.md](docs/installation.md) | Adding NEXUS to an existing config |
 | [configuration.md](docs/configuration.md) | Every option, and what the button does on each screen |
+| [ui.md](docs/ui.md) | Every screen and symbol, the themes, what the button does |
 | [splash.md](docs/splash.md) | Custom artwork from your own repo |
 | [themes.md](docs/themes.md) | The seven palettes, and how the glass is faked |
 | [games.md](docs/games.md) | The three games, difficulty, and adding your own |

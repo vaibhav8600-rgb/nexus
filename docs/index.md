@@ -3,6 +3,7 @@
 Start at [installation](installation.md) if you want it working, or
 [architecture](architecture.md) if you want to know why it is shaped this way.
 
+- [ui](ui.md) - every screen and symbol, with the glyphs rendered from source
 - [hardware](hardware.md)
 - [installation](installation.md)
 - [configuration](configuration.md)

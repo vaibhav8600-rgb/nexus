@@ -50,6 +50,14 @@ jobs:
         # later. Catch it at the file that caused it.
         run: python3 scripts/check_headers.py
 
+      - name: Doc images match the source they came from
+        # docs/images/ui/ is generated from the glyph bitmaps in home.c and
+        # the palettes in theme.c. Regenerate and diff: a doc image that
+        # disagrees with the firmware is worse than no image at all.
+        run: |
+          python3 scripts/gen_doc_images.py
+          git diff --exit-code -- docs/images/ui/             || (echo "::error::docs/images/ui is stale - run scripts/gen_doc_images.py" && exit 1)
+
       - name: Docs match the options that exist
         # Both directions. Nothing fails when a Kconfig symbol is added and
         # never written down, or renamed while the docs keep the old name -
