@@ -18,7 +18,7 @@ Run: python tests/games/test_game_rules.py
 import os
 import sys
 
-COLS = ROWS = 24
+COLS = ROWS = 16   # must match src/games/snake/snake.c
 EMPTY, BODY, FOOD = 0, 1, 2
 UP, RIGHT, DOWN, LEFT = range(4)
 DR = (-1, 0, 1, 0)
@@ -188,7 +188,10 @@ def main():
                       ("CONFIG_NEXUS_SNAKE_WRAP", "edges wrap, no fatal walls"),
                       ("CONFIG_NEXUS_SNAKE_TICK_MS", "speed comes from Kconfig"),
                       ("NEXUS_ACTION_ROTATE", "I (ROTATE) steers up"),
-                      ("nexus_game_speed()", "tick scales with the live setting")]:
+                      ("nexus_game_speed()", "tick scales with the live setting"),
+                      ("#define CELL 12",
+                       "cells are 12px - 8px was four faint slivers"),
+                      ("#define COLS 16", "board matches this test's model")]:
         ok = frag in snake_c
         print(("  ok    " if ok else "  FAIL  ") + "snake: " + why)
         if not ok:

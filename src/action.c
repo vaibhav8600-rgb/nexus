@@ -109,6 +109,12 @@ void nexus_action_dispatch(enum nexus_action action)
 {
 	uint8_t a = (uint8_t)action;
 
+	if (action == NEXUS_ACTION_NONE) {
+		/* A screen that declares no gesture for this input. Silently
+		 * doing nothing is the whole point of the sentinel. */
+		return;
+	}
+
 	if (k_msgq_put(&g_actions, &a, K_NO_WAIT) != 0) {
 		/* Dropping a queued action is strictly better than blocking an
 		 * ISR or the keymap thread (Section 141-A). */
@@ -127,17 +133,42 @@ void nexus_action_dispatch(enum nexus_action action)
  * the window closes. That is real latency on the primary gesture, so it is
  * paid only on screens that declare btn_double - everywhere else a tap still
  * dispatches the instant the button comes up.
+ *
+ * g_tap_armed is a separate flag and not "g_tap_pending != 0", which is what
+ * this was and why the Game Center's button did nothing at all:
+ * NEXUS_ACT_SELECT is 0, so storing btn_short as its own pending-flag stored
+ * a falsy value, the timeout never fired the tap, and a second tap re-armed
+ * instead of counting as a double. An enum whose first member is 0 cannot
+ * double as a sentinel.
  */
+static bool g_tap_armed;
 static enum nexus_action g_tap_pending;
+/*
+ * Which screen armed it. A tap held for the double-tap window can outlive the
+ * screen that started it - a half connecting, a game ending - and firing a
+ * stale SELECT into whatever screen arrived next is worse than losing the
+ * tap.
+ */
+static const struct nexus_screen *g_tap_screen;
+
+static void tap_disarm(void)
+{
+	g_tap_armed = false;
+	g_tap_screen = NULL;
+}
 
 static void tap_timeout(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
-	if (g_tap_pending) {
-		nexus_action_dispatch(g_tap_pending);
-		g_tap_pending = 0;
+	if (g_tap_armed && nexus_screen_current() == g_tap_screen) {
+		enum nexus_action a = g_tap_pending;
+
+		tap_disarm();
+		nexus_action_dispatch(a);
+		return;
 	}
+	tap_disarm();
 }
 static K_WORK_DELAYABLE_DEFINE(g_tap_work, tap_timeout);
 #endif
@@ -155,24 +186,29 @@ void nexus_action_button_event(bool long_press)
 		/* A hold cancels a tap that was still waiting for its pair;
 		 * otherwise releasing from a hold could fire both. */
 		k_work_cancel_delayable(&g_tap_work);
-		g_tap_pending = 0;
+		tap_disarm();
 		nexus_action_dispatch(cur->btn_long);
 		return;
 	}
 
-	if (cur->btn_double == 0) {
+	if (cur->btn_double == NEXUS_ACTION_NONE) {
+		/* No double on this screen: dispatch now and pay no latency.
+		 * Every screen that never thought about the gesture lands
+		 * here, because an omitted field is NEXUS_ACTION_NONE. */
 		nexus_action_dispatch(cur->btn_short);
 		return;
 	}
 
-	if (g_tap_pending) {
+	if (g_tap_armed && g_tap_screen == cur) {
 		k_work_cancel_delayable(&g_tap_work);
-		g_tap_pending = 0;
+		tap_disarm();
 		nexus_action_dispatch(cur->btn_double);
 		return;
 	}
 
+	g_tap_armed = true;
 	g_tap_pending = cur->btn_short;
+	g_tap_screen = cur;
 	k_work_reschedule_for_queue(nexus_workq(), &g_tap_work,
 				    K_MSEC(CONFIG_NEXUS_BUTTON_DOUBLE_MS));
 #else

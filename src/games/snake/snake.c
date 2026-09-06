@@ -26,9 +26,20 @@
 
 /* ---- board -------------------------------------------------------------- */
 
-#define COLS 24
-#define ROWS 24
-#define CELL 8
+/*
+ * 16x16 of 12px, not 24x24 of 8px.
+ *
+ * At 8px the snake was four faint slivers and the apple a speck - on a panel
+ * you look at from across a desk, a board that fine is not detail, it is just
+ * small. 12px cells fill the same 192px well with pieces you can actually
+ * see, which is what snake-module's board does.
+ *
+ * It also costs a third of the RAM: the grid and the ring are both O(cells),
+ * so 256 cells instead of 576 is 768 bytes instead of 1,728.
+ */
+#define COLS 16
+#define ROWS 16
+#define CELL 12
 
 #define WELL_W (COLS * CELL) /* 192 */
 #define WELL_H (ROWS * CELL) /* 192 */
@@ -268,11 +279,12 @@ static void draw_cell(int r, int c, gfx_color fill, bool bevel)
 	int x = WELL_X + c * CELL;
 	int y = WELL_Y + r * CELL;
 
-	gfx_rect(x, y, CELL - 1, CELL - 1, fill, GFX_OPAQUE);
+	/* Rounded, with a 1px gap, so the body reads as linked segments rather
+	 * than as one undifferentiated bar. There is room for that at 12px;
+	 * there was not at 8. */
+	gfx_round_rect(x + 1, y + 1, CELL - 2, CELL - 2, 3, fill, GFX_OPAQUE);
 	if (bevel) {
-		/* One lit edge. At 8px a full bevel is mud; a single highlight
-		 * is enough to stop the body reading as a flat stripe. */
-		gfx_hline(x, y, CELL - 1, nexus_theme()->edge_hi, 90);
+		gfx_hline(x + 3, y + 1, CELL - 6, nexus_theme()->edge_hi, 110);
 	}
 }
 
@@ -308,7 +320,13 @@ static void snake_draw(void)
 				if (v == BODY) {
 					draw_cell(r, c, t->accent, true);
 				} else if (v == FOOD) {
-					draw_cell(r, c, t->warning, false);
+					/* A disc, not a rounded square: at this
+					 * size the apple should not look like
+					 * a piece of the snake. */
+					gfx_disc(WELL_X + c * CELL + CELL / 2,
+						 WELL_Y + r * CELL + CELL / 2,
+						 CELL / 2 - 2, t->warning,
+						 GFX_OPAQUE);
 				}
 			}
 		}

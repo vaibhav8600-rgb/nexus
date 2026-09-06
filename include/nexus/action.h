@@ -16,6 +16,10 @@ extern "C" {
 #endif
 
 enum nexus_action {
+	/* Not an action. The zero value, so an omitted screen field means
+	 * "this screen has no such gesture" rather than SELECT. */
+	NEXUS_ACTION_NONE        = NEXUS_ACT_NONE,
+
 	NEXUS_ACTION_SELECT      = NEXUS_ACT_SELECT,
 	NEXUS_ACTION_BACK        = NEXUS_ACT_BACK,
 	NEXUS_ACTION_PAUSE       = NEXUS_ACT_PAUSE,
