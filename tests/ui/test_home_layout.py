@@ -112,8 +112,8 @@ def main():
     scale = 2
     while scale > 1 and face_w('NEXUS', scale) > avail:
         scale -= 1
-    # wordmark: ink (face + outline cell + extrusion) + gap + strapline
-    wh = FACE_H * scale + 3 * scale + 4 + FONT_H
+    # wordmark ink: the face plus the glow, two letter-pixels every way
+    wh = FACE_H * scale + 4 * scale
     ww = face_w('NEXUS', scale)
     y = C['BRAND_Y'] + (C['BRAND_H'] - wh) // 2
     fits('wordmark s%d (%dx%d)' % (scale, ww, FACE_H * scale), y, y + wh,
@@ -227,44 +227,45 @@ def main():
        + 4 + 2 * C['INNER'] <= C['COL_W'],
        '"100%%" fits the narrower battery card')
 
-    print('\nExtruded wordmark')
-    # The reference lettering adds ink the old flat wordmark did not have: a
-    # halo cell above and below the face, and an extrusion below that. All of
-    # it has to stay inside the card, because the card is drawn first and
+    print('\nGlass wordmark')
+    # The title is made of the same material as the cards: the accent lives
+    # BEHIND the letter as a soft halo, not in its fill, and the letter takes
+    # its shape from a one-pixel specular above every edge and two graded
+    # pixels of shade below. The halo is the part with a footprint - it
+    # reaches two letter-pixels past the face on every side, and all of it
+    # has to stay inside the card, because the card is drawn first and
     # whatever is drawn next paints over anything that escaped.
     FACE_W, FACE_H = 10, 14
-    SUB_GAP, SUB_TRACK = 4, 2
-    SUBTITLE = 'SMART ZMK DONGLE'
+    GLOW_CELLS = 2
 
     def face_w(text, s):
         return len(text) * (FACE_W + 1) * s - s
 
     def ink_h(s):
-        return FACE_H * s + 2 * s + s      # face + halo + extrusion
+        return FACE_H * s + 2 * GLOW_CELLS * s
 
-    def mark_h(s):
-        # The rule is gone; a tracked strapline sits there instead.
-        return ink_h(s) + SUB_GAP + text_h(1)
-
-    def tracked_w(text, scale, track):
-        return text_w(text, scale) + (len(text) - 1) * track
+    # Nothing sits under the name any more, so the ink is the whole widget.
+    mark_h = ink_h
 
     wid = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             '..', '..', 'src', 'ui', 'widgets.c'),
                encoding='utf-8').read()
-    ok('gfx_face_text_3d' in wid, 'the wordmark is drawn extruded')
-    ok('t->wordmark[2]' in wid and 't->wordmark[4]' in wid,
-       'edge and extrusion come from the theme, not from constants')
+    ok('gfx_face_text_glass' in wid, 'the wordmark is drawn as glass')
+    ok('gfx_face_text_3d' not in wid,
+       'and not as extruded arcade lettering')
+    ok('t->edge_hi' in wid,
+       'the specular rim is the card\'s own, so it is the same material')
     ok('gfx_mix(t->wordmark[2], t->accent' not in wid,
-       'the left-to-right ramp is gone - the references shade downward')
+       'no left-to-right ramp - the letter shades downward, like light')
+    for slot in range(5):
+        ok('t->wordmark[%d]' % slot in wid,
+           'wordmark[%d] earns its place in the palette' % slot)
 
     lit_body = wid.split('nexus_draw_wordmark_lit')[1]
-    ok('WORDMARK_RULE_H' not in wid and 'gfx_round_rect' not in lit_body,
-       'the accent rule under the name is gone')
-    ok('nexus_draw_tracked' in lit_body,
-       'a tracked strapline sits there instead')
-    ok('t->wordmark[0]' in wid,
-       'the face uses the new highlight stop, so the accent can ring it')
+    ok('gfx_round_rect' not in lit_body, 'no accent rule under the name')
+    ok('nexus_draw_tracked' not in lit_body, 'and no strapline either')
+    ok('NEXUS_SUBTITLE' not in wid,
+       'the widget does not set the subtitle - the splash does that itself')
 
     # Home picks the largest scale from 2 down whose face fits the card.
     avail = C['NEXUS_CONTENT_W'] - 2 * C['INNER'] - 4
@@ -272,19 +273,19 @@ def main():
     while hs > 1 and face_w('NEXUS', hs) > avail:
         hs -= 1
     ok(face_w('NEXUS', hs) <= avail, 'the face fits the brand card')
-    # The halo sticks out one letter-pixel each side of the measured width.
-    ok(face_w('NEXUS', hs) + 3 * hs <= C['NEXUS_CONTENT_W'] - 2 * C['INNER'],
-       'and so do its outline and extrusion')
+    ok(face_w('NEXUS', hs) + 2 * GLOW_CELLS * hs
+       <= C['NEXUS_CONTENT_W'] - 2 * C['INNER'],
+       'and so does the halo around it')
 
     top = C['BRAND_Y'] + (C['BRAND_H'] - mark_h(hs)) // 2
     fits('wordmark ink', top, top + ink_h(hs), C['BRAND_Y'], C['BRAND_H'])
-    fits('wordmark strapline', top + ink_h(hs) + SUB_GAP,
-         top + mark_h(hs), C['BRAND_Y'], C['BRAND_H'])
-    ok(tracked_w(SUBTITLE, 1, SUB_TRACK)
-       <= C['NEXUS_CONTENT_W'] - 2 * C['INNER'],
-       'the strapline fits the brand card at its tracking')
+    # It is the only thing on the plate now, so it should look placed, not
+    # wedged: a card this size wants real air above and below.
+    ok((C['BRAND_H'] - ink_h(hs)) // 2 >= 5,
+       'the plate leaves %dpx of air around it'
+       % ((C['BRAND_H'] - ink_h(hs)) // 2))
 
-    # About draws the same widget into the brand card. At scale 4 the face
+    # About draws the same widget into its own card. At scale 4 the face
     # alone was 56px from y=33 - it ran to 89 and the next card covered it.
     menus = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               '..', '..', 'src', 'ui', 'menus.c'),
@@ -302,11 +303,12 @@ def main():
            'About wordmark (ends %d) stays in its card (ends %d)'
            % (ay + mark_h(asz), cend))
         ok(cend <= 84, 'and the card clears the FIRMWARE card below it')
-        ok('NEXUS_SUBTITLE' not in menus.split('const char *const lines[]')[1]
+        # About has room to list it, and is the screen you go to for it.
+        ok('NEXUS_SUBTITLE' in menus.split('const char *const lines[]')[1]
            .split('}')[0],
-           'the subtitle is not also listed as a body line')
-        ok(face_w('NEXUS', asz) + 3 * asz <= C['NEXUS_CONTENT_W'],
-           'About wordmark fits the card width')
+           'About still lists the subtitle as a body line')
+        ok(face_w('NEXUS', asz) + 2 * GLOW_CELLS * asz
+           <= C['NEXUS_CONTENT_W'], 'About wordmark fits the card width')
 
     print('\nHierarchy')
     ok('nexus_draw_caption(' in src, 'card headings are captions again')

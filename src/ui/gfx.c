@@ -667,23 +667,27 @@ void gfx_face_text(int x, int y, const char *s, int scale, gfx_color c,
  * Bit 0 is the leftmost column, so << moves right. The glyph sits at offset 1
  * and the caller draws at x - scale to put it back where it belongs.
  */
-static void face_dilate(const uint16_t *src, uint16_t *dst)
+static void dilate_rows(const uint16_t *src, int n, uint16_t *dst)
 {
-	for (int r = 0; r < FACE_H + 2; r++) {
+	for (int r = 0; r < n + 2; r++) {
 		uint16_t m = 0;
 
 		/*
 		 * Output row r holds source row r-1, so the three rows that
 		 * dilate into it are r-2, r-1 and r. Growing the field by a
-		 * row top and bottom is not cosmetic: a letter whose stem
-		 * reaches row 0 - N, E, U - would otherwise have no outline
-		 * along its cap or its foot, which is exactly the edge the
-		 * references make brightest.
+		 * row and a column on every side is not cosmetic: a letter
+		 * whose stem reaches row 0 - N, E, U - would otherwise have
+		 * nothing along its cap or its foot, and the glow would stop
+		 * dead at the letter's widest point.
+		 *
+		 * Run twice, it gives a two-step falloff for a few dozen
+		 * cycles, which is what a soft halo costs here. A real blur
+		 * would need a scratch buffer the size of the band.
 		 */
 		for (int k = 0; k < 3; k++) {
 			int sr = r - 2 + k;
 
-			if (sr >= 0 && sr < FACE_H) {
+			if (sr >= 0 && sr < n) {
 				m |= src[sr];
 			}
 		}
@@ -691,17 +695,38 @@ static void face_dilate(const uint16_t *src, uint16_t *dst)
 	}
 }
 
-void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
-		      gfx_color bot, gfx_color outline, gfx_color ext_near,
-		      gfx_color ext_far, int depth)
+/*
+ * The wordmark as glass, not as arcade lettering.
+ *
+ * The previous version put the accent in the letter's FILL and ringed it with
+ * a hard one-cell outline over a chunky extrusion. That is a sticker: it is
+ * the one element on a screen of frosted panes that is not made of the same
+ * material, and saturated pink on a blocky silhouette reads as a game rather
+ * than as a product.
+ *
+ * Glass gets its presence from light, not from colour:
+ *
+ *   glow    the accent moves OFF the letter and behind it, two dilation
+ *           steps of falloff at low alpha - a backlit sign, not a highlighter
+ *   bevel   one pixel of specular above every edge and one of shade below,
+ *           drawn before the face so only that pixel survives. This is the
+ *           same trick nexus_draw_card() uses on a pane, which is why the
+ *           title now looks like it is cut from the card it sits on
+ *   face    near-white, shading down - the letter catches the light the
+ *           panes catch
+ *
+ * The bevel is one PIXEL, not one cell, at every scale: a bevel that grows
+ * with the type stops being a bevel and becomes an outline again.
+ */
+void gfx_face_text_glass(int x, int y, const char *s, int scale, gfx_color top,
+			 gfx_color bot, gfx_color hi, gfx_color lo_near,
+			 gfx_color lo_far, gfx_color glow, uint8_t glow_a)
 {
 	uint16_t halo[FACE_H + 2];
+	uint16_t wide[FACE_H + 4];
 
 	if (scale < 1) {
 		scale = 1;
-	}
-	if (depth < 0) {
-		depth = 0;
 	}
 
 	for (const char *p = s; p && *p; p++) {
@@ -709,8 +734,8 @@ void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
 
 		if (ch < FACE_FIRST || ch > FACE_LAST) {
 			/* Outside the display face. One flat glyph rather than
-			 * a hole in the word - same fallback gfx_face_text
-			 * makes, and nothing here is worth three passes. */
+			 * a hole in the word - the same fallback
+			 * gfx_face_text() makes. */
 			char one[2] = { *p, 0 };
 			int fs = (FACE_H * scale) / FONT_H;
 
@@ -722,32 +747,29 @@ void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
 
 		const uint16_t *g = font10x14[ch - FACE_FIRST];
 
-		face_dilate(g, halo);
+		dilate_rows(g, FACE_H, halo);
+		dilate_rows(halo, FACE_H + 2, wide);
 
-		/*
-		 * Extrude the OUTLINED silhouette, not the bare letter: the
-		 * side of a block is as wide as its face, and extruding the
-		 * face alone leaves the outline sitting on nothing - the
-		 * letter reads as a sticker rather than as a solid.
-		 */
-		for (int d = depth; d >= 1; d--) {
-			/* Darker with distance, so the side of the block turns
-			 * away from the light instead of reading as a flat
-			 * slab pasted behind the letter. */
-			gfx_color e = ext_near;
-
-			if (depth > 1) {
-				e = gfx_mix(ext_near, ext_far,
-					    (uint8_t)((d - 1) * 255 /
-						      (depth - 1)));
-			}
-			gfx_glyph(x - scale + d, y - scale + d, halo,
-				  FACE_W + 2, FACE_H + 2, scale, e,
-				  GFX_OPAQUE);
+		if (glow_a) {
+			gfx_glyph(x - 2 * scale, y - 2 * scale, wide,
+				  FACE_W + 4, FACE_H + 4, scale, glow,
+				  (uint8_t)(glow_a / 2));
+			gfx_glyph(x - scale, y - scale, halo, FACE_W + 2,
+				  FACE_H + 2, scale, glow, glow_a);
 		}
 
-		gfx_glyph(x - scale, y - scale, halo, FACE_W + 2, FACE_H + 2,
-			  scale, outline, GFX_OPAQUE);
+		/*
+		 * Two pixels of shade below every edge, graded, then one of
+		 * specular above. All before the face, so the face covers all
+		 * but the pixel each pass is there for.
+		 *
+		 * The second step is what makes the letter sit ON the card
+		 * rather than in it: one pixel alone is an engraving, two that
+		 * fade are a raised edge catching light from above.
+		 */
+		gfx_glyph(x, y + 2, g, FACE_W, FACE_H, scale, lo_far, 90);
+		gfx_glyph(x, y + 1, g, FACE_W, FACE_H, scale, lo_near, 200);
+		gfx_glyph(x, y - 1, g, FACE_W, FACE_H, scale, hi, 220);
 
 		gfx_glyph_grad(x, y, g, FACE_W, FACE_H, scale, top, bot,
 			       GFX_OPAQUE);

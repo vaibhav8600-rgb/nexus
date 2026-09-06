@@ -42,8 +42,8 @@ def face_w(s, scale):
 
 
 def ink_h(scale):
-    """Face plus the outline cell above and below plus the extrusion."""
-    return FACE_H * scale + 3 * scale
+    """Face plus the glow, which reaches two letter-pixels every way."""
+    return FACE_H * scale + 4 * scale
 
 
 def consts(src):

@@ -152,15 +152,17 @@ void gfx_glyph_grad(int x, int y, const uint16_t *rows, int w, int h,
 		    int scale, gfx_color top, gfx_color bot, uint8_t a);
 
 /**
- * The display face as extruded arcade lettering: a gradient face, a bright
- * outline one letter-pixel thick, and @p depth pixels of extrusion down and
- * right. Advances exactly as gfx_face_text() does, so gfx_face_w() still
- * measures it - the outline and the extrusion both live in the space the
- * layout already leaves between glyphs.
+ * The display face as glass: a soft two-step @p glow behind the letter, a
+ * one-pixel @p hi rim above every edge, two graded pixels of @p lo_near then
+ * @p lo_far below it, and a @p top to @p bot gradient across the face.
+ *
+ * Advances exactly as gfx_face_text() does, so gfx_face_w() still measures the
+ * letters - but the glow reaches two letter-pixels past them on every side,
+ * which the caller must leave room for.
  */
-void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
-		      gfx_color bot, gfx_color outline, gfx_color ext_near,
-		      gfx_color ext_far, int depth);
+void gfx_face_text_glass(int x, int y, const char *s, int scale, gfx_color top,
+			 gfx_color bot, gfx_color hi, gfx_color lo_near,
+			 gfx_color lo_far, gfx_color glow, uint8_t glow_a);
 
 void gfx_face_text(int x, int y, const char *s, int scale, gfx_color c,
 		   uint8_t a);

@@ -63,7 +63,7 @@
 
 #define WORD_Y 138
 #define WORD_SCALE 2
-#define SUB_Y 178
+#define SUB_Y 180
 #define RULE_Y 196
 #define RULE_W 132
 #define BRAND_Y 204
