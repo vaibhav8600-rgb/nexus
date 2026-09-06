@@ -85,12 +85,43 @@ if(CONFIG_NEXUS_SPLASH)
     zephyr_library_sources(assets/splash_default.c)
   else()
     if(NOT IS_ABSOLUTE "${NEXUS_SPLASH_SRC}")
-      # Resolve against the user's config directory. ZMK sets ZMK_CONFIG for
-      # config-repo builds; APPLICATION_CONFIG_DIR covers a plain west build.
-      if(DEFINED ENV{ZMK_CONFIG} AND EXISTS "$ENV{ZMK_CONFIG}/${NEXUS_SPLASH_SRC}")
-        set(NEXUS_SPLASH_SRC "$ENV{ZMK_CONFIG}/${NEXUS_SPLASH_SRC}")
-      else()
-        set(NEXUS_SPLASH_SRC "${APPLICATION_CONFIG_DIR}/${NEXUS_SPLASH_SRC}")
+      # Resolve against the user's config directory.
+      #
+      # ${ZMK_CONFIG}, not $ENV{ZMK_CONFIG}. ZMK's build passes it as a CMake
+      # cache variable - `-DZMK_CONFIG=<path>` on the west build line, visible
+      # in any build log - and never puts it in the environment. So the ENV
+      # form was always empty, every relative path fell through to
+      # APPLICATION_CONFIG_DIR (the app directory on a ZMK build, not the
+      # config repo), and the first person to set CONFIG_NEXUS_SPLASH_IMAGE
+      # would have hit the FATAL_ERROR below pointing into zmk/app.
+      #
+      # All three roots are tried, cache variable first, so a plain west build
+      # that does export ZMK_CONFIG still works.
+      set(_nexus_splash_roots "")
+      if(DEFINED ZMK_CONFIG)
+        list(APPEND _nexus_splash_roots "${ZMK_CONFIG}")
+      endif()
+      if(DEFINED ENV{ZMK_CONFIG})
+        list(APPEND _nexus_splash_roots "$ENV{ZMK_CONFIG}")
+      endif()
+      if(DEFINED APPLICATION_CONFIG_DIR)
+        list(APPEND _nexus_splash_roots "${APPLICATION_CONFIG_DIR}")
+      endif()
+
+      set(_nexus_splash_found "")
+      foreach(_root ${_nexus_splash_roots})
+        if(NOT _nexus_splash_found AND EXISTS "${_root}/${NEXUS_SPLASH_SRC}")
+          set(_nexus_splash_found "${_root}/${NEXUS_SPLASH_SRC}")
+        endif()
+      endforeach()
+
+      if(_nexus_splash_found)
+        set(NEXUS_SPLASH_SRC "${_nexus_splash_found}")
+      elseif(_nexus_splash_roots)
+        # Resolve against the first root anyway, so the error below names a
+        # real path rather than the bare relative one.
+        list(GET _nexus_splash_roots 0 _nexus_splash_first)
+        set(NEXUS_SPLASH_SRC "${_nexus_splash_first}/${NEXUS_SPLASH_SRC}")
       endif()
     endif()
 
@@ -98,8 +129,14 @@ if(CONFIG_NEXUS_SPLASH)
       message(FATAL_ERROR
         "CONFIG_NEXUS_SPLASH_IMAGE points at a missing file:\n"
         "  ${NEXUS_SPLASH_SRC}\n"
+        "Searched under: ${_nexus_splash_roots}\n"
         "Paths are relative to your zmk-config's config/ directory.")
     endif()
+
+    # Printed so the build log says which splash it actually took. Without it
+    # the only symptom of a splash that did not get picked up is the default
+    # one appearing, which looks like nothing happened at all.
+    message(STATUS "NEXUS splash image: ${NEXUS_SPLASH_SRC}")
 
     set(NEXUS_SPLASH_GEN "${CMAKE_CURRENT_BINARY_DIR}/nexus_splash_user.c")
     add_custom_command(
