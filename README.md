@@ -174,3 +174,35 @@ definition of done.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Special thanks
+
+**[@joaopedropio](https://github.com/joaopedropio)**, whose snake dongle
+module is the base this was built on.
+
+The debt is specific, and it is all over this repo:
+
+- **The connectivity cluster.** Transport, profile number and status tile as
+  three separate elements rather than one clever icon -- because a single
+  highlighted symbol cannot say "BLE is selected but that profile has never
+  paired". The USB plug whose body reports whether HID is actually up, and the
+  bordered tile with its three states, are that model.
+- **Sizing that turned out to matter.** The 27x27 status tile and the 22x22
+  modifier glyphs are the sizes snake-module uses, arrived at there first;
+  every attempt here to shrink them made the cluster unreadable.
+- **The 12px game board.** Snake's cells are the size they are because the
+  8px version was four faint slivers on a panel you read from across a desk.
+- **`SPIM0`.** Known-good on this hardware, and the answer to a display bring-up
+  problem that cost real time before checking what already worked.
+- **`&anti_idle`**, the mouse jiggler behavior, which NEXUS only displays.
+
+It also saved time by being honest about what it had not solved: its
+`peripheral_status.c` handler is an empty stub with *"do we need this ?"* in
+it, which was the fastest possible confirmation that ZMK's split central
+raises no connect or disconnect events to subscribe to. NEXUS ended up going
+to `bt_conn` callbacks directly -- a different answer, reached much sooner for
+having seen the question already asked.
+
+None of its code is here, and every difference is deliberate. But the parts
+above are its design decisions, and NEXUS is better for having started from
+something that already worked on real hardware rather than from a blank file.
