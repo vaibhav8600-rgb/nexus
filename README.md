@@ -20,12 +20,14 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 
 - **Live dashboard** -- layer, WPM, both halves' batteries, modifiers, caps
   lock, USB/BLE endpoint and profile.
-- **Game Center** with a fully playable Tetris. Real rules, real scoring, real
-  levels, persistent high scores.
+- **Game Center** with three playable games -- Tetris, Snake and Breakout.
+  Real rules, real scoring, persistent high scores, and a difficulty knob in
+  Settings so you never reflash to change how a game feels.
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
   nRF52840 to blur a framebuffer.
-- **Configurable splash** -- your PNG, converted at build time from your own
-  config repo. No C arrays, no NEXUS source edits.
+- **Configurable splash** -- a drawn badge by default, or your own PNG
+  converted at build time from your config repo. No C arrays, no NEXUS
+  source edits.
 - **Passive buzzer sound engine**, synthesised rather than sampled.
 - **ZMK Studio**, the official integration, untouched.
 
@@ -94,7 +96,7 @@ buzzer and two tactile switches.
 | [configuration.md](docs/configuration.md) | Every option, and what the button does on each screen |
 | [splash.md](docs/splash.md) | Custom artwork from your own repo |
 | [themes.md](docs/themes.md) | The seven palettes, and how the glass is faked |
-| [games.md](docs/games.md) | Playing Tetris, and adding a game |
+| [games.md](docs/games.md) | The three games, difficulty, and adding your own |
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |
@@ -122,8 +124,13 @@ no game loop anywhere.
 ```sh
 cc -std=c11 -Wall -Wextra -Werror -o /tmp/tt \
    tests/tetris/test_tetris.c src/games/tetris/tetris_core.c && /tmp/tt
-python3 tests/splash/test_png2c.py
+
+for t in tests/*/test_*.py; do python3 "$t" || break; done
 ```
+
+The Python suites need no board and no toolchain -- they re-derive each
+screen's geometry and each game's rules from the C and assert the things that
+cannot be seen by reading a diff.
 
 CI runs both on every push, again under ASan/UBSan, builds firmware in ZMK's
 container, and fails the build if a GPIO number or a brand string appears in

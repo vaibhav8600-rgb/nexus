@@ -50,6 +50,13 @@ jobs:
         # later. Catch it at the file that caused it.
         run: python3 scripts/check_headers.py
 
+      - name: Docs match the options that exist
+        # Both directions. Nothing fails when a Kconfig symbol is added and
+        # never written down, or renamed while the docs keep the old name -
+        # the build is happy and the person who finds out is a user copying a
+        # line that does nothing.
+        run: python3 scripts/check_docs.py
+
       - name: No static used before its declaration
         # A work handler rescheduling a work item defined below it compiles
         # nowhere and is only caught by the toolchain, in CI, minutes later.

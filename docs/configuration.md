@@ -8,9 +8,9 @@ Everything is Kconfig or devicetree. If you find yourself editing a file under
 | Option | Default | |
 | --- | --- | --- |
 | `CONFIG_NEXUS_BRAND` | `"VAIBHAV TECH"` | Small line above the wordmark on the splash and About screens. Empty hides it. |
-| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Rendered as large as it fits (up to 35 px), weighted, over an accent rule; a longer name steps down a size rather than overflowing. |
+| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Drawn as glass -- a near-white face with a soft accent halo behind it and a one-pixel bevel -- as large as it fits; a longer name steps down a size rather than overflowing. |
 | `CONFIG_NEXUS_AUTHOR` | `"VAIBHAV RAJPUT"` | Creator credit on the About screen. Empty hides the card. |
-| `CONFIG_NEXUS_SUBTITLE` | `"SMART ZMK DONGLE"` | Caption under the wordmark. Empty hides it. |
+| `CONFIG_NEXUS_SUBTITLE` | `"SMART ZMK DONGLE"` | Strapline on the splash badge, and a line on About. Empty hides it. Deliberately **not** on Home: the brand plate carries the name and nothing else. |
 
 These are Kconfig *defaults*, not constants. Nothing in `src/` contains a brand
 string, and CI fails the build if one appears (Requirement B).
@@ -23,7 +23,7 @@ string, and CI fails the build if one appears (Requirement B).
 | `CONFIG_NEXUS_THEME` | `"NEXUS"` | See [themes.md](themes.md). An unknown name falls back to `NEXUS` rather than failing the build over a typo. |
 | `CONFIG_NEXUS_DISPLAY_ROTATION` | `0` | 0/90/180/270, done in the compositor so all drawing stays in logical coordinates. Try the panel's `mdac` byte in your overlay first -- that rotates in the controller for free. 90/270 cost a second 5,760-byte transpose buffer. |
 | `CONFIG_NEXUS_ANIMATIONS` | `y` | Battery bars animate to their new value instead of snapping. |
-| `CONFIG_NEXUS_DEFAULT_SCREEN_HOME` | `y` | Or `_GAME_CENTER` / `_DIAGNOSTICS`. |
+| `CONFIG_NEXUS_DEFAULT_SCREEN_HOME` | `y` | Which screen the splash hands off to. The alternatives are `CONFIG_NEXUS_DEFAULT_SCREEN_GAME_CENTER` and `CONFIG_NEXUS_DEFAULT_SCREEN_DIAGNOSTICS` -- pick exactly one. |
 | `CONFIG_NEXUS_UI_REFRESH_FAST_MS` | `33` | Games and animations (~30 FPS). |
 | `CONFIG_NEXUS_UI_REFRESH_NORMAL_MS` | `200` | Status dashboard. |
 | `CONFIG_NEXUS_UI_REFRESH_IDLE_MS` | `1000` | Static screens. |
@@ -39,8 +39,9 @@ A screen can temporarily promote itself with `nexus_screen_request_refresh()`.
 | --- | --- | --- |
 | `CONFIG_NEXUS_SPLASH` | `y` | |
 | `CONFIG_NEXUS_SPLASH_DURATION_MS` | `3000` | `0` skips the splash entirely. Any button press skips it early. |
-| `CONFIG_NEXUS_SPLASH_IMAGE` | `""` | Path to a PNG, relative to your `config/` directory. Empty uses the drawn default. |
-| `CONFIG_NEXUS_SPLASH_MAX_DIM` | `160` | Downscale ceiling. 160x160 costs 51 KB of flash; 240x240 costs 115 KB. |
+| `CONFIG_NEXUS_SPLASH_IMAGE` | `""` | Path to a PNG, relative to your `config/` directory. Empty falls through to the next row. |
+| `CONFIG_NEXUS_SPLASH_DEFAULT_IMAGE` | `""` | A PNG inside the module, relative to its root. Empty -- and the module ships no image to point it at -- so the drawn badge is what you get. See [splash.md](splash.md). |
+| `CONFIG_NEXUS_SPLASH_MAX_DIM` | `160` | Downscale ceiling, PNGs only. 160x160 costs 51 KB of flash; 240x240 costs 115 KB. The drawn badge ignores it. |
 
 Full details in [splash.md](splash.md).
 
@@ -121,7 +122,15 @@ difference between a half that dozed and a half that dropped.
 | --- | --- | --- |
 | `CONFIG_NEXUS_GAME_CENTER` | `y` | The launcher. Selects `NEXUS_GAMES`. |
 | `CONFIG_NEXUS_TETRIS` | `y` | |
+| `CONFIG_NEXUS_SNAKE` | `y` | |
+| `CONFIG_NEXUS_BREAKOUT` | `y` | |
 | `CONFIG_NEXUS_GAME_HIGHSCORE_PERSIST` | `y` | Store high scores in Zephyr settings. Written only when a record actually improves. |
+
+Turning a game off removes it from the build entirely, not just from the
+launcher. Per-game tuning -- `NEXUS_SNAKE_*`, `NEXUS_BREAKOUT_*` -- lives in
+[games.md](games.md), because those numbers only make sense next to what they
+do. Note that difficulty itself is a **runtime** setting, not a Kconfig: the
+options below set what NORMAL means, and Settings moves around it.
 
 Turning `CONFIG_NEXUS_GAME_CENTER=n` removes the launcher, the game engine and
 Tetris from the firmware entirely -- worth about 6 KB of flash and 4 KB of RAM.
@@ -133,6 +142,9 @@ Tetris from the firmware entirely -- worth about 6 KB of flash and 4 KB of RAM.
 | `CONFIG_NEXUS_BUTTON` | `y` | Needs a `nexus-button` alias in devicetree. Missing hardware degrades to "no button", never to a crash. |
 | `CONFIG_NEXUS_BUTTON_DEBOUNCE_MS` | `30` | Tune on real hardware; 20-50 ms is the usable range. |
 | `CONFIG_NEXUS_BUTTON_LONG_PRESS_MS` | `600` | Fires the moment the threshold passes, not on release. |
+| `CONFIG_NEXUS_BUTTON_DOUBLE_MS` | `280` | Double-tap window. Only screens that declare `btn_double` -- the Game Center -- pay this latency on a single tap; everywhere else a tap dispatches the instant the button comes up. |
+| `CONFIG_NEXUS_ACTION_REPEAT_DELAY_MS` | `260` | How long a movement key must be held before it starts repeating. Comfortably longer than a deliberate tap, or one press becomes two moves. |
+| `CONFIG_NEXUS_ACTION_REPEAT_MS` | `70` | Interval between repeats. This is what makes holding `K` a soft drop and holding `J` a paddle slide rather than thirty taps. Only movement actions repeat -- repeating `MENU` or `SELECT` would open a screen per tick. |
 | `CONFIG_NEXUS_BEHAVIOR_ACTION` | `y` | The `&nexus_action` keymap behavior. |
 
 ### What the button does
@@ -169,7 +181,7 @@ value in telling them apart at a glance.
 
 | Option | Default | |
 | --- | --- | --- |
-| `CONFIG_NEXUS_SETTINGS_PERSIST` | `y` | Sound, theme and brightness are stored under `nexus/ui/prefs`. Without it the Settings screen edits only the running session. Needs `CONFIG_SETTINGS`. |
+| `CONFIG_NEXUS_SETTINGS_PERSIST` | `y` | Sound, theme, brightness, game speed and the Snake walls toggle are stored under `nexus/ui/prefs`. Without it the Settings screen edits only the running session. Needs `CONFIG_SETTINGS`. |
 | `CONFIG_NEXUS_SETTINGS_AUTOSAVE_MS` | `4000` | Quiet period before a *deferred* save commits. Used by controls that fire repeatedly in one gesture, so spinning an encoder through seven themes costs one flash erase, not seven. |
 
 Saving from the menu is explicit -- the `SAVE` row, which doubles as the

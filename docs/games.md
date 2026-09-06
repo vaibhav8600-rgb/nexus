@@ -5,6 +5,28 @@
 Action button from Home opens the Game Center. Left/right pick a game, the
 button launches it.
 
+One button cannot play any of these, so movement comes from the keyboard. The
+same six bindings drive all three games -- the game never sees a keycode, only
+a `NEXUS_ACTION_*`, exactly the value the physical button would have produced
+(Section 42).
+
+| key | action | Tetris | Snake | Breakout |
+| --- | --- | --- | --- | --- |
+| `J` | `NEXUS_ACT_LEFT` | move left | turn left | paddle left |
+| `L` | `NEXUS_ACT_RIGHT` | move right | turn right | paddle right |
+| `I` | `NEXUS_ACT_ROTATE` | rotate | turn up | launch |
+| `K` | `NEXUS_ACT_DOWN` | soft drop | turn down | -- |
+| | `NEXUS_ACT_DROP` | hard drop | -- | launch |
+| button | `NEXUS_ACT_SELECT` | pause / resume / restart | | launch, then pause |
+| hold | `NEXUS_ACT_BACK` | quit | | |
+
+**Hold a direction and it repeats.** Holding `K` is a soft drop rather than
+thirty taps; holding `J` or `L` slides the Breakout paddle instead of nudging
+it. ZMK fires a behavior once per press and nothing repeats it, so NEXUS arms
+its own repeat on the movement actions only -- `CONFIG_NEXUS_ACTION_REPEAT_MS`
+between repeats after `CONFIG_NEXUS_ACTION_REPEAT_DELAY_MS`. `DROP` is not in
+that set: a hard drop and a ball launch are one-shot by definition.
+
 ### Tetris controls
 
 | Action | Physical button | Keymap binding |
@@ -55,23 +77,26 @@ input routing are already there and know nothing about your game.
 
 ### 1. Implement the interface
 
+Snake and Breakout were both added this way and neither needed a line of
+launcher code, so the example below uses a fourth game that does not exist --
+`pong` -- rather than one you would then find already written.
+
 ```c
 #include <nexus/game.h>
 
-static void snake_start(void);               /* reset state, arm the clock */
-static void snake_update(void);              /* advance one tick (optional) */
-static bool snake_input(enum nexus_action a);/* true if consumed */
-static void snake_pause(void);
-static void snake_resume(void);
-static void snake_stop(void);                /* release timers */
-static void snake_draw(void);                /* paint; called once per band */
-static uint32_t snake_score(void);
-static enum nexus_game_state snake_state(void);
+static void pong_start(void);               /* reset state, arm the clock */
+static bool pong_input(enum nexus_action a);/* true if consumed */
+static void pong_pause(void);
+static void pong_resume(void);
+static void pong_stop(void);                /* release timers */
+static void pong_draw(void);                /* paint; called once per band */
+static uint32_t pong_score(void);
+static enum nexus_game_state pong_state(void);
 
-const struct nexus_game nexus_game_snake = {
-    .id = "snake",          /* settings key fragment */
-    .name = "SNAKE",        /* shown in the launcher */
-    .start = snake_start,
+const struct nexus_game nexus_game_pong = {
+    .id = "pong",           /* settings key fragment */
+    .name = "PONG",         /* shown in the launcher */
+    .start = pong_start,
     /* ... */
 };
 ```
@@ -81,22 +106,25 @@ const struct nexus_game nexus_game_snake = {
 `src/games/game_manager.c`:
 
 ```c
-#if IS_ENABLED(CONFIG_NEXUS_SNAKE)
-extern const struct nexus_game nexus_game_snake;
+#if IS_ENABLED(CONFIG_NEXUS_PONG)
+extern const struct nexus_game nexus_game_pong;
 #endif
 
 static const struct nexus_game *const games[] = {
 #if IS_ENABLED(CONFIG_NEXUS_TETRIS)
     &nexus_game_tetris,
 #endif
-#if IS_ENABLED(CONFIG_NEXUS_SNAKE)
-    &nexus_game_snake,
+    /* ... snake, breakout ... */
+#if IS_ENABLED(CONFIG_NEXUS_PONG)
+    &nexus_game_pong,
 #endif
     NULL,   /* keep the terminator */
 };
 ```
 
-Plus a `CONFIG_NEXUS_SNAKE` in `Kconfig` and the sources in `CMakeLists.txt`.
+Plus a `CONFIG_NEXUS_PONG` in `Kconfig` and the sources in `CMakeLists.txt`.
+The terminator is not decoration: a zero-length array is not valid C, and the
+Game Center can legitimately be built with every game turned off.
 
 ### Rules that matter
 
@@ -131,11 +159,17 @@ Worth copying.
 
 ## The three games
 
-| | RAM | how it moves |
-| --- | --- | --- |
-| Tetris | ~245 B | integer grid, gravity on its own clock |
-| Snake | ~1.7 KB | integer grid, ring of cells |
-| Breakout | ~24 B | 8.8 fixed point |
+| | board | RAM | how it moves |
+| --- | --- | --- | --- |
+| Tetris | 10x20 | ~245 B | integer grid, gravity on its own clock |
+| Snake | 16x16 | ~768 B | integer grid, ring of cells |
+| Breakout | free | ~24 B | 8.8 fixed point |
+
+Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
+four faint slivers and the apple a speck -- on a panel you look at from across
+a desk that is not detail, it is just small. The grid and the ring are both
+O(cells), so the larger cells also cost a third of the RAM: 768 bytes rather
+than 1,728.
 
 All three go through `struct nexus_game`, so the Game Center pages between
 them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
@@ -158,6 +192,12 @@ both the behaviour and that the C still frees before it tests.
 Input writes `next_dir`, never `dir`: two taps inside one tick would otherwise
 let you turn 180 into your own neck, which reads as a bug rather than as a
 mistake.
+
+**Walls are a setting, not a build flag.** *Settings -> SNAKE WALL* toggles
+between a torus and fatal edges and persists; `CONFIG_NEXUS_SNAKE_WRAP` is only
+the power-on default. Wrap or no wrap is the single biggest change to how the
+game plays, and that is not a decision worth a reflash. The board says which
+mode it is in, because otherwise you find out by dying.
 
 Food placement picks the **Nth free cell** rather than retrying random
 positions. Rejection sampling can spin a long time on a nearly-full board, and
@@ -191,18 +231,31 @@ The action button launches a parked ball before it pauses. Otherwise the only
 way to start a life is a direction key, and on the physical button alone - all
 some users have - the game would be unstartable.
 
+The paddle moves `CONFIG_NEXUS_BREAKOUT_PADDLE_STEP` pixels per key repeat, so
+its speed is that times the repeat rate. At 12px it crossed the field in about
+1.3 seconds, which in a paddle game means the ball reaches the corner first
+every time; 24 halves that. It is a Kconfig rather than a constant because the
+right number depends on the repeat interval it is paired with.
+
+The paddle's catch window scales with the ball's own travel rather than being a
+fixed `PADDLE_H + 2`. That margin was enough at the old top speed and is not at
+LUDICROUS: a ball moving 5.6px a tick steps straight over a 7px window, and the
+life goes to a collision test that never ran.
+
 ## Difficulty, without reflashing
 
-**Settings -> SPEED** cycles SLOW / EASY / NORMAL / FAST / INSANE and persists
-with sound, theme and brightness. It applies to all three games and takes
-effect on the next round.
+**Settings -> SPEED** cycles SLOW / EASY / NORMAL / FAST / INSANE / LUDICROUS
+and persists with sound, theme and brightness. It applies to all three games
+and takes effect on the next round.
 
 That is the knob to reach for. "The ball is too slow" is a judgement you make
 while playing, and one you have to reflash to act on is one you turn once and
 then live with.
 
 3 (NORMAL) is neutral and reproduces the Kconfig values exactly; each step
-either side is 20%. Note that the two kinds of game scale **opposite ways for
+either side is 20%. A `BUILD_ASSERT` ties the name table to
+`NEXUS_GAME_SPEED_MAX`, so adding a seventh notch without naming it fails the
+build rather than printing whatever follows the array. Note that the two kinds of game scale **opposite ways for
 the same word**: Snake and Tetris scale an *interval*, so faster means a
 smaller number, while Breakout scales a *velocity*. The first attempt used
 `speed / 3` for the ball, which put SLOW at a third of normal - about one
@@ -215,13 +268,14 @@ the Settings knob moves around it.
 
 | option | default | |
 | --- | --- | --- |
-| `NEXUS_SNAKE_WRAP` | `y` | wrap at the edges instead of dying |
+| `NEXUS_SNAKE_WRAP` | `y` | wrap at the edges instead of dying -- **power-on default only**, Settings owns it after that |
 | `NEXUS_SNAKE_TICK_MS` | 160 | starting step interval - **lower is faster** |
 | `NEXUS_SNAKE_TICK_MIN_MS` | 70 | floor the speed-up cannot pass |
 | `NEXUS_SNAKE_SPEED_EVERY` | 4 | apples per speed-up |
 | `NEXUS_SNAKE_SPEED_STEP_MS` | 10 | ms removed each time |
 | `NEXUS_BREAKOUT_BALL_SPEED` | 350 | hundredths of a pixel per tick |
 | `NEXUS_BREAKOUT_TICK_MS` | 28 | simulation interval |
+| `NEXUS_BREAKOUT_PADDLE_STEP` | 24 | pixels the paddle travels per key repeat |
 
 Two things worth knowing before turning them:
 

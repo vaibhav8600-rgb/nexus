@@ -31,9 +31,11 @@ module can stop the keyboard from typing (Requirement A).
    │      └── gfx.c      (240x12 band compositor -> display_write)│
    └─────────────────┬──────────────────────────────────────────┘
                      ▼
-        game_manager ──► struct nexus_game ──► tetris.c
-                                                  │
-                                            tetris_core.c   (pure C, tested)
+        game_manager ──► struct nexus_game ──┬─► tetris.c
+                                             │      │
+                                             │  tetris_core.c (pure C, tested)
+                                             ├─► snake.c
+                                             └─► breakout.c
                      │
    ┌─────────────────▼──────────────────────────────────────────┐
    │ HAL: nexus_button · nexus_buzzer · nexus_backlight          │
@@ -229,9 +231,9 @@ visual feature threatens anything above it, the visual feature loses.
 | `include/dt-bindings/nexus.h` | Action IDs, shared by C and devicetree so they cannot drift. |
 | `src/status/` | ZMK adapter + the status model. |
 | `src/ui/` | Screens, widgets, theme. |
-| `src/games/` | Manager + Tetris. |
+| `src/games/` | Manager + Tetris, Snake and Breakout. |
 | `src/hal/` | Button, buzzer, backlight. |
 | `src/behaviors/` | `&nexus_action`. |
 | `scripts/png2c.py` | Splash asset pipeline. |
-| `assets/splash_default.c` | Drawn fallback artwork. |
+| `assets/splash_default.c` | The default badge, drawn. No PNG ships with the module. |
 | `tests/` | Host-runnable checks. |

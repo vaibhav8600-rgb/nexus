@@ -4,10 +4,15 @@ Changing the boot artwork must never mean editing NEXUS source. It doesn't.
 
 ## How it works
 
+Three sources, in priority order. `CMakeLists.txt` picks the first that is
+set and compiles **exactly one** of them:
+
 ```
-your-config/nexus/splash/splash.png
+  1. CONFIG_NEXUS_SPLASH_IMAGE          your PNG, from your config repo
+  2. CONFIG_NEXUS_SPLASH_DEFAULT_IMAGE  a PNG inside the module
+  3. (neither set)                      assets/splash_default.c, drawn
             │
-            │  build time, scripts/png2c.py
+            │  1 and 2: build time, scripts/png2c.py
             ▼
    nexus_splash_user.c   (uint16_t[] + struct nexus_splash_art)
             │
@@ -16,10 +21,13 @@ your-config/nexus/splash/splash.png
    src/ui/splash.c reads nexus_splash_art  ->  gfx_blit565()
 ```
 
-`splash.c` never learns whether it got your bitmap or the built-in default --
-both define the same symbol, `nexus_splash_art`, carrying a width, a height and
-a draw function. So the priority rule in Section 21 is settled by the linker,
-with no runtime branch and no `#ifdef` in the screen.
+**As shipped, only the third applies**: both string options are empty and the
+module carries no PNG, so the drawn badge is what you boot into.
+
+`splash.c` never learns which one it got -- all three define the same symbol,
+`nexus_splash_art`, carrying a width, a height and a draw function. So the
+priority rule in Section 21 is settled by the linker, with no runtime branch
+and no `#ifdef` in the screen.
 
 ## Using your own image
 
@@ -83,15 +91,18 @@ CONFIG_NEXUS_PRODUCT="NEXUS"           # the wordmark
 CONFIG_NEXUS_SUBTITLE="SMART ZMK DONGLE"
 ```
 
-Set `BRAND` or `SUBTITLE` to `""` to hide that line. `PRODUCT` is drawn as a
-weighted wordmark over an accent rule, in the active theme's colours. Brand
-and subtitle are drawn at body size, and the whole block is measured before
-it is drawn so it stays centred whatever your strings and artwork come to.
+Set `BRAND` or `SUBTITLE` to `""` to hide that line. `PRODUCT` is drawn as
+glass in the active theme's colours -- a near-white face with a soft accent
+halo behind it and a one-pixel bevel, the same treatment the cards get. The
+subtitle is tracked small under it and the brand sits below a hairline.
+
+These strings apply to the **drawn badge only**. A supplied PNG replaces the
+function that draws them; see "Your image is the whole splash" below.
 
 ## Timing
 
 ```
-CONFIG_NEXUS_SPLASH_DURATION_MS=3500
+CONFIG_NEXUS_SPLASH_DURATION_MS=3500   # the Kconfig default is 3000
 ```
 
 `0` disables the splash and boots straight to the default screen. A press of
@@ -100,15 +111,35 @@ the action button skips it early.
 The splash is cosmetic. ZMK boots behind it; the keyboard is usable as soon as
 the radio is up, not when the timer expires (Section 18).
 
-## The default
+## The default badge
 
-No `CONFIG_NEXUS_SPLASH_IMAGE`? `assets/splash_default.c` draws a mark with
-compositor primitives -- a ring, two crossed bars and a node. It costs about
-200 bytes instead of 51 KB, which is why it is drawn and not a bitmap. It also
-follows the active theme, which a bitmap cannot.
+`assets/splash_default.c` draws the whole 240x240 composition with compositor
+primitives -- no bitmap, no font conversion, no widget tree:
 
-Both paths define the same symbol, `struct nexus_splash_art nexus_splash_art`,
-so exactly one is linked and `src/ui/splash.c` never learns which it got.
+```
+   two large discs hung off the corners, clipped by the panel
+   a soft accent halo, a dark disc with an accent ring,
+     an inner disc with a white hairline
+   the N, centred in it
+   NEXUS            the glass wordmark
+   SMART ZMK DONGLE tracked, small
+   ----             a hairline
+   VAIBHAV TECH     tracked, at body size
+```
+
+It costs a few hundred bytes of code against 115,200 for the same picture as a
+240x240 PNG -- about 14% of the 792 KB app partition -- which is the entire
+argument for drawing it. It also follows the active theme, which a bitmap
+cannot.
+
+The module deliberately ships **no** default PNG. `NEXUS_SPLASH_DEFAULT_IMAGE`
+exists for someone shipping NEXUS pre-branded with artwork the drawing cannot
+express; pointing it at a full-screen image costs that 14% on every build,
+whether or not anyone waits around to look at the splash.
+
+`tests/splash/test_badge_layout.py` asserts the stacking order and that the
+default stays empty, because the failure mode of getting that wrong is a
+silent 115 KB, not a broken build.
 
 ## Running the converter by hand
 
@@ -200,11 +231,13 @@ badge's brand, wordmark and subtitle live inside
 `assets/splash_default.c`'s draw function, because they belong to that
 composition and to nothing else.
 
-`CMakeLists.txt` compiles **exactly one** of `assets/splash_default.c` or the
+`CMakeLists.txt` compiles **exactly one** of `assets/splash_default.c` or a
 PNG converted by `scripts/png2c.py`, both providing the same
 `nexus_splash_art` symbol. So supplying an image does not disable the badge's
 text; it replaces the function that drew it. The default splash is not merely
-hidden, it is not in the binary.
+hidden, it is not in the binary -- and neither are `NEXUS_BRAND`,
+`NEXUS_PRODUCT` or `NEXUS_SUBTITLE`, which is why setting them has no effect
+on a custom splash.
 
 An earlier version had a `CONFIG_NEXUS_SPLASH_TEXT` switch for this. A switch
 can be set wrong, and "nothing is painted over a custom splash" is better as a

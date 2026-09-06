@@ -44,7 +44,7 @@ Colours are `gfx_color` (RGB565). Write them as RGB888 literals through the
 | `track` | Battery trough, Tetris well background. |
 | `muted` | Inactive glyphs and unknown values. |
 | `success` / `warning` / `error` | Battery bands and lock indicators. |
-| `wordmark[5]` | `[0]` is the face, `[1..4]` the extrusion steps drawn one pixel lower each. |
+| `wordmark[5]` | The title, brightest to darkest: `[0]`/`[1]` shade the face, `[2]` is the halo behind it, `[3]`/`[4]` the two graded pixels of shade under every edge. |
 | `radius` | Card corner radius. |
 
 ## Why it looks like glass without blur
