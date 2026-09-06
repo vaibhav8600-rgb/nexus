@@ -237,6 +237,9 @@ See [themes.md](themes.md) for what every field means and how to add a palette.
   <img src="images/anim/snake.gif" width="170" alt="Snake">
   <img src="images/anim/breakout.gif" width="170" alt="Breakout">
 </p>
+<p align="center">
+  <img src="images/screens/pacman.png" width="170" alt="Pac-Man">
+</p>
 
 Three, all reached from the Game Center. `J`/`L` page between them, the button
 plays, double-tap skips to the next one.
@@ -246,6 +249,7 @@ plays, double-tap skips to the next one.
 | **Tetris** | 10x20 | ~245 B | Seven-bag randomiser, symmetric wall kicks, 100/300/500/800 per 1-4 lines times level. |
 | **Snake** | 16x16 | ~768 B | Walls or wrap, toggled in Settings. Moving into your own vacated tail is legal. |
 | **Breakout** | free | ~24 B | 8.8 fixed point, 5x8 bricks, three lives, paddle position steers the ball. |
+| **Pac-Man** | 19x15 | ~300 B | 144 dots, four power pellets, three chasers that never reverse, and a wrapping tunnel. |
 
 High scores persist per game and are written only when a record actually
 improves. Difficulty is a **runtime** setting, not a build option.

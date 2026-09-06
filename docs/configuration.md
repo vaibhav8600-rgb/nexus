@@ -124,6 +124,9 @@ difference between a half that dozed and a half that dropped.
 | `CONFIG_NEXUS_TETRIS` | `y` | |
 | `CONFIG_NEXUS_SNAKE` | `y` | |
 | `CONFIG_NEXUS_BREAKOUT` | `y` | |
+| `CONFIG_NEXUS_PACMAN` | `y` | The maze chase. |
+| `CONFIG_NEXUS_PACMAN_TICK_MS` | `150` | Step interval. Movement is cell to cell, so this is also the speed. |
+| `CONFIG_NEXUS_PACMAN_FRIGHT_TICKS` | `40` | How long a power pellet lasts, in ticks -- about six seconds at the default interval. |
 | `CONFIG_NEXUS_GAME_HIGHSCORE_PERSIST` | `y` | Store high scores in Zephyr settings. Written only when a record actually improves. |
 
 Turning a game off removes it from the build entirely, not just from the

@@ -268,6 +268,37 @@ config NEXUS_SNAKE
 	  cell indices plus an occupancy grid, so growing is O(1) and the
 	  self-collision test is one array read.
 
+config NEXUS_PACMAN
+	bool "Maze chase"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  A 19x15 maze, dots, power pellets and three chasers. About 300 bytes
+	  of RAM: the maze is one byte per cell and every actor is a row, a
+	  column and a direction.
+
+	  The level is stored as text and decoded at round start, so editing it
+	  means editing a picture rather than counting bits.
+
+config NEXUS_PACMAN_TICK_MS
+	int "Maze chase step interval, ms"
+	default 150
+	depends on NEXUS_PACMAN
+	help
+	  Lower is faster. Movement is cell to cell, so this is also how far
+	  you travel per second: 150 ms at 12px cells is 80 px/s.
+
+	  Settings > SPEED scales it at runtime the same way it scales Snake.
+
+config NEXUS_PACMAN_FRIGHT_TICKS
+	int "Ticks the chasers stay edible after a power pellet"
+	default 40
+	depends on NEXUS_PACMAN
+	help
+	  40 ticks is about six seconds at the default interval - long enough
+	  to cross the maze and take one, short enough that a pellet is worth
+	  saving. The chasers flash for the last eight.
+
 config NEXUS_SNAKE_WRAP
 	bool "Snake wraps at the edges instead of dying (power-on default)"
 	default y

@@ -26,6 +26,9 @@ extern const struct nexus_game nexus_game_snake;
 #if IS_ENABLED(CONFIG_NEXUS_BREAKOUT)
 extern const struct nexus_game nexus_game_breakout;
 #endif
+#if IS_ENABLED(CONFIG_NEXUS_PACMAN)
+extern const struct nexus_game nexus_game_pacman;
+#endif
 
 static const struct nexus_game *const games[] = {
 #if IS_ENABLED(CONFIG_NEXUS_TETRIS)
@@ -36,6 +39,9 @@ static const struct nexus_game *const games[] = {
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_BREAKOUT)
 	&nexus_game_breakout,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_PACMAN)
+	&nexus_game_pacman,
 #endif
 	/* Terminator. A zero-length array is not valid C, and the Game Center
 	 * can legitimately be built with every game turned off. */

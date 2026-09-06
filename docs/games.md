@@ -146,8 +146,14 @@ Game Center can legitimately be built with every game turned off.
   `uint8_t[22][10]` and the compositor paints straight from it, so the whole
   game is about 220 bytes. Reach for a canvas only when you can say why the
   band compositor cannot do the job.
-- **No copyrighted assets.** Original graphics and original names only. A maze
-  chase game is fine; a Pac-Man clone with Pac-Man's artwork is not (Section 52).
+- **No copyrighted assets.** Original graphics only - every sprite in this
+  repo is drawn with compositor primitives, none is traced or imported.
+
+  Names are the owner's call and the maze chase ships as `PAC-MAN`, which is a
+  Bandai Namco trademark. Mechanics are not copyrightable and the artwork here
+  is original, so the name is the only exposure; if this repo ever needs to be
+  uncontroversial, that string in `pacman.c` and its Kconfig prompt are the
+  whole change.
 
 ### Distinguishing pieces without colour
 
@@ -157,13 +163,14 @@ pattern all carry the identity, so the board reads correctly in monochrome or
 to a colourblind player -- colour is never the only signal (Section 106).
 Worth copying.
 
-## The three games
+## The four games
 
 | | board | RAM | how it moves |
 | --- | --- | --- | --- |
 | Tetris | 10x20 | ~245 B | integer grid, gravity on its own clock |
 | Snake | 16x16 | ~768 B | integer grid, ring of cells |
 | Breakout | free | ~24 B | 8.8 fixed point |
+| Pac-Man | 19x15 | ~300 B | integer grid, greedy chasers |
 
 Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
 four faint slivers and the apple a speck -- on a panel you look at from across
@@ -171,10 +178,10 @@ a desk that is not detail, it is just small. The grid and the ring are both
 O(cells), so the larger cells also cost a third of the RAM: 768 bytes rather
 than 1,728.
 
-All three go through `struct nexus_game`, so the Game Center pages between
+All four go through `struct nexus_game`, so the Game Center pages between
 them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
-of them off with `CONFIG_NEXUS_TETRIS` / `_SNAKE` / `_BREAKOUT` removes it from
-the build entirely.
+of them off with `CONFIG_NEXUS_TETRIS` / `_SNAKE` / `_BREAKOUT` / `_PACMAN`
+removes it from the build entirely.
 
 ### Snake
 
@@ -242,6 +249,39 @@ fixed `PADDLE_H + 2`. That margin was enough at the old top speed and is not at
 LUDICROUS: a ball moving 5.6px a tick steps straight over a 7px window, and the
 life goes to a collision test that never ran.
 
+### Pac-Man
+
+A 19x15 maze at 12px cells, 144 dots, four power pellets, three chasers and a
+wrapping tunnel row.
+
+**The maze is stored as text** and decoded once at round start:
+
+```c
+"####.###.#.###.####",
+".........G.........",      /* the tunnel - the only row that wraps */
+"####.###.#.###.####",
+```
+
+That costs 285 bytes of flash for the layout and buys a level you can read and
+edit without counting bits. It also makes the level testable:
+`tests/games/test_pacman_maze.py` flood-fills it from the spawn and fails if a
+single dot is unreachable -- a walled-in dot makes the level uncompletable, and
+the only symptom on hardware is eating all the others and nothing happening.
+
+**The chasers are greedy with one rule: never reverse.** That single constraint
+is what turns "walks at you" into something that commits to a route and can be
+led away from a corridor; without it a chaser oscillates on the spot every time
+you cross its axis. Frightened mode is the *same* search with the sign flipped,
+not a second pathfinder.
+
+**Collisions are tested twice**, before and after the chasers move. Testing once
+lets a chaser and the player swap cells in a single tick and pass straight
+through each other, which reads as broken hit detection rather than a near miss.
+
+A turn is a *request*: it is stored and taken at the next junction that allows
+it, so you can press early into a corner rather than having to time it. That is
+also why turning makes no sound - the press often does not become a move.
+
 ## Difficulty, without reflashing
 
 **Settings -> SPEED** cycles SLOW / EASY / NORMAL / FAST / INSANE / LUDICROUS
@@ -276,6 +316,8 @@ the Settings knob moves around it.
 | `NEXUS_BREAKOUT_BALL_SPEED` | 350 | hundredths of a pixel per tick |
 | `NEXUS_BREAKOUT_TICK_MS` | 28 | simulation interval |
 | `NEXUS_BREAKOUT_PADDLE_STEP` | 24 | pixels the paddle travels per key repeat |
+| `NEXUS_PACMAN_TICK_MS` | 150 | maze step interval - **lower is faster** |
+| `NEXUS_PACMAN_FRIGHT_TICKS` | 40 | ticks a power pellet lasts, ~6 s |
 
 Two things worth knowing before turning them:
 

@@ -795,6 +795,76 @@ def breakout(cv, t, ball=None, paddle=None, gone=None, score='340', lives=3):
     cv.disc(K['FIELD_X'] + bx, K['FIELD_Y'] + by, K['BALL_R'], t['warning'])
 
 
+# ----------------------------------------------------------------- pacman
+PAC = defines(read('src/games/pacman/pacman.c'),
+              ['COLS', 'ROWS', 'CELL', 'WELL_W', 'WELL_H', 'WELL_X', 'WELL_Y',
+               'FRAME_X', 'FRAME_Y', 'FRAME_W', 'FRAME_H'])
+PAC_MAZE = re.findall(
+    r'"([^"]*)"',
+    read('src/games/pacman/pacman.c').split('maze_src[ROWS] = {')[1]
+    .split('\n};')[0])
+
+
+def pacman(cv, t, pac=(13, 9), pdir=1, ghosts=((7, 9), (7, 6), (6, 10)),
+           eaten=(), score='340', lives=3, fright=False, anim=0):
+    u, K = UI(cv, t), PAC
+    u.ground()
+    u.label(PAD, 8, 'PAC-MAN')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
+    cv.text(PAD + 40, 24, score, BODY, t['value'])
+    for i in range(lives):
+        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['warning'])
+
+    cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
+                   t['border'], t['border_alpha'])
+    cv.rect(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'], t['track'], 120)
+
+    CELL = K['CELL']
+    for r in range(K['ROWS']):
+        for c in range(K['COLS']):
+            ch = PAC_MAZE[r][c]
+            x = K['WELL_X'] + c * CELL
+            y = K['WELL_Y'] + r * CELL
+            if ch == '#':
+                cv.rect(x, y, CELL, CELL, t['accent'], 70)
+                cv.hline(x, y, CELL, t['edge_hi'], 40)
+            elif (r, c) in eaten:
+                continue
+            elif ch == '.':
+                cv.rect(x + CELL // 2 - 1, y + CELL // 2 - 1, 2, 2,
+                        t['caption'])
+            elif ch == 'o' and not (anim & 2):
+                cv.disc(x + CELL // 2, y + CELL // 2, 3, t['value'])
+
+    for i, (gr, gc) in enumerate(ghosts):
+        x, y = K['WELL_X'] + gc * CELL, K['WELL_Y'] + gr * CELL
+        body = t['accent_alt'] if fright else mix(
+            t['error'], t['accent'], (0, 128, 255)[i % 3])
+        w = h = CELL - 2
+        cv.round_rect(x + 1, y + 1, w, h, w // 2, body)
+        cv.rect(x + 1, y + 1 + h // 2, w, h // 2, body)
+        cv.rect(x + 3, y + 4, 2, 3, 0xFFFF)
+        cv.rect(x + w - 3, y + 4, 2, 3, 0xFFFF)
+
+    # The eater, with its mouth cut back out in the well colour.
+    px_ = K['WELL_X'] + pac[1] * CELL
+    py_ = K['WELL_Y'] + pac[0] * CELL
+    cx, cy, rad = px_ + CELL // 2, py_ + CELL // 2, CELL // 2 - 1
+    cv.disc(cx, cy, rad, t['warning'])
+    if not (anim & 1):
+        for i in range(rad):
+            half = i // 2 + 1
+            if pdir == 1:
+                cv.rect(cx + i, cy - half, 1, half * 2, t['track'], 220)
+            elif pdir == 3:
+                cv.rect(cx - i, cy - half, 1, half * 2, t['track'], 220)
+            elif pdir == 0:
+                cv.rect(cx - half, cy - i, half * 2, 1, t['track'], 220)
+            else:
+                cv.rect(cx - half, cy + i, half * 2, 1, t['track'], 220)
+
+
 # ---------------------------------------------------------------- splash
 SPL = defines(read('assets/splash_default.c'),
               ['DISC_CY', 'DISC_D', 'HALO_D', 'INNER_D', 'WORD_Y',
@@ -875,6 +945,7 @@ def main():
         ('tetris', lambda cv: tetris(cv, nx)),
         ('snake', lambda cv: snake(cv, nx)),
         ('breakout', lambda cv: breakout(cv, nx)),
+        ('pacman', lambda cv: pacman(cv, nx)),
         ('settings', lambda cv: menu(cv, nx, 'SETTINGS', SETTINGS_ROWS, 4)),
         ('diagnostics', lambda cv: menu(cv, nx, 'DIAGNOSTICS', DIAG_ROWS, 9)),
         ('about', lambda cv: about(cv, nx)),
