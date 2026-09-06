@@ -692,8 +692,8 @@ static void face_dilate(const uint16_t *src, uint16_t *dst)
 }
 
 void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
-		      gfx_color bot, gfx_color outline, gfx_color extrude,
-		      int depth)
+		      gfx_color bot, gfx_color outline, gfx_color ext_near,
+		      gfx_color ext_far, int depth)
 {
 	uint16_t halo[FACE_H + 2];
 
@@ -731,8 +731,18 @@ void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
 		 * letter reads as a sticker rather than as a solid.
 		 */
 		for (int d = depth; d >= 1; d--) {
+			/* Darker with distance, so the side of the block turns
+			 * away from the light instead of reading as a flat
+			 * slab pasted behind the letter. */
+			gfx_color e = ext_near;
+
+			if (depth > 1) {
+				e = gfx_mix(ext_near, ext_far,
+					    (uint8_t)((d - 1) * 255 /
+						      (depth - 1)));
+			}
 			gfx_glyph(x - scale + d, y - scale + d, halo,
-				  FACE_W + 2, FACE_H + 2, scale, extrude,
+				  FACE_W + 2, FACE_H + 2, scale, e,
 				  GFX_OPAQUE);
 		}
 

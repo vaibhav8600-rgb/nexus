@@ -672,13 +672,17 @@ const struct nexus_screen nexus_screen_diagnostics_def = {
 static void about_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
+	/* NEXUS_SUBTITLE is not here any more: the wordmark sets it directly
+	 * under the name, which is where it belongs and where the splash puts
+	 * it. Listing it again three cards down was the same string twice. */
 	static const char *const lines[] = {
-		NEXUS_SUBTITLE,
 		"NRF52840  ST7789",
 		"POWERED BY ZMK",
 	};
 
-	nexus_draw_card(NEXUS_PAD, 14, NEXUS_CONTENT_W, 62);
+	/* 66, not 62: the wordmark carries its subtitle now, so the card holds
+	 * caption + name + strapline. Still clears the FIRMWARE card at 84. */
+	nexus_draw_card(NEXUS_PAD, 14, NEXUS_CONTENT_W, 66);
 	nexus_draw_caption_c(GFX_W / 2, 21, NEXUS_BRAND);
 	/*
 	 * Scale 2, not 4. At 4 the face alone is 56px tall from y=33, so it

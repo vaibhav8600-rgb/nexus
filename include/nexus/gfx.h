@@ -159,8 +159,8 @@ void gfx_glyph_grad(int x, int y, const uint16_t *rows, int w, int h,
  * layout already leaves between glyphs.
  */
 void gfx_face_text_3d(int x, int y, const char *s, int scale, gfx_color top,
-		      gfx_color bot, gfx_color outline, gfx_color extrude,
-		      int depth);
+		      gfx_color bot, gfx_color outline, gfx_color ext_near,
+		      gfx_color ext_far, int depth);
 
 void gfx_face_text(int x, int y, const char *s, int scale, gfx_color c,
 		   uint8_t a);

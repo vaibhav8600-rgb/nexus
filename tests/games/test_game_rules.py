@@ -305,22 +305,15 @@ def main():
     bad += check("the label still leaves room for its value",
                  222 - 2 * 8 - 6 - label_w >= len("OFF") * 12 - 2, True)
 
-    print("\nDefault splash")
-    kc = open(os.path.join(root, "Kconfig"), encoding="utf-8").read()
-    bad += check("the module ships a default splash image",
-                 'default "assets/default_splash.png"' in kc, True)
-    bad += check("the image exists",
-                 os.path.exists(os.path.join(root, "assets",
-                                             "default_splash.png")), True)
-    # It is a full-screen composition; downscaling letterboxes it.
-    bad += check("and is not downscaled by default",
-                 "default 240" in kc.split("NEXUS_SPLASH_MAX_DIM")[1], True)
-    # A config-repo image must still win, or the custom splash silently stops
-    # working the moment the module ships a default of its own.
+    print("\nSplash precedence")
+    # The rest of the splash lives in tests/splash/test_badge_layout.py - the
+    # module draws its default rather than shipping a PNG for it. What still
+    # belongs nowhere else is the priority: a config-repo image must win, or
+    # a custom splash silently stops working the day the module gains one.
     cm = open(os.path.join(root, "CMakeLists.txt"), encoding="utf-8").read()
     user_at = cm.find("CONFIG_NEXUS_SPLASH_IMAGE}")
     dflt_at = cm.find("CONFIG_NEXUS_SPLASH_DEFAULT_IMAGE}")
-    bad += check("a config-repo splash still overrides the bundled one",
+    bad += check("a config-repo splash overrides the module's own",
                  -1 < user_at < dflt_at, True)
 
     print("\nPaddle speed")

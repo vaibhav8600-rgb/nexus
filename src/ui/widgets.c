@@ -2,6 +2,7 @@
  * Glass / neumorphic draw primitives (Sections 57-58). See widgets.h.
  */
 
+#include <nexus/nexus.h>   /* NEXUS_SUBTITLE */
 #include <nexus/widgets.h>
 #include <zephyr/kernel.h>
 
@@ -149,8 +150,17 @@ void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
 	}
 }
 
-#define WORDMARK_RULE_GAP 4
-#define WORDMARK_RULE_H 3
+/*
+ * The rule is gone.
+ *
+ * A 3px accent bar under the name is the laziest possible "this is a logo"
+ * signal, and on a 50px card it read as an underline drawn through the
+ * composition. The badge artwork does not have one: it sets the product name
+ * and hangs a tracked subtitle under it, and the space between them is what
+ * does the work the bar was trying to do.
+ */
+#define WORDMARK_SUB_GAP 4
+#define WORDMARK_SUB_TRACK 2
 
 /*
  * Extruded arcade lettering, per the supplied references.
@@ -164,14 +174,10 @@ void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
  * the letter is light falling on it, shading across the word is a gradient
  * applied to text. The horizontal ramp is gone.
  *
- * The palette is the theme's existing wordmark[] with no new fields:
- *
- *   [1]  the bright edge      lightest stop in every theme
- *   [2]  face, top
- *   [3]  face, bottom
- *   [4]  the extrusion        darkest stop in every theme
- *
- * ([0] is each theme's ground and stays unused, as it was before.)
+ * The palette is the theme's wordmark[] ramp, brightest to darkest: [0]/[1]
+ * shade the face, [2] rings it, [3]/[4] extrude it. Putting the accent on the
+ * EDGE and keeping the face near-white is what the badge artwork does, and it
+ * is the difference between lettering that glows and pink text on a card.
  */
 static int wordmark_depth(int scale)
 {
@@ -188,9 +194,18 @@ static int wordmark_ink_h(int scale)
 	return gfx_face_h(s) + 2 * s + wordmark_depth(s);
 }
 
+/* Height of the subtitle line, or 0 when there is no subtitle to set. */
+static int wordmark_sub_h(void)
+{
+	if (sizeof(NEXUS_SUBTITLE) <= 1) {
+		return 0;
+	}
+	return WORDMARK_SUB_GAP + gfx_text_h(NEXUS_TXT_CAPTION);
+}
+
 int nexus_wordmark_h(int scale)
 {
-	return wordmark_ink_h(scale) + WORDMARK_RULE_GAP + WORDMARK_RULE_H;
+	return wordmark_ink_h(scale) + wordmark_sub_h();
 }
 
 static void wordmark_letters(int cx, int y, const char *text, int scale,
@@ -209,8 +224,8 @@ static void wordmark_letters(int cx, int y, const char *text, int scale,
 	int fy = y + s;
 
 	for (const char *p = text; p && *p; p++) {
-		gfx_color top = t->wordmark[2];
-		gfx_color bot = t->wordmark[3];
+		gfx_color top = t->wordmark[0];
+		gfx_color bot = t->wordmark[1];
 
 		if (lit >= 0 && (p - text) == lit) {
 			/* The splash walks this along the word. Flat, not
@@ -219,8 +234,9 @@ static void wordmark_letters(int cx, int y, const char *text, int scale,
 		}
 
 		one[0] = *p;
-		gfx_face_text_3d(pen, fy, one, s, top, bot, t->wordmark[1],
-				 t->wordmark[4], wordmark_depth(s));
+		gfx_face_text_3d(pen, fy, one, s, top, bot, t->wordmark[2],
+				 t->wordmark[3], t->wordmark[4],
+				 wordmark_depth(s));
 		pen += gfx_face_w(one, s) + s;
 	}
 }
@@ -228,15 +244,18 @@ static void wordmark_letters(int cx, int y, const char *text, int scale,
 void nexus_draw_wordmark_lit(int cx, int y, const char *text, int scale,
 			     int lit)
 {
-	const struct nexus_theme *t = nexus_theme();
-	int w = gfx_face_w(text, scale);
-
 	wordmark_letters(cx, y, text, scale, lit);
 
-	/* Accent rule: what reads as "this is a product name". Below the ink,
-	 * not below the face - otherwise the extrusion lands on it. */
-	gfx_round_rect(cx - w / 2, y + wordmark_ink_h(scale) + WORDMARK_RULE_GAP,
-		       w, WORDMARK_RULE_H, 1, t->accent, GFX_OPAQUE);
+	if (sizeof(NEXUS_SUBTITLE) > 1) {
+		/* Tracked, small, and in the caption colour: it should sit
+		 * under the name the way a strapline does, not compete with
+		 * it. The letterspacing is the whole effect - set solid it
+		 * looks like a stray label. */
+		nexus_draw_tracked(cx,
+				   y + wordmark_ink_h(scale) + WORDMARK_SUB_GAP,
+				   NEXUS_SUBTITLE, NEXUS_TXT_CAPTION,
+				   WORDMARK_SUB_TRACK, nexus_theme()->caption);
+	}
 }
 
 void nexus_draw_wordmark_plain(int cx, int y, const char *text, int scale,

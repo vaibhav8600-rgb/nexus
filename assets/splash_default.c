@@ -48,13 +48,27 @@
 #define MARK_W 240
 #define MARK_H 240 /* the badge is the whole panel, type included */
 
-/* The three lines, at the design's own y positions. */
-#define BRAND_Y 132
-#define WORD_Y 152
-#define WORD_SCALE 2
-#define SUB_Y 192
+/*
+ * The badge, and the order of the type.
+ *
+ * The reference reads top to bottom as: disc, product name, subtitle, a thin
+ * divider, then the brand. This used to set the brand ABOVE the name, which
+ * puts the maker's name where the product's should be and leaves the subtitle
+ * floating with nothing under it.
+ */
+#define DISC_CY 80
+#define DISC_D 92
+#define HALO_D 104
+#define INNER_D 76
 
-#define COL_BRAND NEXUS_C(0x565D85u)
+#define WORD_Y 138
+#define WORD_SCALE 2
+#define SUB_Y 178
+#define RULE_Y 196
+#define RULE_W 132
+#define BRAND_Y 204
+
+#define COL_BRAND NEXUS_C(0xE6E9F5u)
 #define COL_PRODUCT NEXUS_C(0x7C87C4u)
 
 #define N_SCALE 3 /* 10x14 face -> 30x42, the original's 38px cap */
@@ -97,13 +111,18 @@ static void draw_default_mark(int x, int y)
 	disc_tl(128, 146, 176, COL_WINE, GFX_OPAQUE);
 
 	/* Halo, outer disc with its accent ring, inner disc with a hairline. */
-	disc_tl(66, 18, 108, COL_ACCENT, HALO_OPA);
+	disc_tl(120 - HALO_D / 2, DISC_CY - HALO_D / 2, HALO_D, COL_ACCENT,
+		HALO_OPA);
 
-	disc_tl(72, 24, 96, COL_DISC_OUTER, GFX_OPAQUE);
-	ring_tl(72, 24, 96, 2, COL_ACCENT, GFX_OPAQUE);
+	disc_tl(120 - DISC_D / 2, DISC_CY - DISC_D / 2, DISC_D, COL_DISC_OUTER,
+		GFX_OPAQUE);
+	ring_tl(120 - DISC_D / 2, DISC_CY - DISC_D / 2, DISC_D, 2, COL_ACCENT,
+		GFX_OPAQUE);
 
-	disc_tl(80, 32, 80, COL_DISC_INNER, GFX_OPAQUE);
-	ring_tl(80, 32, 80, 1, COL_WHITE, HAIRLINE_OPA);
+	disc_tl(120 - INNER_D / 2, DISC_CY - INNER_D / 2, INNER_D,
+		COL_DISC_INNER, GFX_OPAQUE);
+	ring_tl(120 - INNER_D / 2, DISC_CY - INNER_D / 2, INNER_D, 1, COL_WHITE,
+		HAIRLINE_OPA);
 
 	/*
 	 * The N: accent copy 1px right of a white one, as in the original. The
@@ -114,7 +133,7 @@ static void draw_default_mark(int x, int y)
 	int nw = gfx_face_w("N", N_SCALE);
 	int nh = gfx_face_h(N_SCALE);
 	int nx = 120 - nw / 2;
-	int ny = 24 + (96 - nh) / 2;
+	int ny = DISC_CY - nh / 2;
 
 	gfx_face_text(nx + 1, ny, "N", N_SCALE, COL_ACCENT, GFX_OPAQUE);
 	gfx_face_text(nx, ny, "N", N_SCALE, lit == 0 ? COL_ACCENT : COL_WHITE,
@@ -123,26 +142,29 @@ static void draw_default_mark(int x, int y)
 	/*
 	 * The type, drawn here rather than by splash.c, because it belongs to
 	 * this composition and to nothing else. The lines hang off the disc at
-	 * measured offsets - 132 / 152 / 192 - so they are fixed, not centred
-	 * as a block: re-centring would slide them against the disc whenever a
-	 * string length changed.
+	 * measured offsets, so they are fixed rather than centred as a block:
+	 * re-centring would slide them against the disc whenever a string
+	 * length changed.
 	 *
 	 * A supplied PNG replaces this whole function, so it replaces the text
 	 * with it. That is the point.
 	 */
-	if (sizeof(NEXUS_BRAND) > 1) {
-		nexus_draw_tracked(GFX_W / 2, BRAND_Y, NEXUS_BRAND,
-				   NEXUS_TXT_BODY, 2, COL_BRAND);
-	}
-
-	/* No accent rule under the wordmark: the disc above is the mark, and a
-	 * second graphic element under the name read as two logos stacked. */
 	nexus_draw_wordmark_plain(GFX_W / 2, WORD_Y, NEXUS_PRODUCT, WORD_SCALE,
 				  lit);
 
 	if (sizeof(NEXUS_SUBTITLE) > 1) {
 		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE,
-				   NEXUS_TXT_BODY, 1, COL_PRODUCT);
+				   NEXUS_TXT_CAPTION, 2, COL_PRODUCT);
+	}
+
+	if (sizeof(NEXUS_BRAND) > 1) {
+		/* A hairline, then the maker. The divider is what separates
+		 * "what this is" from "who made it" - without it the brand
+		 * reads as a third line of product name. */
+		gfx_rect(GFX_W / 2 - RULE_W / 2, RULE_Y, RULE_W, 1, COL_ACCENT,
+			 110);
+		nexus_draw_tracked(GFX_W / 2, BRAND_Y, NEXUS_BRAND,
+				   NEXUS_TXT_BODY, 2, COL_BRAND);
 	}
 }
 

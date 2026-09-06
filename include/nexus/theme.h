@@ -57,12 +57,17 @@ struct nexus_theme {
 	gfx_color error;
 
 	/*
-	 * The extruded wordmark, brightest to darkest:
-	 *   [0] unused (each theme's ground, kept for palette symmetry)
-	 *   [1] the bright outline edge
-	 *   [2] face, top       [3] face, bottom
-	 *   [4] the extrusion
-	 * The signature element of the reference design.
+	 * The extruded wordmark, five stops from brightest to darkest:
+	 *   [0] face, top     [1] face, bottom
+	 *   [2] the edge      - the accent that rings the letter
+	 *   [3] extrusion, near the face
+	 *   [4] extrusion, furthest from it
+	 *
+	 * Slot [0] used to hold each theme's ground and was never read. It is
+	 * the highlight now, which is what lets the face be near-white with
+	 * the accent as its EDGE rather than as its fill - the badge artwork's
+	 * treatment, and the thing that stops the wordmark reading as pink
+	 * text on a purple card.
 	 */
 	gfx_color wordmark[5];
 

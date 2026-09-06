@@ -112,8 +112,8 @@ def main():
     scale = 2
     while scale > 1 and face_w('NEXUS', scale) > avail:
         scale -= 1
-    # wordmark: face_h(scale) + WORDMARK_RULE_GAP(4) + WORDMARK_RULE_H(3)
-    wh = FACE_H * scale + 4 + 3
+    # wordmark: ink (face + outline cell + extrusion) + gap + strapline
+    wh = FACE_H * scale + 3 * scale + 4 + FONT_H
     ww = face_w('NEXUS', scale)
     y = C['BRAND_Y'] + (C['BRAND_H'] - wh) // 2
     fits('wordmark s%d (%dx%d)' % (scale, ww, FACE_H * scale), y, y + wh,
@@ -233,7 +233,8 @@ def main():
     # it has to stay inside the card, because the card is drawn first and
     # whatever is drawn next paints over anything that escaped.
     FACE_W, FACE_H = 10, 14
-    RULE_GAP, RULE_H = 4, 3
+    SUB_GAP, SUB_TRACK = 4, 2
+    SUBTITLE = 'SMART ZMK DONGLE'
 
     def face_w(text, s):
         return len(text) * (FACE_W + 1) * s - s
@@ -242,18 +243,28 @@ def main():
         return FACE_H * s + 2 * s + s      # face + halo + extrusion
 
     def mark_h(s):
-        return ink_h(s) + RULE_GAP + RULE_H
+        # The rule is gone; a tracked strapline sits there instead.
+        return ink_h(s) + SUB_GAP + text_h(1)
+
+    def tracked_w(text, scale, track):
+        return text_w(text, scale) + (len(text) - 1) * track
 
     wid = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             '..', '..', 'src', 'ui', 'widgets.c'),
                encoding='utf-8').read()
     ok('gfx_face_text_3d' in wid, 'the wordmark is drawn extruded')
-    ok('t->wordmark[1]' in wid and 't->wordmark[4]' in wid,
-       'outline and extrusion come from the theme, not from constants')
+    ok('t->wordmark[2]' in wid and 't->wordmark[4]' in wid,
+       'edge and extrusion come from the theme, not from constants')
     ok('gfx_mix(t->wordmark[2], t->accent' not in wid,
        'the left-to-right ramp is gone - the references shade downward')
-    ok('wordmark_ink_h(scale) + WORDMARK_RULE_GAP' in wid,
-       'the rule sits below the extrusion, not below the face')
+
+    lit_body = wid.split('nexus_draw_wordmark_lit')[1]
+    ok('WORDMARK_RULE_H' not in wid and 'gfx_round_rect' not in lit_body,
+       'the accent rule under the name is gone')
+    ok('nexus_draw_tracked' in lit_body,
+       'a tracked strapline sits there instead')
+    ok('t->wordmark[0]' in wid,
+       'the face uses the new highlight stop, so the accent can ring it')
 
     # Home picks the largest scale from 2 down whose face fits the card.
     avail = C['NEXUS_CONTENT_W'] - 2 * C['INNER'] - 4
@@ -267,24 +278,33 @@ def main():
 
     top = C['BRAND_Y'] + (C['BRAND_H'] - mark_h(hs)) // 2
     fits('wordmark ink', top, top + ink_h(hs), C['BRAND_Y'], C['BRAND_H'])
-    fits('wordmark rule', top + ink_h(hs) + RULE_GAP,
+    fits('wordmark strapline', top + ink_h(hs) + SUB_GAP,
          top + mark_h(hs), C['BRAND_Y'], C['BRAND_H'])
+    ok(tracked_w(SUBTITLE, 1, SUB_TRACK)
+       <= C['NEXUS_CONTENT_W'] - 2 * C['INNER'],
+       'the strapline fits the brand card at its tracking')
 
-    # About draws the same widget into a 62px card. At scale 4 the face alone
-    # was 56px from y=33 - it ran to 89 and the next card painted over it.
+    # About draws the same widget into the brand card. At scale 4 the face
+    # alone was 56px from y=33 - it ran to 89 and the next card covered it.
     menus = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               '..', '..', 'src', 'ui', 'menus.c'),
                  encoding='utf-8').read()
     m = re.search(r'nexus_draw_wordmark\(GFX_W / 2, (\d+), NEXUS_PRODUCT, '
                   r'(\d+)\)', menus)
     ok(m is not None, 'the About wordmark call is still recognisable')
-    if m:
+    card = re.search(r'nexus_draw_card\(NEXUS_PAD, 14, NEXUS_CONTENT_W, '
+                     r'(\d+)\)', menus)
+    ok(card is not None, 'the About brand card is still recognisable')
+    if m and card:
         ay, asz = int(m.group(1)), int(m.group(2))
-        ok(ay + mark_h(asz) <= 14 + 62,
+        cend = 14 + int(card.group(1))
+        ok(ay + mark_h(asz) <= cend,
            'About wordmark (ends %d) stays in its card (ends %d)'
-           % (ay + mark_h(asz), 76))
-        ok(ay + mark_h(asz) <= 84,
-           'and clears the FIRMWARE card below it')
+           % (ay + mark_h(asz), cend))
+        ok(cend <= 84, 'and the card clears the FIRMWARE card below it')
+        ok('NEXUS_SUBTITLE' not in menus.split('const char *const lines[]')[1]
+           .split('}')[0],
+           'the subtitle is not also listed as a body line')
         ok(face_w('NEXUS', asz) + 3 * asz <= C['NEXUS_CONTENT_W'],
            'About wordmark fits the card width')
 

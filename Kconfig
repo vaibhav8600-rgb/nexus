@@ -126,20 +126,20 @@ config NEXUS_SPLASH_DURATION_MS
 config NEXUS_SPLASH_DEFAULT_IMAGE
 	string "Path to a splash PNG bundled with the module"
 	depends on NEXUS_SPLASH
-	default "assets/default_splash.png"
+	default ""
 	help
-	  NEXUS's own splash artwork, used when the integrator has not
-	  supplied one of their own. Relative to the module root.
+	  A PNG inside the NEXUS module itself, used when the integrator has
+	  not supplied one of their own. Relative to the module root, so
+	  "assets/default_splash.png" is the one that ships.
 
 	  Priority is NEXUS_SPLASH_IMAGE, then this, then the drawn badge in
-	  assets/splash_default.c. Set this to "" to fall through to the drawn
-	  badge, which follows the active theme and costs a few hundred bytes
-	  instead of 115,200.
+	  assets/splash_default.c.
 
-	  That number is the trade: the shipped default is a real 240x240
-	  image, so every build pays about 14% of the app partition for it
-	  whether or not anyone waits around to look at the splash. Blank it
-	  if you would rather have the flash.
+	  Empty by default, and that is the recommendation: the drawn badge is
+	  the same composition in a few hundred bytes of code, where the PNG
+	  costs 115,200 - about 14% of the app partition - on every build,
+	  whether or not anyone waits around to look at the splash. Set it
+	  only if you have artwork the drawing cannot express.
 
 config NEXUS_SPLASH_IMAGE
 	string "Path to a splash PNG, relative to your zmk-config dir"
@@ -152,14 +152,12 @@ config NEXUS_SPLASH_IMAGE
 
 config NEXUS_SPLASH_MAX_DIM
 	int "Downscale splash artwork above this many pixels per side"
-	default 240
+	default 160
 	help
-	  Guards flash: 240x240 RGB565 is 115 KB, 160x160 is 51 KB.
-
-	  240 because the bundled default is a full-screen 240x240 composition
-	  - downscaling it would letterbox a picture that was drawn to fill
-	  the panel. Lower it if you point NEXUS_SPLASH_IMAGE at something
-	  that does not need the whole screen.
+	  Guards flash: 240x240 RGB565 is 115 KB, 160x160 is 51 KB. Only
+	  applies to a PNG - the drawn badge is resolution-independent and
+	  ignores this entirely. Raise it to 240 if you supply full-screen
+	  artwork and want it at native size.
 
 endif # NEXUS_SPLASH
 
