@@ -168,6 +168,39 @@ def main():
     bad += check("fastest ball cannot cross the paddle in one tick",
                  base * velocity(5) < PADDLE_H, True)
 
+    print("\nHeld movement keys auto-repeat")
+    ac = open(os.path.join(root, "src", "action.c"), encoding="utf-8").read()
+    for frag, why in [
+        ("static bool action_repeats", "there is a repeat allow-list"),
+        ("case NEXUS_ACTION_LEFT:", "LEFT repeats"),
+        ("case NEXUS_ACTION_DOWN:", "DOWN repeats - this is the soft drop"),
+        ("g_held == action", "only the key that armed a repeat can stop it"),
+        ("CONFIG_NEXUS_ACTION_REPEAT_DELAY_MS",
+         "the first repeat waits longer than the rest"),
+    ]:
+        ok = frag in ac
+        print(("  ok    " if ok else "  FAIL  ") + why)
+        if not ok:
+            bad += 1
+
+    # repeating a navigation action would open a screen per tick
+    reps = ac.split("static bool action_repeats")[1].split("\n}")[0]
+    for never in ("NEXUS_ACTION_MENU", "NEXUS_ACTION_SELECT",
+                  "NEXUS_ACTION_HOME", "NEXUS_ACTION_DROP"):
+        ok = never not in reps
+        print(("  ok    " if ok else "  FAIL  ")
+              + "%s does not repeat" % never.replace("NEXUS_ACTION_", ""))
+        if not ok:
+            bad += 1
+
+    beh = open(os.path.join(root, "src", "behaviors",
+                            "behavior_nexus_action.c"), encoding="utf-8").read()
+    ok = "nexus_action_release" in beh
+    print(("  ok    " if ok else "  FAIL  ")
+          + "the keymap behaviour reports key release")
+    if not ok:
+        bad += 1
+
     print("\nThe C still holds these")
     snake_c = open(os.path.join(root, "src", "games", "snake", "snake.c"),
                    encoding="utf-8").read()

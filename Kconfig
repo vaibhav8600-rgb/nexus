@@ -172,6 +172,21 @@ config NEXUS_BUTTON_DEBOUNCE_MS
 	default 30
 	depends on NEXUS_BUTTON
 
+config NEXUS_ACTION_REPEAT_DELAY_MS
+	int "Hold this long before a movement key starts repeating, ms"
+	default 260
+	help
+	  The gap before auto-repeat begins. It has to be comfortably longer
+	  than a deliberate tap, or one press becomes two moves and the game
+	  feels like it is fighting you.
+
+config NEXUS_ACTION_REPEAT_MS
+	int "Interval between auto-repeats, ms"
+	default 70
+	help
+	  How fast a held direction key repeats. This is what makes holding K
+	  a soft drop and holding J a paddle slide, rather than thirty taps.
+
 config NEXUS_BUTTON_DOUBLE_MS
 	int "Double-tap window, ms"
 	default 280

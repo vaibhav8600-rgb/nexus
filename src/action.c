@@ -105,6 +105,64 @@ static void drain(struct k_work *work)
 }
 static K_WORK_DEFINE(g_drain, drain);
 
+/*
+ * Auto-repeat for held movement keys.
+ *
+ * ZMK fires a behavior once per press; nothing repeats it. So holding K to
+ * soft-drop, or J to slide a paddle, did exactly as much as tapping once -
+ * you had to machine-gun the key to cross the screen.
+ *
+ * Only movement repeats. MENU, SELECT, HOME and friends would open a screen
+ * per tick, which is not a feature.
+ */
+static bool action_repeats(enum nexus_action a)
+{
+	switch (a) {
+	case NEXUS_ACTION_LEFT:
+	case NEXUS_ACTION_RIGHT:
+	case NEXUS_ACTION_UP:
+	case NEXUS_ACTION_DOWN:
+		return true;
+	default:
+		/* Not DROP: it is a hard drop in Tetris and a launch in
+		 * Breakout, both one-shot by definition. */
+		return false;
+	}
+}
+
+static enum nexus_action g_held;
+
+/* Forward-declared so the handler can reschedule its own work item, which it
+ * cannot do if the item is defined after it. */
+static void repeat_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(g_repeat_work, repeat_fn);
+
+static void repeat_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	if (g_held == NEXUS_ACTION_NONE) {
+		return;
+	}
+	nexus_action_dispatch(g_held);
+	k_work_reschedule_for_queue(nexus_workq(), &g_repeat_work,
+				    K_MSEC(CONFIG_NEXUS_ACTION_REPEAT_MS));
+}
+
+void nexus_action_release(enum nexus_action action)
+{
+	/*
+	 * Only the key that started the repeat may stop it. Releasing J while
+	 * L is already held would otherwise cancel L's repeat and leave the
+	 * paddle stuck mid-slide, which is exactly what a player does when
+	 * they change direction in a hurry.
+	 */
+	if (g_held == action) {
+		g_held = NEXUS_ACTION_NONE;
+		k_work_cancel_delayable(&g_repeat_work);
+	}
+}
+
 void nexus_action_dispatch(enum nexus_action action)
 {
 	uint8_t a = (uint8_t)action;
@@ -113,6 +171,18 @@ void nexus_action_dispatch(enum nexus_action action)
 		/* A screen that declares no gesture for this input. Silently
 		 * doing nothing is the whole point of the sentinel. */
 		return;
+	}
+
+	if (action_repeats(action) && g_held != action) {
+		/*
+		 * Arm on the first press, with a longer delay before the
+		 * repeat starts than between repeats: without that gap a
+		 * single deliberate tap turns into two or three moves and the
+		 * game feels like it is fighting you.
+		 */
+		g_held = action;
+		k_work_reschedule_for_queue(nexus_workq(), &g_repeat_work,
+					    K_MSEC(CONFIG_NEXUS_ACTION_REPEAT_DELAY_MS));
 	}
 
 	if (k_msgq_put(&g_actions, &a, K_NO_WAIT) != 0) {

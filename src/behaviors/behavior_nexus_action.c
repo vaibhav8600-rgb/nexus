@@ -36,8 +36,12 @@ static int on_pressed(struct zmk_behavior_binding *binding,
 static int on_released(struct zmk_behavior_binding *binding,
 		       struct zmk_behavior_binding_event event)
 {
-	ARG_UNUSED(binding);
 	ARG_UNUSED(event);
+
+	/* Ends an auto-repeat, if this action was one that repeats. The
+	 * release was being discarded, which is why holding a direction key
+	 * did exactly as much as tapping it once. */
+	nexus_action_release((enum nexus_action)binding->param1);
 	return ZMK_BEHAVIOR_OPAQUE;
 }
 

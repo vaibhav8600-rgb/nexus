@@ -52,6 +52,16 @@ enum nexus_action {
  */
 void nexus_action_dispatch(enum nexus_action action);
 
+/**
+ * A keymap key bound to @p action was released.
+ *
+ * Only meaningful for the movement actions, which auto-repeat while held -
+ * holding K to soft-drop in Tetris, or J to slide the paddle in Breakout,
+ * rather than tapping it thirty times. Everything else ignores it: repeating
+ * MENU or SELECT would open a screen once per tick.
+ */
+void nexus_action_release(enum nexus_action action);
+
 /** Map a physical button gesture to an action using the active screen's table. */
 void nexus_action_button_event(bool long_press);
 
