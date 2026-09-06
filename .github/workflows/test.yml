@@ -51,12 +51,17 @@ jobs:
         run: python3 scripts/check_headers.py
 
       - name: Doc images match the source they came from
-        # docs/images/ui/ is generated from the glyph bitmaps in home.c and
-        # the palettes in theme.c. Regenerate and diff: a doc image that
-        # disagrees with the firmware is worse than no image at all.
+        # Every picture in the docs is generated from the firmware: the glyph
+        # bitmaps in home.c, the palettes in theme.c, each screen's layout
+        # constants. Regenerate and diff, because a README showing a UI the
+        # code stopped drawing is worse than a README with no pictures at all.
         run: |
           python3 scripts/gen_doc_images.py
-          git diff --exit-code -- docs/images/ui/             || (echo "::error::docs/images/ui is stale - run scripts/gen_doc_images.py" && exit 1)
+          python3 scripts/render_ui.py
+          if ! git diff --exit-code -- docs/images/; then
+            echo "::error::docs/images is stale - run scripts/render_ui.py and scripts/gen_doc_images.py"
+            exit 1
+          fi
 
       - name: Docs match the options that exist
         # Both directions. Nothing fails when a Kconfig symbol is added and

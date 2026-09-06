@@ -3,10 +3,16 @@
 Every symbol NEXUS puts on the panel, what its states mean, and which button
 gets you between them.
 
-The glyphs below are **rendered from the firmware's own bitmaps** by
-`scripts/gen_doc_images.py`, on the theme colour they are actually drawn in.
-They are not screenshots and they cannot drift: change a glyph or a palette in
-the C, re-run the script, and these images change with it.
+Every image on this page is **generated from the firmware source** -- the
+fonts, the glyph bitmaps, the palettes and each screen's layout constants are
+all read out of the C, and `scripts/render_ui.py` composites them through a
+port of the same blend arithmetic. Change a glyph, a colour or a constant and
+re-run the script; the pictures change with it, and CI fails if you forget.
+
+They are reconstructions rather than captures -- there is no C compiler in
+this repo's toolchain to run the real compositor on the host -- so they are
+exact where the data is shared and only as good as the transcription where it
+is not. The draw order is the part transcribed by hand.
 
 ## Getting around
 
@@ -47,24 +53,23 @@ coming. Everywhere else a tap dispatches the instant the button comes up.
 
 ## Home
 
-```
- ┌────────────────────────────────────────┐
- │                NEXUS                   │  brand plate
- ├──────────────────────┬─────────────────┤
- │  ▯ ✱ 1 ▣             │ LAYER           │  connectivity  ·  layer
- │                      │ DEFAULT         │
- ├──────────────────────┼─────────────────┤
- │  ^ ⇧ ⌥ ⌘             │ WPM             │  modifiers  ·  typing speed
- │                      │ 000             │
- ├──────────────────────┼─────────────────┤
- │ LEFT                 │ RIGHT           │  the two halves' batteries
- │ ▁▁▁▁                 │ ▁▁▁▁            │
- └──────────────────────┴─────────────────┘
-```
+<img src="images/screens/home.png" width="240" align="right" alt="Home">
+
+Four rows in a 240x240 square:
+
+- **the brand plate**, carrying the title and nothing else
+- **connectivity and layer**
+- **modifiers and WPM**
+- **both halves' batteries**
 
 The title is drawn as glass -- a near-white face over a soft accent halo, with
 a one-pixel bevel -- in the active theme's colours. `CONFIG_NEXUS_PRODUCT` sets
 the word; nothing sits under it, deliberately.
+
+Gutters are 5px rather than the usual 7, which is what buys the link row the
+height for a readable transport cluster.
+
+<br clear="right">
 
 ## Connectivity
 
@@ -130,6 +135,10 @@ A held slot changes three things at once -- glyph colour, slot fill and border
 
 ## Settings
 
+<img src="images/screens/settings.png" width="240" align="right" alt="Settings">
+
+<br clear="right">
+
 | row | does |
 | --- | --- |
 | `SOUND` | ON / OFF. |
@@ -151,6 +160,10 @@ Changes are written after a quiet period (`CONFIG_NEXUS_SETTINGS_AUTOSAVE_MS`,
 
 ## Diagnostics
 
+<img src="images/screens/diagnostics.png" width="240" align="right" alt="Diagnostics">
+
+<br clear="right">
+
 `FIRMWARE`, `BOARD`, `DISPLAY`, `BACKLIGHT`, `BUZZER`, `BUTTON`, `HOST`,
 `L/R LINK`, `L/R BATT`, `UI STATIC`, `UPTIME`, and `FPS` with
 `CONFIG_NEXUS_DEBUG=y`.
@@ -168,6 +181,20 @@ falls back to `NEXUS` rather than failing the build over a typo.
 Each strip is that theme's real palette, quantised to the RGB565 the panel
 receives -- so these are the colours you get, not the colours the source asks
 for.
+
+The same dashboard in all seven:
+
+<p align="center">
+  <img src="images/screens/home-nexus.png" width="112" alt="NEXUS">
+  <img src="images/screens/home-amoled.png" width="112" alt="AMOLED">
+  <img src="images/screens/home-daylight.png" width="112" alt="DAYLIGHT">
+  <img src="images/screens/home-clay.png" width="112" alt="CLAY">
+</p>
+<p align="center">
+  <img src="images/screens/home-espresso.png" width="112" alt="ESPRESSO">
+  <img src="images/screens/home-mint.png" width="112" alt="MINT">
+  <img src="images/screens/home-sunset.png" width="112" alt="SUNSET">
+</p>
 
 | palette | | notes |
 | --- | --- | --- |
@@ -202,6 +229,15 @@ See [themes.md](themes.md) for what every field means and how to add a palette.
 
 ## Games
 
+<p align="center">
+  <img src="images/screens/game-center.png" width="170" alt="Game Center">
+  <img src="images/screens/tetris.png" width="170" alt="Tetris">
+</p>
+<p align="center">
+  <img src="images/screens/snake.png" width="170" alt="Snake">
+  <img src="images/screens/breakout.png" width="170" alt="Breakout">
+</p>
+
 Three, all reached from the Game Center. `J`/`L` page between them, the button
 plays, double-tap skips to the next one.
 
@@ -218,6 +254,10 @@ Full rules, controls and tuning: [games.md](games.md).
 
 ## Splash
 
+<img src="images/screens/splash.png" width="240" align="right" alt="Splash">
+
+<br clear="right">
+
 Boots into a drawn badge -- two corner discs, a ringed disc with the `N`, the
 wordmark, the subtitle, a hairline and the brand -- costing a few hundred bytes
 of code rather than the 115,200 the same picture would cost as a PNG.
@@ -225,11 +265,23 @@ of code rather than the 115,200 the same picture would cost as a PNG.
 Point `CONFIG_NEXUS_SPLASH_IMAGE` at your own artwork and it replaces the badge
 entirely, text included. See [splash.md](splash.md).
 
+## About
+
+<img src="images/screens/about.png" width="240" align="right" alt="About">
+
+<br clear="right">
+
+Brand, wordmark, firmware version, the hardware it runs on, and the creator
+credit. `CONFIG_NEXUS_BRAND`, `_PRODUCT`, `_SUBTITLE` and `_AUTHOR` set the
+strings; an empty one hides its line.
+
 ## Regenerating these images
 
 ```sh
-python3 scripts/gen_doc_images.py
+python3 scripts/render_ui.py       # full screens -> docs/images/screens/
+python3 scripts/gen_doc_images.py  # glyphs and palettes -> docs/images/ui/
 ```
 
-Reads `src/ui/home.c` and `src/ui/theme.c` and rewrites `docs/images/ui/`.
-Stdlib only -- no Pillow, for the same reason `png2c.py` has none.
+Both read the firmware source and both are stdlib only -- no Pillow, for the
+same reason `png2c.py` has none. CI runs them and fails on any diff, so an
+image here cannot quietly stop matching the code.

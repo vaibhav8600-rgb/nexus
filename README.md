@@ -5,14 +5,31 @@ and ZMK Studio on an nRF52840, as a module you drop into the `zmk-config` you
 already have.
 
 <p align="center">
-  <img src="docs/images/ui-reference.png" width="260" alt="NEXUS home dashboard">
+  <img src="docs/images/screens/splash.png" width="180" alt="Splash">
+  <img src="docs/images/screens/home.png" width="180" alt="Home dashboard">
+  <img src="docs/images/screens/game-center.png" width="180" alt="Game Center">
+</p>
+<p align="center">
+  <img src="docs/images/screens/tetris.png" width="180" alt="Tetris">
+  <img src="docs/images/screens/snake.png" width="180" alt="Snake">
+  <img src="docs/images/screens/breakout.png" width="180" alt="Breakout">
+</p>
+<p align="center">
+  <img src="docs/images/screens/settings.png" width="180" alt="Settings">
+  <img src="docs/images/screens/diagnostics.png" width="180" alt="Diagnostics">
+  <img src="docs/images/screens/about.png" width="180" alt="About">
 </p>
 
 ```
-  POWER ON  →  SPLASH  →  HOME  ─action─►  GAME CENTER  ─action─►  TETRIS
+  POWER ON  →  SPLASH  →  HOME  ─tap─►  GAME CENTER  ─tap─►  TETRIS · SNAKE · BREAKOUT
                             │
                             └─hold─►  SETTINGS · DIAGNOSTICS · ABOUT
 ```
+
+Every image above is generated from the firmware source by
+`scripts/render_ui.py` -- same fonts, same glyph bitmaps, same palettes, same
+draw order -- so the README cannot show a UI the code stopped drawing. See
+[ui.md](docs/ui.md).
 
 ## What it is
 
@@ -25,6 +42,16 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
   Settings so you never reflash to change how a game feels.
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
   nRF52840 to blur a framebuffer.
+
+<p align="center">
+  <img src="docs/images/screens/home-nexus.png" width="118" alt="NEXUS">
+  <img src="docs/images/screens/home-amoled.png" width="118" alt="AMOLED">
+  <img src="docs/images/screens/home-daylight.png" width="118" alt="DAYLIGHT">
+  <img src="docs/images/screens/home-clay.png" width="118" alt="CLAY">
+  <img src="docs/images/screens/home-espresso.png" width="118" alt="ESPRESSO">
+  <img src="docs/images/screens/home-mint.png" width="118" alt="MINT">
+  <img src="docs/images/screens/home-sunset.png" width="118" alt="SUNSET">
+</p>
 - **Configurable splash** -- a drawn badge by default, or your own PNG
   converted at build time from your config repo. No C arrays, no NEXUS
   source edits.
