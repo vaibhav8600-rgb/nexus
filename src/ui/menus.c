@@ -460,7 +460,7 @@ static const struct row settings_rows[] = {
 	{ "SPEED", v_game_speed, a_game_speed },
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_SNAKE)
-	{ "WALLS", v_walls, a_walls },
+	{ "SNAKE WALL", v_walls, a_walls },
 #endif
 	{ "SPLASH", v_splash, NULL },
 	{ "GAMES", v_games, NULL },

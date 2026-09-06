@@ -144,7 +144,7 @@ def main():
     bad += check("int32 holds every position with room to spare",
                  all((v << 8) < I32 for v in extremes.values()), True)
 
-    print("\nLive difficulty setting (1..5, 3 neutral)")
+    print("\nLive difficulty setting (1..6, 3 neutral)")
     # snake and tetris scale an INTERVAL; breakout scales a VELOCITY. The same
     # word "faster" therefore moves the two expressions in opposite
     # directions, which is the easy mistake and worth pinning down.
@@ -162,11 +162,42 @@ def main():
     bad += check("the two curves move in opposite directions",
                  interval(5) < 1.0 and velocity(5) > 1.0, True)
 
-    # SLOW must still be a game, and INSANE must not tunnel through the paddle
+    # SLOW must still be a game, and the top speed must not tunnel.
+    SPEED_MIN, SPEED_MAX = 1, 6
     PADDLE_H, base = 5, 3.5
-    bad += check("slowest ball is still moving", base * velocity(1) >= 2.0, True)
-    bad += check("fastest ball cannot cross the paddle in one tick",
-                 base * velocity(5) < PADDLE_H, True)
+
+    hdr = open(os.path.join(root, "include", "nexus", "game.h"),
+               encoding="utf-8").read()
+    bad += check("game.h agrees with this test about the top speed",
+                 "#define NEXUS_GAME_SPEED_MAX %d" % SPEED_MAX in hdr, True)
+
+    gm_names = open(os.path.join(root, "src", "games", "game_manager.c"),
+                    encoding="utf-8").read()
+    bad += check("the new top speed has a name",
+                 '"LUDICROUS"' in gm_names, True)
+    bad += check("and a BUILD_ASSERT so the next bump cannot skip one",
+                 "BUILD_ASSERT" in gm_names, True)
+
+    bad += check("slowest ball is still moving",
+                 base * velocity(SPEED_MIN) >= 2.0, True)
+
+    # An interval of zero would reschedule the tick with no delay and spin the
+    # display work queue forever - a brick, not a glitch. (8 - speed) hits zero
+    # at speed 8, so this is the assertion that stops the next bump going there.
+    bad += check("the fastest interval is still an interval",
+                 interval(SPEED_MAX) > 0, True)
+
+    # The catch window has to be at least one tick of travel deep, or a fast
+    # ball steps over the paddle between frames and the life goes to a
+    # collision test that never ran. This is why the +2 became scaled.
+    travel = base * velocity(SPEED_MAX)
+    reach = PADDLE_H + 2 + int(travel)
+    bad += check("the fastest ball cannot step over the paddle",
+                 travel <= reach, True)
+    bo_early = open(os.path.join(root, "src", "games", "breakout",
+                                 "breakout.c"), encoding="utf-8").read()
+    bad += check("and the window scales rather than being a fixed +2",
+                 "PADDLE_H + 2 + TO_PX(BALL_SPEED)" in bo_early, True)
 
     print("\nHeld movement keys auto-repeat")
     ac = open(os.path.join(root, "src", "action.c"), encoding="utf-8").read()
@@ -263,6 +294,35 @@ def main():
 
     # 12px a step at a 70ms repeat crossed the field in 1.3s, which loses
     # every rally. The paddle has to be able to beat the ball across.
+    print("\nSettings rows")
+    menus = open(os.path.join(root, "src", "ui", "menus.c"),
+                 encoding="utf-8").read()
+    # "WALLS" in a shared Settings list reads as a global; it is Snake's.
+    bad += check("the walls row names its game", '"SNAKE WALL"' in menus, True)
+    # 222px content, 8px inset each side, 6px gap, 10x14 glyphs at 6px advance:
+    # the label must leave room for "OFF" without dropping a text size.
+    label_w = len("SNAKE WALL") * 12 - 2
+    bad += check("the label still leaves room for its value",
+                 222 - 2 * 8 - 6 - label_w >= len("OFF") * 12 - 2, True)
+
+    print("\nDefault splash")
+    kc = open(os.path.join(root, "Kconfig"), encoding="utf-8").read()
+    bad += check("the module ships a default splash image",
+                 'default "assets/default_splash.png"' in kc, True)
+    bad += check("the image exists",
+                 os.path.exists(os.path.join(root, "assets",
+                                             "default_splash.png")), True)
+    # It is a full-screen composition; downscaling letterboxes it.
+    bad += check("and is not downscaled by default",
+                 "default 240" in kc.split("NEXUS_SPLASH_MAX_DIM")[1], True)
+    # A config-repo image must still win, or the custom splash silently stops
+    # working the moment the module ships a default of its own.
+    cm = open(os.path.join(root, "CMakeLists.txt"), encoding="utf-8").read()
+    user_at = cm.find("CONFIG_NEXUS_SPLASH_IMAGE}")
+    dflt_at = cm.find("CONFIG_NEXUS_SPLASH_DEFAULT_IMAGE}")
+    bad += check("a config-repo splash still overrides the bundled one",
+                 -1 < user_at < dflt_at, True)
+
     print("\nPaddle speed")
     REPEAT_MS, TRAVEL = 70, 220 - 38
     step_px = 24

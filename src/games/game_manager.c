@@ -69,8 +69,14 @@ void nexus_game_speed_set(uint8_t speed)
 
 const char *nexus_game_speed_name(void)
 {
-	static const char *const names[] = { "SLOW", "EASY", "NORMAL", "FAST",
-					     "INSANE" };
+	static const char *const names[] = { "SLOW",   "EASY",   "NORMAL",
+					     "FAST",   "INSANE", "LUDICROUS" };
+
+	/* The index is g_speed - MIN, so raising MAX without adding a name
+	 * reads off the end of this array and prints a garbage pointer. */
+	BUILD_ASSERT(ARRAY_SIZE(names) ==
+			     NEXUS_GAME_SPEED_MAX - NEXUS_GAME_SPEED_MIN + 1,
+		     "one name per speed");
 
 	return names[g_speed - NEXUS_GAME_SPEED_MIN];
 }

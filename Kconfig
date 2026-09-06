@@ -126,34 +126,40 @@ config NEXUS_SPLASH_DURATION_MS
 config NEXUS_SPLASH_DEFAULT_IMAGE
 	string "Path to a splash PNG bundled with the module"
 	depends on NEXUS_SPLASH
-	default ""
+	default "assets/default_splash.png"
 	help
-	  A PNG inside the NEXUS module itself, used when the integrator has
-	  not supplied one of their own. Relative to the module root, so
-	  "assets/splash.png" is the natural place.
+	  NEXUS's own splash artwork, used when the integrator has not
+	  supplied one of their own. Relative to the module root.
 
-	  Priority is NEXUS_SPLASH_IMAGE, then this, then the drawn badge.
+	  Priority is NEXUS_SPLASH_IMAGE, then this, then the drawn badge in
+	  assets/splash_default.c. Set this to "" to fall through to the drawn
+	  badge, which follows the active theme and costs a few hundred bytes
+	  instead of 115,200.
 
-	  Think before setting it. The drawn badge costs a few hundred bytes;
-	  a 240x240 image costs 115,200 - about 14% of the app partition -
-	  and every build of the module pays that whether or not the splash is
-	  ever seen. It exists for someone shipping NEXUS pre-branded, not as
-	  a better default.
+	  That number is the trade: the shipped default is a real 240x240
+	  image, so every build pays about 14% of the app partition for it
+	  whether or not anyone waits around to look at the splash. Blank it
+	  if you would rather have the flash.
 
 config NEXUS_SPLASH_IMAGE
 	string "Path to a splash PNG, relative to your zmk-config dir"
 	default ""
 	help
 	  Converted to a native-endian RGB565 array at build time by
-	  scripts/png2c.py and blitted by the compositor. Empty means use the
-	  built-in NEXUS default artwork, which is drawn rather than stored and
-	  follows the active theme.
+	  scripts/png2c.py and blitted by the compositor, as-is - nothing is
+	  drawn over it. Empty means fall back to NEXUS_SPLASH_DEFAULT_IMAGE,
+	  which is the module's own artwork.
 
 config NEXUS_SPLASH_MAX_DIM
 	int "Downscale splash artwork above this many pixels per side"
-	default 160
+	default 240
 	help
 	  Guards flash: 240x240 RGB565 is 115 KB, 160x160 is 51 KB.
+
+	  240 because the bundled default is a full-screen 240x240 composition
+	  - downscaling it would letterbox a picture that was drawn to fill
+	  the panel. Lower it if you point NEXUS_SPLASH_IMAGE at something
+	  that does not need the whole screen.
 
 endif # NEXUS_SPLASH
 

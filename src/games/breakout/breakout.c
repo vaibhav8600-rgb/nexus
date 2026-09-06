@@ -242,9 +242,23 @@ static void step(void)
 		return;
 	}
 
-	/* Paddle. */
+	/*
+	 * Paddle.
+	 *
+	 * The catch window has to be at least as deep as one tick of travel,
+	 * or a fast ball steps straight over the paddle between frames and the
+	 * life is lost to a collision test that never ran. A fixed +2 was
+	 * enough at the old top speed and is not at LUDICROUS, so it scales
+	 * with the ball instead of being a number that happens to work.
+	 *
+	 * ponytail: still a point test, not a swept one. If the ball ever gets
+	 * fast enough to clear PADDLE_H + its own travel in a tick, this needs
+	 * the previous position rather than a deeper window.
+	 */
+	int reach = PADDLE_H + 2 + TO_PX(BALL_SPEED);
+
 	if (g_b.vy > 0 && py + BALL_R >= PADDLE_Y &&
-	    py + BALL_R <= PADDLE_Y + PADDLE_H + 2 &&
+	    py + BALL_R <= PADDLE_Y + reach &&
 	    px >= g_b.paddle_x && px <= g_b.paddle_x + PADDLE_W) {
 		g_b.by = TO_FIX(PADDLE_Y - BALL_R);
 		g_b.vy = -g_b.vy;

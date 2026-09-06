@@ -82,7 +82,7 @@ enum nexus_game_state nexus_game_state(void);
  * the same multiplier.
  */
 #define NEXUS_GAME_SPEED_MIN 1
-#define NEXUS_GAME_SPEED_MAX 5
+#define NEXUS_GAME_SPEED_MAX 6
 #define NEXUS_GAME_SPEED_DEFAULT 3
 
 uint8_t nexus_game_speed(void);
