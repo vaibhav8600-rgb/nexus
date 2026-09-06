@@ -291,8 +291,23 @@ static void apply(uint32_t ev)
 
 static void arm_gravity(void)
 {
-	k_work_reschedule_for_queue(nexus_workq(), &g_gravity,
-				    K_MSEC(tetris_gravity_ms(&g_t)));
+	/*
+	 * The live difficulty setting scales gravity, applied HERE rather than
+	 * inside tetris_gravity_ms(): tetris_core.c is pure rules with no
+	 * NEXUS dependencies at all, which is what lets it be reasoned about
+	 * and tested on its own. A settings lookup does not belong in it.
+	 *
+	 * 3 is neutral and leaves the level curve exactly as it was. Each step
+	 * either side is 20%, and it multiplies whatever the level has already
+	 * done rather than replacing it.
+	 */
+	uint32_t ms = tetris_gravity_ms(&g_t) *
+		      (uint32_t)(8 - nexus_game_speed()) / 5U;
+
+	if (ms < 40U) {
+		ms = 40U; /* below this it is a coin flip, not a game */
+	}
+	k_work_reschedule_for_queue(nexus_workq(), &g_gravity, K_MSEC(ms));
 }
 
 static void gravity_fn(struct k_work *work)

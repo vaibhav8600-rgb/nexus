@@ -119,6 +119,29 @@ void nexus_action_dispatch(enum nexus_action action)
 	k_work_submit_to_queue(nexus_workq(), &g_drain);
 }
 
+#if IS_ENABLED(CONFIG_NEXUS_DISPLAY)
+/*
+ * Double-tap, and why the single tap has to wait for it.
+ *
+ * A second tap can only be recognised by NOT acting on the first one until
+ * the window closes. That is real latency on the primary gesture, so it is
+ * paid only on screens that declare btn_double - everywhere else a tap still
+ * dispatches the instant the button comes up.
+ */
+static enum nexus_action g_tap_pending;
+
+static void tap_timeout(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	if (g_tap_pending) {
+		nexus_action_dispatch(g_tap_pending);
+		g_tap_pending = 0;
+	}
+}
+static K_WORK_DELAYABLE_DEFINE(g_tap_work, tap_timeout);
+#endif
+
 void nexus_action_button_event(bool long_press)
 {
 #if IS_ENABLED(CONFIG_NEXUS_DISPLAY)
@@ -128,7 +151,30 @@ void nexus_action_button_event(bool long_press)
 		return;
 	}
 
-	nexus_action_dispatch(long_press ? cur->btn_long : cur->btn_short);
+	if (long_press) {
+		/* A hold cancels a tap that was still waiting for its pair;
+		 * otherwise releasing from a hold could fire both. */
+		k_work_cancel_delayable(&g_tap_work);
+		g_tap_pending = 0;
+		nexus_action_dispatch(cur->btn_long);
+		return;
+	}
+
+	if (cur->btn_double == 0) {
+		nexus_action_dispatch(cur->btn_short);
+		return;
+	}
+
+	if (g_tap_pending) {
+		k_work_cancel_delayable(&g_tap_work);
+		g_tap_pending = 0;
+		nexus_action_dispatch(cur->btn_double);
+		return;
+	}
+
+	g_tap_pending = cur->btn_short;
+	k_work_reschedule_for_queue(nexus_workq(), &g_tap_work,
+				    K_MSEC(CONFIG_NEXUS_BUTTON_DOUBLE_MS));
 #else
 	ARG_UNUSED(long_press);
 #endif

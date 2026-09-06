@@ -53,6 +53,15 @@ struct nexus_screen {
 	 * action behaves identically (Section 13).
 	 */
 	enum nexus_action btn_short;
+
+	/*
+	 * Optional double-tap. Leave it 0 and the screen has none - which
+	 * matters for more than tidiness: a screen that CAN double-tap has to
+	 * hold its single tap back until the window closes, so every screen
+	 * that declares one pays input latency for it. Only declare it where
+	 * the gesture is worth that.
+	 */
+	enum nexus_action btn_double;
 	enum nexus_action btn_long;
 };
 

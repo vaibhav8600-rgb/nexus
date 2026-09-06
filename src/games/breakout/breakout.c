@@ -73,7 +73,19 @@ typedef int32_t fix_t;
  * an integer pixels-per-tick knob would only offer 1, 2, 3 - which is the
  * difference between sedate and unplayable with nothing in between.
  */
-#define BALL_SPEED ((fix_t)CONFIG_NEXUS_BREAKOUT_BALL_SPEED * 256 / 100)
+#define BALL_SPEED_BASE ((fix_t)CONFIG_NEXUS_BREAKOUT_BALL_SPEED * 256 / 100)
+
+/*
+ * Scaled by the live difficulty setting: (2 + speed) / 5, so 3 is neutral and
+ * reproduces the Kconfig value exactly, and each step either side is 20% -
+ * the same magnitude Snake and Tetris get.
+ *
+ * Not speed/3, which was the obvious form and wrong: it put SLOW at a third
+ * of normal, about one pixel a tick, which is not a difficulty setting but a
+ * broken game. Velocity also scales the OPPOSITE way to Snake's interval for
+ * the same word "faster", which is why the two expressions do not match.
+ */
+#define BALL_SPEED (BALL_SPEED_BASE * (2 + nexus_game_speed()) / 5)
 
 #define TICK_MS CONFIG_NEXUS_BREAKOUT_TICK_MS
 #define LIVES 3

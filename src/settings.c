@@ -6,6 +6,9 @@
  */
 
 #include <nexus/display.h>
+#if IS_ENABLED(CONFIG_NEXUS_GAMES)
+#include <nexus/game.h>
+#endif
 #include <nexus/settings.h>
 #include <nexus/sound.h>
 #include <nexus/theme.h>
@@ -19,13 +22,20 @@
 LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 
 #define NEXUS_PREFS_KEY "nexus/ui/prefs"
-#define NEXUS_PREFS_VERSION 1
+/*
+ * Bumped for game_speed. prefs_set() ignores a struct whose version does not
+ * match and falls back to defaults, so an older saved blob is discarded
+ * rather than read with the fields shifted - the settings are worth less than
+ * the chance of applying a garbage brightness.
+ */
+#define NEXUS_PREFS_VERSION 2
 
 struct nexus_prefs {
 	uint8_t version;
 	uint8_t sound;      /* 0 or 1        */
 	uint8_t theme;      /* index         */
 	uint8_t brightness; /* 0-100 percent */
+	uint8_t game_speed; /* 1-5           */
 };
 
 static bool g_dirty;
@@ -75,6 +85,9 @@ static void apply(const struct nexus_prefs *p)
 {
 	nexus_sound_set_enabled(p->sound != 0);
 	nexus_theme_set_index(p->theme);
+#if IS_ENABLED(CONFIG_NEXUS_GAMES)
+	nexus_game_speed_set(p->game_speed);
+#endif
 
 	/*
 	 * Only records the level. The panel may not exist yet - settings load
@@ -123,6 +136,9 @@ int nexus_settings_save(void)
 		.sound = nexus_sound_enabled() ? 1 : 0,
 		.theme = nexus_theme_index(),
 		.brightness = nexus_display_backlight_level(),
+#if IS_ENABLED(CONFIG_NEXUS_GAMES)
+		.game_speed = nexus_game_speed(),
+#endif
 	};
 
 	int ret = settings_save_one(NEXUS_PREFS_KEY, &p, sizeof(p));

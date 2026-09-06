@@ -172,6 +172,18 @@ config NEXUS_BUTTON_DEBOUNCE_MS
 	default 30
 	depends on NEXUS_BUTTON
 
+config NEXUS_BUTTON_DOUBLE_MS
+	int "Double-tap window, ms"
+	default 280
+	depends on NEXUS_BUTTON
+	help
+	  How long a single tap waits to see whether a second one follows.
+
+	  This is latency on the SINGLE tap, not the double, and it is only
+	  paid on screens that declare a double-tap action - the Game Center
+	  is the only one. Too short and the gesture is hard to perform; too
+	  long and launching a game feels sticky. 280 is comfortable.
+
 config NEXUS_BUTTON_LONG_PRESS_MS
 	int "Long-press threshold, ms"
 	default 600

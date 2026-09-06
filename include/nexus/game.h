@@ -69,6 +69,27 @@ void nexus_game_pause(void);
 void nexus_game_resume(void);
 enum nexus_game_state nexus_game_state(void);
 
+/*
+ * Difficulty, 1 (slowest) .. 5 (fastest), 3 = the Kconfig defaults exactly.
+ *
+ * A live setting rather than a build-time constant, because "the ball is too
+ * slow" is a judgement you make while playing, and a knob you have to reflash
+ * to turn is a knob you turn once and then live with. It persists with sound,
+ * theme and brightness.
+ *
+ * Games scale their own clock by it; there is no shared notion of speed,
+ * because a tick interval and a pixels-per-tick velocity do not respond to
+ * the same multiplier.
+ */
+#define NEXUS_GAME_SPEED_MIN 1
+#define NEXUS_GAME_SPEED_MAX 5
+#define NEXUS_GAME_SPEED_DEFAULT 3
+
+uint8_t nexus_game_speed(void);
+void nexus_game_speed_set(uint8_t speed);
+/** Human label for the current setting, for the Settings screen. */
+const char *nexus_game_speed_name(void);
+
 uint32_t nexus_game_highscore(const struct nexus_game *game);
 /** Persists only when the record actually improves (Section 107). */
 void nexus_game_submit_score(const struct nexus_game *game, uint32_t score);

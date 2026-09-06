@@ -281,6 +281,28 @@ static void list_tick(void)
 
 /* ---- settings ---------------------------------------------------------- */
 
+#if IS_ENABLED(CONFIG_NEXUS_GAMES)
+static void v_game_speed(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_game_speed_name());
+}
+
+static void a_game_speed(void)
+{
+	/* Wraps, like every other cycling row here: five values do not want a
+	 * separate "back" gesture to get from INSANE to SLOW. */
+	uint8_t next = nexus_game_speed() + 1;
+
+	if (next > NEXUS_GAME_SPEED_MAX) {
+		next = NEXUS_GAME_SPEED_MIN;
+	}
+	nexus_game_speed_set(next);
+	nexus_settings_save_deferred();
+}
+#endif
+
 static void v_sound(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
@@ -417,6 +439,9 @@ static const struct row settings_rows[] = {
 	{ "BRIGHT", v_brightness, a_brightness },
 	{ "THEME", v_theme, a_theme },
 	{ "ANIM", v_anim, NULL },
+#if IS_ENABLED(CONFIG_NEXUS_GAMES)
+	{ "SPEED", v_game_speed, a_game_speed },
+#endif
 	{ "SPLASH", v_splash, NULL },
 	{ "GAMES", v_games, NULL },
 	{ "DIAG", NULL, a_diagnostics },

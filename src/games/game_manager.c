@@ -49,6 +49,32 @@ static uint32_t highscores[ARRAY_SIZE(games)];
 
 static const struct nexus_game *g_active;
 
+static uint8_t g_speed = NEXUS_GAME_SPEED_DEFAULT;
+
+uint8_t nexus_game_speed(void)
+{
+	return g_speed;
+}
+
+void nexus_game_speed_set(uint8_t speed)
+{
+	if (speed < NEXUS_GAME_SPEED_MIN) {
+		speed = NEXUS_GAME_SPEED_MIN;
+	}
+	if (speed > NEXUS_GAME_SPEED_MAX) {
+		speed = NEXUS_GAME_SPEED_MAX;
+	}
+	g_speed = speed;
+}
+
+const char *nexus_game_speed_name(void)
+{
+	static const char *const names[] = { "SLOW", "EASY", "NORMAL", "FAST",
+					     "INSANE" };
+
+	return names[g_speed - NEXUS_GAME_SPEED_MIN];
+}
+
 uint8_t nexus_game_count(void)
 {
 	return (uint8_t)GAME_COUNT;

@@ -144,6 +144,30 @@ def main():
     bad += check("int32 holds every position with room to spare",
                  all((v << 8) < I32 for v in extremes.values()), True)
 
+    print("\nLive difficulty setting (1..5, 3 neutral)")
+    # snake and tetris scale an INTERVAL; breakout scales a VELOCITY. The same
+    # word "faster" therefore moves the two expressions in opposite
+    # directions, which is the easy mistake and worth pinning down.
+
+    def interval(sp):
+        return (8 - sp) / 5
+
+    def velocity(sp):
+        return (2 + sp) / 5
+
+    bad += check("speed 3 leaves the interval untouched", interval(3), 1.0)
+    bad += check("speed 3 leaves the velocity untouched", velocity(3), 1.0)
+    bad += check("higher speed shortens the interval", interval(5) < interval(1), True)
+    bad += check("higher speed raises the velocity", velocity(5) > velocity(1), True)
+    bad += check("the two curves move in opposite directions",
+                 interval(5) < 1.0 and velocity(5) > 1.0, True)
+
+    # SLOW must still be a game, and INSANE must not tunnel through the paddle
+    PADDLE_H, base = 5, 3.5
+    bad += check("slowest ball is still moving", base * velocity(1) >= 2.0, True)
+    bad += check("fastest ball cannot cross the paddle in one tick",
+                 base * velocity(5) < PADDLE_H, True)
+
     print("\nThe C still holds these")
     snake_c = open(os.path.join(root, "src", "games", "snake", "snake.c"),
                    encoding="utf-8").read()
@@ -163,7 +187,8 @@ def main():
                       ("next_dir", "input writes next_dir, not dir"),
                       ("CONFIG_NEXUS_SNAKE_WRAP", "edges wrap, no fatal walls"),
                       ("CONFIG_NEXUS_SNAKE_TICK_MS", "speed comes from Kconfig"),
-                      ("NEXUS_ACTION_ROTATE", "I (ROTATE) steers up")]:
+                      ("NEXUS_ACTION_ROTATE", "I (ROTATE) steers up"),
+                      ("nexus_game_speed()", "tick scales with the live setting")]:
         ok = frag in snake_c
         print(("  ok    " if ok else "  FAIL  ") + "snake: " + why)
         if not ok:
@@ -178,6 +203,8 @@ def main():
         ("TO_FIX", "positions are fixed point, not whole pixels"),
         ("CONFIG_NEXUS_BREAKOUT_BALL_SPEED", "ball speed comes from Kconfig"),
         ("g_b.bricks[row] &= ", "a hit clears the brick bit"),
+        ("(2 + nexus_game_speed()) / 5",
+         "velocity scales live, and not by speed/3 which made SLOW unplayable"),
     ]:
         ok = frag in bo
         print(("  ok    " if ok else "  FAIL  ") + "breakout: " + why)

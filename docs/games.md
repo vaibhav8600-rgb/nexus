@@ -191,10 +191,27 @@ The action button launches a parked ball before it pauses. Otherwise the only
 way to start a life is a direction key, and on the physical button alone - all
 some users have - the game would be unstartable.
 
-## Tuning from a config repo
+## Difficulty, without reflashing
 
-Both new games take their feel from Kconfig, so a config repo can change it
-without touching the module.
+**Settings -> SPEED** cycles SLOW / EASY / NORMAL / FAST / INSANE and persists
+with sound, theme and brightness. It applies to all three games and takes
+effect on the next round.
+
+That is the knob to reach for. "The ball is too slow" is a judgement you make
+while playing, and one you have to reflash to act on is one you turn once and
+then live with.
+
+3 (NORMAL) is neutral and reproduces the Kconfig values exactly; each step
+either side is 20%. Note that the two kinds of game scale **opposite ways for
+the same word**: Snake and Tetris scale an *interval*, so faster means a
+smaller number, while Breakout scales a *velocity*. The first attempt used
+`speed / 3` for the ball, which put SLOW at a third of normal - about one
+pixel a tick, which is not a difficulty setting but a broken game.
+
+## The Kconfig baselines
+
+These set what NORMAL means. A config repo changes the centre of the range;
+the Settings knob moves around it.
 
 | option | default | |
 | --- | --- | --- |
@@ -226,3 +243,24 @@ rotation there. Snake and Breakout have nothing to rotate, so both accept
 `ROTATE` as their natural top-of-cluster action - up for Snake, launch for
 Breakout. Otherwise `I` would simply be inert in two of the three games, which
 reads as a broken key rather than as an unused one.
+
+## Switching games
+
+| | |
+| --- | --- |
+| `J` / `L` in the Game Center | previous / next |
+| **double-tap the action button** | next |
+| tap | play the selected game |
+| hold | home |
+
+The double-tap exists because with one game the button needed no third
+gesture, and with three a dongle that can only ever launch whichever game
+happens to be selected is not finished. Tap still plays and hold still goes
+home; the carousel did not have to displace either.
+
+It costs something, and only where it is used: a screen that declares
+`btn_double` must hold its single tap back until the window closes
+(`CONFIG_NEXUS_BUTTON_DOUBLE_MS`, 280 ms) to find out whether a second tap is
+coming. Every other screen still dispatches a tap the instant the button comes
+up. That is why `btn_double` is opt-in per screen rather than a global
+gesture.

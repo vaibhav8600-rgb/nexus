@@ -91,6 +91,7 @@ static void gc_draw(void)
 		/* "TAP", not "ACTION": at label size the longer string is
 		 * 274px wide on a 240px panel. */
 		gfx_text_c(GFX_W / 2, HINT_Y,
+			   count > 1 ? "TAP=PLAY  x2=NEXT" :
 			   count ? "TAP=PLAY  HOLD=HOME" : "HOLD=HOME",
 			   NEXUS_TXT_LABEL, t->caption, GFX_OPAQUE);
 	}
@@ -154,6 +155,14 @@ const struct nexus_screen nexus_screen_game_center_def = {
 	.refresh = NEXUS_REFRESH_IDLE,
 	.btn_short = NEXUS_ACTION_SELECT,
 	.btn_long = NEXUS_ACTION_HOME,
+	/*
+	 * Double-tap cycles. With one game there was nothing to cycle to and
+	 * the button needed no third gesture; with three, a dongle that can
+	 * only ever launch whichever game happens to be selected is not
+	 * finished. Tap still plays and hold still goes home - the carousel
+	 * did not have to displace either.
+	 */
+	.btn_double = NEXUS_ACTION_NEXT,
 };
 
 /* ------------------------------------------------------------------------- */

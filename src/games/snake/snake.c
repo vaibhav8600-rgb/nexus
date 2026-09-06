@@ -134,12 +134,29 @@ static void place_food(void)
 
 static uint32_t tick_ms(void)
 {
+	uint32_t base = TICK_START_MS;
+	uint32_t floor_ms = TICK_MIN_MS;
+
+	/*
+	 * The live difficulty setting scales the interval, and it has to move
+	 * the FLOOR too. Scaling only the start would mean every setting
+	 * converged on the same speed after a dozen apples, which is the one
+	 * thing a difficulty knob must not do.
+	 *
+	 * 3 is neutral and reproduces the Kconfig values exactly. Each step
+	 * either side is 20%: interval * (8 - speed) / 5.
+	 */
+	uint32_t num = (uint32_t)(8 - nexus_game_speed());
+
+	base = base * num / 5U;
+	floor_ms = floor_ms * num / 5U;
+
 	uint32_t step = (g_s.eaten / SPEED_EVERY) * SPEED_STEP_MS;
 
-	if (step >= TICK_START_MS - TICK_MIN_MS) {
-		return TICK_MIN_MS;
+	if (step >= base - floor_ms) {
+		return floor_ms;
 	}
-	return TICK_START_MS - step;
+	return base - step;
 }
 
 static void arm_tick(void)
