@@ -239,6 +239,7 @@ See [themes.md](themes.md) for what every field means and how to add a palette.
 </p>
 <p align="center">
   <img src="images/screens/pacman.png" width="170" alt="Pac-Man">
+  <img src="images/screens/mario.png" width="170" alt="Mario">
 </p>
 
 Three, all reached from the Game Center. `J`/`L` page between them, the button
@@ -250,6 +251,7 @@ plays, double-tap skips to the next one.
 | **Snake** | 16x16 | ~768 B | Walls or wrap, toggled in Settings. Moving into your own vacated tail is legal. |
 | **Breakout** | free | ~24 B | 8.8 fixed point, 5x8 bricks, three lives, paddle position steers the ball. |
 | **Pac-Man** | 19x15 | ~300 B | 144 dots, four power pellets, three chasers that never reverse, and a wrapping tunnel. |
+| **Mario** | 64x15 | ~180 B | A scrolling platformer. Level in flash, coins as a bitmask, jump arc tuned to the pits. |
 
 High scores persist per game and are written only when a record actually
 improves. Difficulty is a **runtime** setting, not a build option.

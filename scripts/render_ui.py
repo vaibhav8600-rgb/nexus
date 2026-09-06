@@ -907,6 +907,66 @@ def splash(cv, t, lit=-1):
     u.tracked(W // 2, K['BRAND_Y'], 'VAIBHAV TECH', BODY, 2, BRAND_C)
 
 
+# ------------------------------------------------------------------ mario
+MAR = defines(read('src/games/mario/mario.c'),
+              ['TILE', 'LEVEL_W', 'LEVEL_H', 'VIEW_Y', 'PLAYER_W', 'PLAYER_H'])
+MAR_LEVEL = re.findall(
+    r'"([^"]*)"',
+    read('src/games/mario/mario.c').split('level[LEVEL_H] = {')[1]
+    .split(';')[0])
+
+
+def mario(cv, t, cam=132, player=(12, 14), facing=1, dead=(), score='1700',
+          lives=3, anim=0):
+    u, K = UI(cv, t), MAR
+    TILE, VY = K['TILE'], K['VIEW_Y']
+    u.ground()
+    u.label(PAD, 8, 'MARIO')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(PAD, 24, score, BODY, t['value'])
+    for i in range(lives):
+        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['error'])
+
+    cv.rect(0, VY, W, K['LEVEL_H'] * TILE, t['track'], 140)
+
+    for r in range(K['LEVEL_H']):
+        y = VY + r * TILE
+        for c in range(cam // TILE, min((cam + W) // TILE + 1, K['LEVEL_W'])):
+            x = c * TILE - cam
+            ch = MAR_LEVEL[r][c]
+            if ch == '#':
+                cv.rect(x, y, TILE, TILE, t['accent'], 80)
+                cv.hline(x, y, TILE, t['edge_hi'], 90)
+            elif ch == '=':
+                cv.rect(x, y, TILE, TILE, t['warning'], 110)
+                cv.hline(x, y, TILE, t['edge_hi'], 90)
+                cv.hline(x, y + TILE - 1, TILE, t['edge_lo'], 110)
+            elif ch == 'o':
+                cv.disc(x + TILE // 2, y + TILE // 2, 3, t['warning'])
+            elif ch == 'F':
+                cv.rect(x + TILE // 2 - 1, y - TILE, 2, TILE * 2, t['value'])
+                cv.rect(x + TILE // 2 + 1, y - TILE, 6, 5, t['success'])
+            elif ch == 'E' and (r, c) not in dead:
+                px_, py_ = x, y
+                cv.round_rect(px_, py_ + 2, K['PLAYER_W'], K['PLAYER_H'] - 2,
+                              3, t['success'])
+                cv.rect(px_ + 1, py_ + K['PLAYER_H'] - 2, 2, 2, t['muted'])
+                cv.rect(px_ + K['PLAYER_W'] - 3, py_ + K['PLAYER_H'] - 2, 2, 2,
+                        t['muted'])
+                cv.rect(px_ + 2, py_ + 5, 2, 2, 0xFFFF)
+                cv.rect(px_ + K['PLAYER_W'] - 4, py_ + 5, 2, 2, 0xFFFF)
+
+    PW, PH = K['PLAYER_W'], K['PLAYER_H']
+    sx = player[1] * TILE - cam
+    sy = VY + player[0] * TILE
+    cv.rect(sx, sy, PW, 4, t['error'])
+    cv.rect(sx + (3 if facing > 0 else 0), sy + 2, PW - 3, 2, t['error'])
+    cv.rect(sx + 1, sy + 4, PW - 2, 4, t['warning'])
+    cv.rect(sx, sy + 8, PW, 3, t['accent_alt'])
+    cv.rect(sx, sy + PH - 1, 3, 1, t['value'])
+    cv.rect(sx + PW - 3, sy + PH - 1, 3, 1, t['value'])
+
+
 # ------------------------------------------------------------------ main
 SETTINGS_ROWS = [('SOUND', 'ON'), ('BRIGHT', '80%'), ('THEME', 'NEXUS'),
                  ('ANIM', 'ON'), ('SPEED', 'NORMAL'), ('SNAKE WALL', 'OFF'),
@@ -946,6 +1006,7 @@ def main():
         ('snake', lambda cv: snake(cv, nx)),
         ('breakout', lambda cv: breakout(cv, nx)),
         ('pacman', lambda cv: pacman(cv, nx)),
+        ('mario', lambda cv: mario(cv, nx)),
         ('settings', lambda cv: menu(cv, nx, 'SETTINGS', SETTINGS_ROWS, 4)),
         ('diagnostics', lambda cv: menu(cv, nx, 'DIAGNOSTICS', DIAG_ROWS, 9)),
         ('about', lambda cv: about(cv, nx)),

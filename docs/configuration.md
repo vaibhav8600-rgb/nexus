@@ -127,6 +127,8 @@ difference between a half that dozed and a half that dropped.
 | `CONFIG_NEXUS_PACMAN` | `y` | The maze chase. |
 | `CONFIG_NEXUS_PACMAN_TICK_MS` | `150` | Step interval. Movement is cell to cell, so this is also the speed. |
 | `CONFIG_NEXUS_PACMAN_FRIGHT_TICKS` | `40` | How long a power pellet lasts, in ticks -- about six seconds at the default interval. |
+| `CONFIG_NEXUS_MARIO` | `y` | The platformer. The most expensive game here to draw -- it scrolls, so a moving frame repaints the whole play area. |
+| `CONFIG_NEXUS_MARIO_TICK_MS` | `45` | Physics interval. The gravity and jump constants are tuned to it, and the level's pits are sized against the resulting jump -- changing it changes what is clearable. |
 | `CONFIG_NEXUS_GAME_HIGHSCORE_PERSIST` | `y` | Store high scores in Zephyr settings. Written only when a record actually improves. |
 
 Turning a game off removes it from the build entirely, not just from the

@@ -163,7 +163,7 @@ pattern all carry the identity, so the board reads correctly in monochrome or
 to a colourblind player -- colour is never the only signal (Section 106).
 Worth copying.
 
-## The four games
+## The five games
 
 | | board | RAM | how it moves |
 | --- | --- | --- | --- |
@@ -171,6 +171,7 @@ Worth copying.
 | Snake | 16x16 | ~768 B | integer grid, ring of cells |
 | Breakout | free | ~24 B | 8.8 fixed point |
 | Pac-Man | 19x15 | ~300 B | integer grid, greedy chasers |
+| Mario | 64x15 | ~180 B | 8.8 fixed point, scrolling camera |
 
 Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
 four faint slivers and the apple a speck -- on a panel you look at from across
@@ -178,10 +179,10 @@ a desk that is not detail, it is just small. The grid and the ring are both
 O(cells), so the larger cells also cost a third of the RAM: 768 bytes rather
 than 1,728.
 
-All four go through `struct nexus_game`, so the Game Center pages between
+All five go through `struct nexus_game`, so the Game Center pages between
 them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
-of them off with `CONFIG_NEXUS_TETRIS` / `_SNAKE` / `_BREAKOUT` / `_PACMAN`
-removes it from the build entirely.
+of them off with `CONFIG_NEXUS_TETRIS` / `_SNAKE` / `_BREAKOUT` / `_PACMAN` /
+`_MARIO` removes it from the build entirely.
 
 ### Snake
 
@@ -282,6 +283,44 @@ A turn is a *request*: it is stored and taken at the next junction that allows
 it, so you can press early into a corner rather than having to time it. That is
 also why turning makes no sound - the press often does not become a move.
 
+### Mario
+
+The only game here that is not on a grid, and the two things that follow from
+that are the whole story.
+
+**Held keys, from an event system that has none.** Running needs "is left held
+right now", and NEXUS dispatches discrete actions -- there is no key state to
+poll. A naive port moves one step per press and the character twitches.
+
+What there *is* is auto-repeat. A press sets a direction and winds a timer,
+each tick unwinds it, and movement continues while it is above zero. Set the
+window longer than `CONFIG_NEXUS_ACTION_REPEAT_MS` and a held key keeps it
+topped up; release and it runs down in two frames. Held input, rebuilt from
+repeats, with no new plumbing -- and the test asserts the window still outlasts
+the repeat interval, because if that inverts, running stutters and the cause is
+not obvious.
+
+**The level lives in flash.** 64x15 tiles of text is 960 bytes of flash and a
+level you can see; only what changes is in RAM -- a bit per coin, four enemies
+and the player, about 180 bytes against the 960 a mutable copy would need.
+
+The physics constants and the level are tuned against each other: the jump
+clears 2.1 tiles and reaches 4.2 across, so pits are 3 tiles with one of
+margin. `tests/games/test_mario_level.py` re-derives the arc from the constants
+in the C and measures every pit against it, because a platformer's failure mode
+is a level that compiles, runs, looks right and simply cannot be finished.
+
+Axes are resolved separately, X then Y. Doing both at once and backing out of
+the overlap cannot tell "walked into a wall" from "landed on a floor", which is
+how a platformer ends up sticking to walls.
+
+Enemies turn at ledges as well as walls. Without the ledge test they walk off
+every platform in the first ten seconds and the level empties itself.
+
+It is also the most expensive game here to draw. The camera scrolls, so a
+moving frame repaints the whole play area rather than a few cells, and it will
+not hold the tick rate the grid games do.
+
 ## Difficulty, without reflashing
 
 **Settings -> SPEED** cycles SLOW / EASY / NORMAL / FAST / INSANE / LUDICROUS
@@ -318,6 +357,7 @@ the Settings knob moves around it.
 | `NEXUS_BREAKOUT_PADDLE_STEP` | 24 | pixels the paddle travels per key repeat |
 | `NEXUS_PACMAN_TICK_MS` | 150 | maze step interval - **lower is faster** |
 | `NEXUS_PACMAN_FRIGHT_TICKS` | 40 | ticks a power pellet lasts, ~6 s |
+| `NEXUS_MARIO_TICK_MS` | 45 | platformer physics interval - **the jump is tuned to it** |
 
 Two things worth knowing before turning them:
 

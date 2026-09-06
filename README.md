@@ -25,8 +25,8 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 
 - **Live dashboard** -- layer, WPM, both halves' batteries, modifiers, caps
   lock, USB/BLE endpoint and profile.
-- **Game Center** with four playable games -- Tetris, Snake, Breakout and a
-  maze chase.
+- **Game Center** with five playable games -- Tetris, Snake, Breakout, a maze
+  chase and a scrolling platformer.
   Real rules, real scoring, persistent high scores, and a difficulty knob in
   Settings so you never reflash to change how a game feels.
   ([watch them play](docs/ui.md#games))
