@@ -218,7 +218,8 @@ def main():
 
     for frag, why in [("opposite[g_s.dir]", "a 180 turn is refused"),
                       ("next_dir", "input writes next_dir, not dir"),
-                      ("CONFIG_NEXUS_SNAKE_WRAP", "edges wrap, no fatal walls"),
+                      ("nexus_snake_wrap()",
+                       "walls are a runtime setting, not a build flag"),
                       ("CONFIG_NEXUS_SNAKE_TICK_MS", "speed comes from Kconfig"),
                       ("NEXUS_ACTION_ROTATE", "I (ROTATE) steers up"),
                       ("nexus_game_speed()", "tick scales with the live setting"),
@@ -230,8 +231,51 @@ def main():
         if not ok:
             bad += 1
 
+    print("\nThe live score repaints")
+    # Both games draw the score at y=24 and then invalidated only the
+    # playfield below it, so the number was painted once at start and never
+    # updated - it read as a score stuck on 0. Tetris was fine because its
+    # score sits in the side panel, inside the band the well already dirties.
+    for name, src in (("snake", snake_c),):
+        ok = "HUD_Y" in src and "nexus_screen_invalidate_rows(HUD_Y" in src
+        print(("  ok    " if ok else "  FAIL  ")
+              + "%s: the score band is invalidated when it changes" % name)
+        if not ok:
+            bad += 1
+
+    # ... and only when it changes: the HUD must not be dirtied every tick.
+    step = snake_c.split("static void step(void)")[1].split("\n}\n")[0]
+    ate = step.split("if (ate) {")[-1]
+    ok = "nexus_screen_invalidate_rows(HUD_Y" in ate
+    print(("  ok    " if ok else "  FAIL  ")
+          + "snake: the HUD repaint is inside the scoring branch")
+    if not ok:
+        bad += 1
+
     bo = open(os.path.join(root, "src", "games", "breakout", "breakout.c"),
               encoding="utf-8").read()
+
+    ok = bo.count("nexus_screen_invalidate_rows(HUD_Y") >= 2
+    print(("  ok    " if ok else "  FAIL  ")
+          + "breakout: both the brick score and the lost life redraw the HUD")
+    if not ok:
+        bad += 1
+
+    # 12px a step at a 70ms repeat crossed the field in 1.3s, which loses
+    # every rally. The paddle has to be able to beat the ball across.
+    print("\nPaddle speed")
+    REPEAT_MS, TRAVEL = 70, 220 - 38
+    step_px = 24
+    cross_s = TRAVEL / step_px * REPEAT_MS / 1000.0
+    bad += check("the paddle crosses the field in under 0.7s",
+                 cross_s < 0.7, True)
+    bad += check("but not so fast it teleports (>=6 steps across)",
+                 TRAVEL // step_px >= 6, True)
+    ok = "CONFIG_NEXUS_BREAKOUT_PADDLE_STEP" in bo
+    print(("  ok    " if ok else "  FAIL  ")
+          + "breakout: the step is a Kconfig, not a hardcoded 12")
+    if not ok:
+        bad += 1
     for frag, why in [
         ("off * BALL_SPEED / (PADDLE_W / 2)", "paddle position steers the ball"),
         ("typedef int32_t fix_t;",

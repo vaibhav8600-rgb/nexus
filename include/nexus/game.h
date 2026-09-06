@@ -90,6 +90,20 @@ void nexus_game_speed_set(uint8_t speed);
 /** Human label for the current setting, for the Settings screen. */
 const char *nexus_game_speed_name(void);
 
+/**
+ * Snake wraps at the edges (true) or dies on them (false).
+ *
+ * A setting rather than only a Kconfig for the same reason speed is: walls or
+ * no walls is the single biggest change to how Snake plays, and it is not a
+ * decision worth a reflash. CONFIG_NEXUS_SNAKE_WRAP is the power-on default.
+ *
+ * It lives here beside the speed knob rather than inside snake.c because
+ * settings.c has to reach it to restore it, and settings.c must not depend on
+ * which games were built in.
+ */
+bool nexus_snake_wrap(void);
+void nexus_snake_wrap_set(bool wrap);
+
 uint32_t nexus_game_highscore(const struct nexus_game *game);
 /** Persists only when the record actually improves (Section 107). */
 void nexus_game_submit_score(const struct nexus_game *game, uint32_t score);

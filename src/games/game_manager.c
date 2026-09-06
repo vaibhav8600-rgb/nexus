@@ -75,6 +75,20 @@ const char *nexus_game_speed_name(void)
 	return names[g_speed - NEXUS_GAME_SPEED_MIN];
 }
 
+/* IS_ENABLED, not #ifdef: CONFIG_NEXUS_SNAKE_WRAP does not exist at all
+ * when Snake is not built, and this still has to compile and hold a value. */
+static bool g_snake_wrap = IS_ENABLED(CONFIG_NEXUS_SNAKE_WRAP);
+
+bool nexus_snake_wrap(void)
+{
+	return g_snake_wrap;
+}
+
+void nexus_snake_wrap_set(bool wrap)
+{
+	g_snake_wrap = wrap;
+}
+
 uint8_t nexus_game_count(void)
 {
 	return (uint8_t)GAME_COUNT;

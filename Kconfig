@@ -265,13 +265,16 @@ config NEXUS_SNAKE
 	  self-collision test is one array read.
 
 config NEXUS_SNAKE_WRAP
-	bool "Snake wraps at the edges instead of dying"
+	bool "Snake wraps at the edges instead of dying (power-on default)"
 	default y
 	depends on NEXUS_SNAKE
 	help
-	  The board is a torus. Fatal walls make a 24x24 board very
-	  short-lived and turn the game into a test of not touching the frame
-	  rather than of not touching yourself.
+	  The board is a torus. Fatal walls make the board very short-lived
+	  and turn the game into a test of not touching the frame rather than
+	  of not touching yourself.
+
+	  This is only the default: Settings > WALLS toggles it at runtime and
+	  persists the choice.
 
 config NEXUS_SNAKE_TICK_MS
 	int "Snake starting step interval, ms"
@@ -322,6 +325,15 @@ config NEXUS_BREAKOUT_BALL_SPEED
 
 	  Keep it under about half the paddle height per tick or the ball can
 	  cross the paddle inside one step and be missed entirely.
+
+config NEXUS_BREAKOUT_PADDLE_STEP
+	int "Breakout paddle travel per key repeat, px"
+	default 24
+	depends on NEXUS_BREAKOUT
+	help
+	  A held key repeats every NEXUS_ACTION_REPEAT_MS, so this times that
+	  rate is the paddle's speed. At 12px it crossed the field in about
+	  1.3s, which loses every rally; 24 halves that.
 
 config NEXUS_BREAKOUT_TICK_MS
 	int "Breakout simulation interval, ms"

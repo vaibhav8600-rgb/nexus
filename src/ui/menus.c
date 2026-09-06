@@ -303,6 +303,23 @@ static void a_game_speed(void)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_NEXUS_SNAKE)
+static void v_walls(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	/* Named for the walls, not for the wrap, because "WALLS ON" is what
+	 * the player is choosing - the torus is the implementation. */
+	put(&b, nexus_snake_wrap() ? "OFF" : "ON");
+}
+
+static void a_walls(void)
+{
+	nexus_snake_wrap_set(!nexus_snake_wrap());
+	nexus_settings_save_deferred();
+}
+#endif
+
 static void v_sound(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
@@ -441,6 +458,9 @@ static const struct row settings_rows[] = {
 	{ "ANIM", v_anim, NULL },
 #if IS_ENABLED(CONFIG_NEXUS_GAMES)
 	{ "SPEED", v_game_speed, a_game_speed },
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_SNAKE)
+	{ "WALLS", v_walls, a_walls },
 #endif
 	{ "SPLASH", v_splash, NULL },
 	{ "GAMES", v_games, NULL },

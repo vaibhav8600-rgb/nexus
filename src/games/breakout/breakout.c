@@ -62,7 +62,26 @@ typedef int32_t fix_t;
 #define PADDLE_W 38
 #define PADDLE_H 5
 #define PADDLE_Y (FIELD_B - 10)
-#define PADDLE_STEP 12
+/*
+ * Pixels per key repeat, and it has to be this large.
+ *
+ * A held key repeats every CONFIG_NEXUS_ACTION_REPEAT_MS, so 12px a step
+ * crossed the field in about 1.3 seconds - which in a paddle game means the
+ * ball reaches the corner first, every time. It is a Kconfig because the right
+ * number depends on the repeat rate it is paired with.
+ */
+#define PADDLE_STEP CONFIG_NEXUS_BREAKOUT_PADDLE_STEP
+
+/*
+ * The HUD band, and why it is named.
+ *
+ * The score is drawn at y=24 but every repaint invalidated only the playfield
+ * below it, so the number was painted once at start and never again - it read
+ * as a permanently stuck 0. Tetris never showed this because its score lives
+ * in the side panel, inside the band the well already dirties.
+ */
+#define HUD_Y 20
+#define HUD_H 22
 
 #define BALL_R 3
 
@@ -184,6 +203,7 @@ static bool hit_bricks(int px, int py)
 	g_b.score += (uint32_t)(BRICK_ROWS - row) * 10U;
 	g_b.vy = -g_b.vy;
 	nexus_sound_play(NEXUS_SOUND_TETRIS_MOVE);
+	nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
 	return true;
 }
 
@@ -249,6 +269,8 @@ static void step(void)
 		}
 		nexus_sound_play(NEXUS_SOUND_BACK);
 		reset_ball();
+		/* A life just went, so the pips have to redraw too. */
+		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
 	}
 
 	nexus_screen_invalidate_rows(FIELD_Y, FIELD_B + 2);
@@ -281,7 +303,7 @@ static void breakout_draw(void)
 				 8, "HOLD=EXIT");
 	}
 
-	if (gfx_hits(24, gfx_text_h(NEXUS_TXT_BODY))) {
+	if (gfx_hits(HUD_Y, HUD_H)) {
 		gfx_text(NEXUS_PAD, 24,
 			 gfx_utoa(g_b.score, buf, sizeof(buf), 0),
 			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);

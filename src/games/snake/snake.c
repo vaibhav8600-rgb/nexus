@@ -50,6 +50,17 @@
 #define FRAME_W (WELL_W + 4)
 #define FRAME_H (WELL_H + 4)
 
+/*
+ * The HUD band, and why it is named.
+ *
+ * The score is drawn at y=24 but every repaint after a move invalidated only
+ * the playfield below it, so the number was painted once at start and never
+ * again - it read as a permanently stuck 0. Tetris never showed this because
+ * its score lives in the side panel, inside the band the well already dirties.
+ */
+#define HUD_Y 20
+#define HUD_H 22
+
 #define START_LEN 4
 
 /* All from Kconfig, so a config repo can tune the feel without touching the
@@ -200,14 +211,17 @@ static void step(void)
 	int c = head_cell % COLS + dc[g_s.dir];
 
 	/*
-	 * Wrap at the edges - the board is a torus, as it is in snake-module.
+	 * Wrap at the edges, or die on them - Settings > WALLS, checked here
+	 * rather than compiled in so the toggle takes effect on the next step
+	 * instead of the next flash.
 	 *
-	 * Fatal walls make a 24x24 board very short-lived and turn the game
-	 * into a test of not touching the frame rather than of not touching
-	 * yourself. With wrapping the only thing that can kill you is your own
-	 * body, which is the version of Snake people actually mean.
+	 * Wrapped is the default: fatal walls make the board short-lived and
+	 * turn the game into a test of not touching the frame rather than of
+	 * not touching yourself. On a torus the only thing that can kill you
+	 * is your own body, which is the version of Snake people mean. Some
+	 * people mean the other one, hence the setting.
 	 */
-	if (IS_ENABLED(CONFIG_NEXUS_SNAKE_WRAP)) {
+	if (nexus_snake_wrap()) {
 		if (r < 0) {
 			r = ROWS - 1;
 		} else if (r >= ROWS) {
@@ -254,6 +268,9 @@ static void step(void)
 		g_s.score += 10;
 		nexus_sound_play(NEXUS_SOUND_TETRIS_LINE);
 		place_food();
+		/* Only when it changed: the HUD is cheap but it is not free,
+		 * and it changes once every few seconds at most. */
+		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
 	}
 
 	nexus_screen_invalidate_rows(FRAME_Y, FRAME_Y + FRAME_H);
@@ -300,12 +317,18 @@ static void snake_draw(void)
 				 8, "HOLD=EXIT");
 	}
 
-	if (gfx_hits(26, gfx_text_h(NEXUS_TXT_BODY))) {
+	if (gfx_hits(HUD_Y, HUD_H)) {
 		gfx_text(NEXUS_PAD, 26, "SCORE", NEXUS_TXT_CAPTION, t->caption,
 			 GFX_OPAQUE);
 		gfx_text(NEXUS_PAD + 40, 24,
 			 gfx_utoa(g_s.score, buf, sizeof(buf), 0),
 			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
+
+		/* Wrap on or off is a setting now, and which one you are
+		 * playing changes the whole game, so the board says. */
+		gfx_text(GFX_W - NEXUS_PAD - gfx_text_w("WALLS", NEXUS_TXT_CAPTION),
+			 26, nexus_snake_wrap() ? "WRAP" : "WALLS",
+			 NEXUS_TXT_CAPTION, t->caption, GFX_OPAQUE);
 	}
 
 	if (gfx_hits(FRAME_Y, FRAME_H)) {

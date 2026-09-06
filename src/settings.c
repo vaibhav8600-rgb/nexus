@@ -25,12 +25,12 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 
 #define NEXUS_PREFS_KEY "nexus/ui/prefs"
 /*
- * Bumped for game_speed. prefs_set() ignores a struct whose version does not
+ * Bumped for snake_wrap. prefs_set() ignores a struct whose version does not
  * match and falls back to defaults, so an older saved blob is discarded
  * rather than read with the fields shifted - the settings are worth less than
  * the chance of applying a garbage brightness.
  */
-#define NEXUS_PREFS_VERSION 2
+#define NEXUS_PREFS_VERSION 3
 
 struct nexus_prefs {
 	uint8_t version;
@@ -38,6 +38,7 @@ struct nexus_prefs {
 	uint8_t theme;      /* index         */
 	uint8_t brightness; /* 0-100 percent */
 	uint8_t game_speed; /* 1-5           */
+	uint8_t snake_wrap; /* 0 or 1        */
 };
 
 static bool g_dirty;
@@ -89,6 +90,7 @@ static void apply(const struct nexus_prefs *p)
 	nexus_theme_set_index(p->theme);
 #if IS_ENABLED(CONFIG_NEXUS_GAMES)
 	nexus_game_speed_set(p->game_speed);
+	nexus_snake_wrap_set(p->snake_wrap != 0);
 #endif
 
 	/*
@@ -140,6 +142,7 @@ int nexus_settings_save(void)
 		.brightness = nexus_display_backlight_level(),
 #if IS_ENABLED(CONFIG_NEXUS_GAMES)
 		.game_speed = nexus_game_speed(),
+		.snake_wrap = nexus_snake_wrap() ? 1 : 0,
 #endif
 	};
 
