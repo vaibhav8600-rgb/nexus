@@ -130,16 +130,16 @@ config NEXUS_SPLASH_DEFAULT_IMAGE
 	help
 	  A PNG inside the NEXUS module itself, used when the integrator has
 	  not supplied one of their own. Relative to the module root, so
-	  "assets/default_splash.png" is the one that ships.
+	  "assets/my_splash.png" is the natural place to put one.
 
 	  Priority is NEXUS_SPLASH_IMAGE, then this, then the drawn badge in
 	  assets/splash_default.c.
 
-	  Empty by default, and that is the recommendation: the drawn badge is
-	  the same composition in a few hundred bytes of code, where the PNG
-	  costs 115,200 - about 14% of the app partition - on every build,
-	  whether or not anyone waits around to look at the splash. Set it
-	  only if you have artwork the drawing cannot express.
+	  Empty, and the module ships no image to point it at: the drawn badge
+	  is the same composition in a few hundred bytes of code, where a
+	  240x240 PNG costs 115,200 - about 14% of the app partition - on
+	  every build, whether or not anyone waits around to look at the
+	  splash. Set it only if you have artwork the drawing cannot express.
 
 config NEXUS_SPLASH_IMAGE
 	string "Path to a splash PNG, relative to your zmk-config dir"
