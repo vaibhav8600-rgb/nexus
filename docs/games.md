@@ -128,3 +128,56 @@ two-pixel mark at the piece's own spot in a 3x3 grid. Shape, shading and
 pattern all carry the identity, so the board reads correctly in monochrome or
 to a colourblind player -- colour is never the only signal (Section 106).
 Worth copying.
+
+## The three games
+
+| | RAM | how it moves |
+| --- | --- | --- |
+| Tetris | ~245 B | integer grid, gravity on its own clock |
+| Snake | ~1.7 KB | integer grid, ring of cells |
+| Breakout | ~24 B | 8.8 fixed point |
+
+All three go through `struct nexus_game`, so the Game Center pages between
+them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
+of them off with `CONFIG_NEXUS_TETRIS` / `_SNAKE` / `_BREAKOUT` removes it from
+the build entirely.
+
+### Snake
+
+The body is a **ring of cell indices** plus an occupancy grid, not a list of
+segments. Growing is then "do not advance the tail this step" rather than
+shifting the whole snake every frame, and the self-collision test is one array
+read instead of a walk.
+
+The rule worth knowing: **the tail cell is vacated on the same step the head
+enters it**, so moving into your own tail is legal - the classic tail-chase.
+Testing for collision before freeing the tail kills you for it, which is the
+bug every implementation writes once. `tests/games/test_game_rules.py` asserts
+both the behaviour and that the C still frees before it tests.
+
+Input writes `next_dir`, never `dir`: two taps inside one tick would otherwise
+let you turn 180 into your own neck, which reads as a bug rather than as a
+mistake.
+
+Food placement picks the **Nth free cell** rather than retrying random
+positions. Rejection sampling can spin a long time on a nearly-full board, and
+this runs on the display work queue.
+
+### Breakout
+
+The only game here that is not on a grid, so positions are **8.8 fixed point**.
+Integer-per-frame motion would force the ball to travel at least a pixel per
+tick - far too fast at any playable rate - and floating point does not belong
+in a display work queue handler on a Cortex-M4.
+
+Where the ball lands on the paddle steers it. Without that one line the angle
+never changes and the game is a metronome you cannot influence; the test
+asserts the deflection is symmetric and never exceeds the base speed, because a
+faster-than-base edge hit escapes the paddle entirely.
+
+Bricks are a **bitmask per row**: eight columns in one `uint8_t`, so "cleared
+the board" is an OR of five bytes.
+
+The action button launches a parked ball before it pauses. Otherwise the only
+way to start a life is a direction key, and on the physical button alone - all
+some users have - the game would be unstartable.

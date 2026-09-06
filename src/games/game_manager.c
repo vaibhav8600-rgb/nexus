@@ -20,10 +20,22 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #if IS_ENABLED(CONFIG_NEXUS_TETRIS)
 extern const struct nexus_game nexus_game_tetris;
 #endif
+#if IS_ENABLED(CONFIG_NEXUS_SNAKE)
+extern const struct nexus_game nexus_game_snake;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_BREAKOUT)
+extern const struct nexus_game nexus_game_breakout;
+#endif
 
 static const struct nexus_game *const games[] = {
 #if IS_ENABLED(CONFIG_NEXUS_TETRIS)
 	&nexus_game_tetris,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_SNAKE)
+	&nexus_game_snake,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_BREAKOUT)
+	&nexus_game_breakout,
 #endif
 	/* Terminator. A zero-length array is not valid C, and the Game Center
 	 * can legitimately be built with every game turned off. */

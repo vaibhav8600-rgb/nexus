@@ -123,6 +123,23 @@ config NEXUS_SPLASH_DURATION_MS
 	int "Splash duration in ms (0 disables)"
 	default 3000
 
+config NEXUS_SPLASH_DEFAULT_IMAGE
+	string "Path to a splash PNG bundled with the module"
+	depends on NEXUS_SPLASH
+	default ""
+	help
+	  A PNG inside the NEXUS module itself, used when the integrator has
+	  not supplied one of their own. Relative to the module root, so
+	  "assets/splash.png" is the natural place.
+
+	  Priority is NEXUS_SPLASH_IMAGE, then this, then the drawn badge.
+
+	  Think before setting it. The drawn badge costs a few hundred bytes;
+	  a 240x240 image costs 115,200 - about 14% of the app partition -
+	  and every build of the module pays that whether or not the splash is
+	  ever seen. It exists for someone shipping NEXUS pre-branded, not as
+	  a better default.
+
 config NEXUS_SPLASH_IMAGE
 	string "Path to a splash PNG, relative to your zmk-config dir"
 	default ""
@@ -210,6 +227,26 @@ config NEXUS_TETRIS
 	bool "Tetris"
 	default y
 	depends on NEXUS_GAMES
+
+config NEXUS_SNAKE
+	bool "Snake"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  Grid game, 24x24 cells. About 1.2 KB of RAM: the body is a ring of
+	  cell indices plus an occupancy grid, so growing is O(1) and the
+	  self-collision test is one array read.
+
+config NEXUS_BREAKOUT
+	bool "Breakout"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  Paddle and ball. Positions are 8.8 fixed point rather than whole
+	  pixels, because integer motion would force the ball to travel at
+	  least a pixel per tick - far too fast at any playable frame rate -
+	  and floating point does not belong in a display work queue handler.
+	  Under 100 bytes of RAM.
 
 config NEXUS_SETTINGS_PERSIST
 	bool "Remember sound, theme and brightness across restarts"

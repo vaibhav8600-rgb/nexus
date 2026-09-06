@@ -86,6 +86,27 @@ void nexus_draw_wordmark_plain(int cx, int y, const char *text, int scale,
 			       int lit);
 
 /**
+ * The pause / game-over modal every game shares.
+ *
+ * Dims the whole panel, then draws a centred card: a tracked title over an
+ * accent rule, an optional SCORE / BEST row, and up to two hint lines at the
+ * same size ranked by colour.
+ *
+ * Lives here rather than in a game because the alternative is three copies
+ * that drift: the composition was tuned once (measured then centred, both
+ * hints one size) and every game should get that, not just the one it was
+ * tuned in.
+ *
+ * @param title    NULL draws nothing at all - that is the running state.
+ * @param hint     primary instruction, in the value colour.
+ * @param hint2    secondary, in the caption colour. May be NULL.
+ * @param scores   draw the SCORE / BEST row.
+ */
+void nexus_draw_game_overlay(const char *title, const char *hint,
+			     const char *hint2, bool scores, uint32_t score,
+			     uint32_t best);
+
+/**
  * Wordmark with a lit letter, for the splash.
  *
  * @param lit index of the letter to highlight, or negative for none. Advance

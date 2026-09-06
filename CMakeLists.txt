@@ -62,6 +62,9 @@ zephyr_library_sources_ifdef(CONFIG_NEXUS_SPLASH      src/ui/splash.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_GAME_CENTER src/ui/game_center.c)
 
 zephyr_library_sources_ifdef(CONFIG_NEXUS_GAMES  src/games/game_manager.c)
+zephyr_library_sources_ifdef(CONFIG_NEXUS_SNAKE  src/games/snake/snake.c)
+zephyr_library_sources_ifdef(CONFIG_NEXUS_BREAKOUT
+  src/games/breakout/breakout.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_TETRIS
   src/games/tetris/tetris_core.c
   src/games/tetris/tetris.c
@@ -79,7 +82,17 @@ zephyr_library_sources_ifdef(CONFIG_NEXUS_BEHAVIOR_ACTION src/behaviors/behavior
 # built-in default second - is settled at link time.
 # ---------------------------------------------------------------------------
 if(CONFIG_NEXUS_SPLASH)
+  # Priority: the integrator's image, then one bundled with the module, then
+  # the drawn badge. Exactly one is compiled, and all three provide the same
+  # nexus_splash_art symbol, so src/ui/splash.c never learns which it got.
   set(NEXUS_SPLASH_SRC "${CONFIG_NEXUS_SPLASH_IMAGE}")
+  if(NEXUS_SPLASH_SRC STREQUAL "")
+    set(NEXUS_SPLASH_SRC "${CONFIG_NEXUS_SPLASH_DEFAULT_IMAGE}")
+    if(NOT NEXUS_SPLASH_SRC STREQUAL "" AND NOT IS_ABSOLUTE "${NEXUS_SPLASH_SRC}")
+      # A module default is relative to the module, not to anyone's config.
+      set(NEXUS_SPLASH_SRC "${CMAKE_CURRENT_LIST_DIR}/${NEXUS_SPLASH_SRC}")
+    endif()
+  endif()
 
   if(NEXUS_SPLASH_SRC STREQUAL "")
     zephyr_library_sources(assets/splash_default.c)
