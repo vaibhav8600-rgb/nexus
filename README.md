@@ -5,19 +5,7 @@ and ZMK Studio on an nRF52840, as a module you drop into the `zmk-config` you
 already have.
 
 <p align="center">
-  <img src="docs/images/screens/splash.png" width="180" alt="Splash">
-  <img src="docs/images/screens/home.png" width="180" alt="Home dashboard">
-  <img src="docs/images/screens/game-center.png" width="180" alt="Game Center">
-</p>
-<p align="center">
-  <img src="docs/images/screens/tetris.png" width="180" alt="Tetris">
-  <img src="docs/images/screens/snake.png" width="180" alt="Snake">
-  <img src="docs/images/screens/breakout.png" width="180" alt="Breakout">
-</p>
-<p align="center">
-  <img src="docs/images/screens/settings.png" width="180" alt="Settings">
-  <img src="docs/images/screens/diagnostics.png" width="180" alt="Diagnostics">
-  <img src="docs/images/screens/about.png" width="180" alt="About">
+  <img src="docs/images/hero.jpg" width="460" alt="NEXUS dongle on a desk, surrounded by its screens">
 </p>
 
 ```
@@ -26,10 +14,10 @@ already have.
                             └─hold─►  SETTINGS · DIAGNOSTICS · ABOUT
 ```
 
-Every image above is generated from the firmware source by
-`scripts/render_ui.py` -- same fonts, same glyph bitmaps, same palettes, same
-draw order -- so the README cannot show a UI the code stopped drawing. See
-[ui.md](docs/ui.md).
+Every screen, pixel for pixel, is in **[ui.md](docs/ui.md)** -- generated from
+the firmware source by `scripts/render_ui.py` (same fonts, same glyph bitmaps,
+same palettes, same draw order) and regenerated and diffed in CI, so the docs
+cannot show a UI the code stopped drawing.
 
 ## What it is
 
