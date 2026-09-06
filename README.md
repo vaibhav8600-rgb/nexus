@@ -166,10 +166,17 @@ source that should not contain one.
 
 ## Status
 
-v1.0.0. Written against ZMK `main` as of 2026-09 and **not yet flashed to
-hardware** -- the bring-up checklist in
-[development.md](docs/development.md#hardware-test-procedure) is the honest
-definition of done.
+v1.0.0, **running on hardware** -- an nRF52840 dongle driving a 240x240
+ST7789, paired to a split Sofle. Built against ZMK `main` as of 2026-09.
+
+Exercised on the real thing, not just in CI: the splash (drawn badge and a
+config-repo PNG), the dashboard, all three games, Settings and its persistence
+across reflashes, the sound engine, split half connect and disconnect, BLE to
+phones, laptops and a TV, USB, and ZMK Studio over the USB transport.
+
+If you are bringing up your own board, the checklist in
+[development.md](docs/development.md#hardware-test-procedure) is still the
+order worth doing it in -- most of what it lists is what shook these out.
 
 ## License
 
@@ -194,7 +201,6 @@ The debt is specific, and it is all over this repo:
   8px version was four faint slivers on a panel you read from across a desk.
 - **`SPIM0`.** Known-good on this hardware, and the answer to a display bring-up
   problem that cost real time before checking what already worked.
-- **`&anti_idle`**, the mouse jiggler behavior, which NEXUS only displays.
 
 It also saved time by being honest about what it had not solved: its
 `peripheral_status.c` handler is an empty stub with *"do we need this ?"* in

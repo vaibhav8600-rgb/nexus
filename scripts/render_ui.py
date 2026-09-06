@@ -834,6 +834,18 @@ STATUS = dict(on_usb=False, usb=True, profile=0, bonded=True, connected=True,
               layer='DEFAULT', mods=0b0010, wpm=42, batt=[78, 64])
 
 
+# Nearest-neighbour, integer, no smoothing.
+#
+# The panel is 240x240 and these were written at 1:1, so anything that showed
+# them larger than life-size asked the browser to interpolate 240px up - which
+# is what made them look soft and mushy rather than sharp. Upscaling by a whole
+# number here keeps every panel pixel a crisp square, which is what the display
+# actually looks like when you put your face near it. 3x lands at 720x720:
+# comfortably larger than any sane display size, so a browser only ever scales
+# these DOWN.
+SHOT_SCALE = 3
+
+
 def main():
     if not os.path.isdir(OUT):
         os.makedirs(OUT)
@@ -854,14 +866,15 @@ def main():
     for name, fn in shots:
         cv = Canvas()
         fn(cv)
-        write_png(os.path.join(OUT, name + '.png'), W, H, cv.b)
+        write_png(os.path.join(OUT, name + '.png'), W, H, cv.b, SHOT_SCALE)
         print('  %s.png' % name)
 
     # the same dashboard in every palette, which is what a theme gallery is
     for name, t in th.items():
         cv = Canvas()
         home(cv, t, STATUS)
-        write_png(os.path.join(OUT, 'home-%s.png' % name.lower()), W, H, cv.b)
+        write_png(os.path.join(OUT, 'home-%s.png' % name.lower()), W, H,
+                  cv.b, SHOT_SCALE)
         print('  home-%s.png' % name.lower())
 
     print('%d screens -> docs/images/screens/' % (len(shots) + len(th)))
