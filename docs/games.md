@@ -165,7 +165,16 @@ this runs on the display work queue.
 
 ### Breakout
 
-The only game here that is not on a grid, so positions are **8.8 fixed point**.
+The only game here that is not on a grid, so positions are **8.8 fixed point
+in an int32_t**, and the width is not incidental.
+
+It was `int16_t` first. That holds 8.8 values from -128.0 to +127.996 - and
+the field runs to x=230 with the paddle at y=210. Every position past 127
+overflowed and wrapped negative, which produced three symptoms that looked
+unrelated: the ball vanished off one edge, reappeared at a nonsense
+coordinate, and never met the paddle because `reset_ball()` was parking it at
+-46 px. One type, three bugs. The test now asserts int16 could not have held
+the field, so the narrower type cannot come back.
 Integer-per-frame motion would force the ball to travel at least a pixel per
 tick - far too fast at any playable rate - and floating point does not belong
 in a display work queue handler on a Cortex-M4.
@@ -181,3 +190,39 @@ the board" is an OR of five bytes.
 The action button launches a parked ball before it pauses. Otherwise the only
 way to start a life is a direction key, and on the physical button alone - all
 some users have - the game would be unstartable.
+
+## Tuning from a config repo
+
+Both new games take their feel from Kconfig, so a config repo can change it
+without touching the module.
+
+| option | default | |
+| --- | --- | --- |
+| `NEXUS_SNAKE_WRAP` | `y` | wrap at the edges instead of dying |
+| `NEXUS_SNAKE_TICK_MS` | 160 | starting step interval - **lower is faster** |
+| `NEXUS_SNAKE_TICK_MIN_MS` | 70 | floor the speed-up cannot pass |
+| `NEXUS_SNAKE_SPEED_EVERY` | 4 | apples per speed-up |
+| `NEXUS_SNAKE_SPEED_STEP_MS` | 10 | ms removed each time |
+| `NEXUS_BREAKOUT_BALL_SPEED` | 350 | hundredths of a pixel per tick |
+| `NEXUS_BREAKOUT_TICK_MS` | 28 | simulation interval |
+
+Two things worth knowing before turning them:
+
+**Snake has a speed floor for a reason.** Below about 50 ms the snake moves
+faster than the panel repaints, so what you see lags what the game thinks, and
+input stops feeling connected to it.
+
+**Breakout's speed knob is in hundredths of a pixel**, not whole pixels,
+because whole pixels would only offer 1, 2 and 3 - sedate, brisk, unplayable -
+with nothing usable in between. Keep it under about half the paddle height per
+tick, or the ball can cross the paddle inside a single step and be missed
+entirely. And note that `TICK_MS` scales speed as well, since the ball moves
+`BALL_SPEED` per tick: change one or the other, not both at once.
+
+## The I key
+
+`I` is bound to `NEXUS_ACT_ROTATE` on the game layer because Tetris needs
+rotation there. Snake and Breakout have nothing to rotate, so both accept
+`ROTATE` as their natural top-of-cluster action - up for Snake, launch for
+Breakout. Otherwise `I` would simply be inert in two of the three games, which
+reads as a broken key rather than as an unused one.

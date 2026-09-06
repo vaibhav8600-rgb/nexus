@@ -40,11 +40,13 @@
 #define FRAME_H (WELL_H + 4)
 
 #define START_LEN 4
-#define TICK_START_MS 160
-#define TICK_MIN_MS 70
-/* Every this many apples the snake speeds up one step. */
-#define SPEED_EVERY 4
-#define SPEED_STEP_MS 10
+
+/* All from Kconfig, so a config repo can tune the feel without touching the
+ * module. Lower is faster; the floor stops it outrunning the display. */
+#define TICK_START_MS CONFIG_NEXUS_SNAKE_TICK_MS
+#define TICK_MIN_MS CONFIG_NEXUS_SNAKE_TICK_MIN_MS
+#define SPEED_EVERY CONFIG_NEXUS_SNAKE_SPEED_EVERY
+#define SPEED_STEP_MS CONFIG_NEXUS_SNAKE_SPEED_STEP_MS
 
 /* Cell contents. Small enough that the grid is a byte per cell. */
 #define EMPTY 0
@@ -169,9 +171,26 @@ static void step(void)
 	int r = head_cell / COLS + dr[g_s.dir];
 	int c = head_cell % COLS + dc[g_s.dir];
 
-	/* Walls are fatal. Wrapping makes the game much easier and removes the
-	 * only spatial pressure it has. */
-	if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
+	/*
+	 * Wrap at the edges - the board is a torus, as it is in snake-module.
+	 *
+	 * Fatal walls make a 24x24 board very short-lived and turn the game
+	 * into a test of not touching the frame rather than of not touching
+	 * yourself. With wrapping the only thing that can kill you is your own
+	 * body, which is the version of Snake people actually mean.
+	 */
+	if (IS_ENABLED(CONFIG_NEXUS_SNAKE_WRAP)) {
+		if (r < 0) {
+			r = ROWS - 1;
+		} else if (r >= ROWS) {
+			r = 0;
+		}
+		if (c < 0) {
+			c = COLS - 1;
+		} else if (c >= COLS) {
+			c = 0;
+		}
+	} else if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
 		end_round();
 		return;
 	}
@@ -398,6 +417,11 @@ static bool snake_input(enum nexus_action action)
 
 	switch (action) {
 	case NEXUS_ACTION_UP:
+	/* I is bound to ROTATE on the game layer, because Tetris needs it
+	 * there. In a game with no rotation the obvious reading of the top key
+	 * in an IJKL cluster is "up", and leaving it inert made I look
+	 * broken. */
+	case NEXUS_ACTION_ROTATE:
 		turn(DIR_UP);
 		break;
 	case NEXUS_ACTION_DOWN:

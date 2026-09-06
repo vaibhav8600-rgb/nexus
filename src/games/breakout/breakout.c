@@ -2,11 +2,13 @@
  * Breakout (Section 38).
  *
  * Unlike Tetris and Snake this one does not live on a grid: the ball moves in
- * fractions of a pixel, so positions are 8.8 FIXED POINT - an int16_t where
- * the low 8 bits are the fraction. Integer-per-frame motion would force the
- * ball to travel at least one pixel per tick, which at any playable frame rate
- * is far too fast, and floating point on a Cortex-M4 in a display work queue
+ * fractions of a pixel, so positions are 8.8 FIXED POINT in an int32_t - the
+ * low 8 bits are the fraction. Integer-per-frame motion would force the ball
+ * to travel at least one pixel per tick, which at any playable frame rate is
+ * far too fast, and floating point on a Cortex-M4 in a display work queue
  * handler is not a trade worth making for a paddle game.
+ *
+ * The int32_t is not incidental - see the note on fix_t below.
  *
  * The bricks are a bitmask per row, not a byte array: eight columns fit one
  * uint8_t, "any left in this row" is a compare against zero, and "did I clear
@@ -26,8 +28,22 @@
 
 /* ---- geometry ----------------------------------------------------------- */
 
-#define FIX 8                       /* 8.8 fixed point            */
-#define TO_FIX(v) ((int16_t)((v) << FIX))
+/*
+ * 8.8 fixed point in an int32_t, and the width matters.
+ *
+ * This was int16_t, which holds 8.8 values from -128.0 to +127.996 - and the
+ * field runs to x=230 with the paddle at y=210. Every position past 127
+ * overflowed and wrapped negative, so the ball vanished off one edge and
+ * reappeared at a nonsense coordinate, and reset_ball() parked it at -46px
+ * where no paddle could ever reach it. Three reported symptoms, one type.
+ *
+ * int32_t gives +/- 8 million pixels at the same precision, for four bytes
+ * more of a struct that has one instance.
+ */
+typedef int32_t fix_t;
+
+#define FIX 8
+#define TO_FIX(v) ((fix_t)(v) << FIX)
 #define TO_PX(v) ((int)((v) >> FIX))
 
 #define FIELD_X 10
@@ -49,17 +65,25 @@
 #define PADDLE_STEP 12
 
 #define BALL_R 3
-#define BALL_SPEED TO_FIX(2) /* pixels per tick, at 8.8 */
 
-#define TICK_MS 28
+/*
+ * Speed and tick rate come from Kconfig so they can be tuned from a config
+ * repo without touching the module. Speed is in HUNDREDTHS of a pixel per
+ * tick: at 8.8 the useful range is well under one pixel of granularity, and
+ * an integer pixels-per-tick knob would only offer 1, 2, 3 - which is the
+ * difference between sedate and unplayable with nothing in between.
+ */
+#define BALL_SPEED ((fix_t)CONFIG_NEXUS_BREAKOUT_BALL_SPEED * 256 / 100)
+
+#define TICK_MS CONFIG_NEXUS_BREAKOUT_TICK_MS
 #define LIVES 3
 
 struct breakout {
 	uint8_t bricks[BRICK_ROWS]; /* bit per column, 1 = still there */
 
-	int16_t bx, by;   /* ball centre, 8.8 */
-	int16_t vx, vy;   /* ball velocity, 8.8 */
-	int16_t paddle_x; /* left edge, whole pixels */
+	fix_t bx, by;     /* ball centre, 8.8   */
+	fix_t vx, vy;     /* ball velocity, 8.8 */
+	int16_t paddle_x; /* left edge, whole pixels - no fraction needed */
 
 	uint32_t score;
 	uint8_t lives;
@@ -146,7 +170,7 @@ static bool hit_bricks(int px, int py)
 	g_b.bricks[row] &= (uint8_t)~BIT(col);
 	/* Top rows are worth more, which is the only reason to aim. */
 	g_b.score += (uint32_t)(BRICK_ROWS - row) * 10U;
-	g_b.vy = (int16_t)-g_b.vy;
+	g_b.vy = -g_b.vy;
 	nexus_sound_play(NEXUS_SOUND_TETRIS_MOVE);
 	return true;
 }
@@ -159,8 +183,8 @@ static void step(void)
 		return;
 	}
 
-	g_b.bx = (int16_t)(g_b.bx + g_b.vx);
-	g_b.by = (int16_t)(g_b.by + g_b.vy);
+	g_b.bx += g_b.vx;
+	g_b.by += g_b.vy;
 
 	int px = TO_PX(g_b.bx);
 	int py = TO_PX(g_b.by);
@@ -168,14 +192,14 @@ static void step(void)
 	/* Walls. */
 	if (px - BALL_R <= FIELD_X) {
 		g_b.bx = TO_FIX(FIELD_X + BALL_R);
-		g_b.vx = (int16_t)-g_b.vx;
+		g_b.vx = -g_b.vx;
 	} else if (px + BALL_R >= FIELD_R) {
 		g_b.bx = TO_FIX(FIELD_R - BALL_R);
-		g_b.vx = (int16_t)-g_b.vx;
+		g_b.vx = -g_b.vx;
 	}
 	if (py - BALL_R <= FIELD_Y) {
 		g_b.by = TO_FIX(FIELD_Y + BALL_R);
-		g_b.vy = (int16_t)-g_b.vy;
+		g_b.vy = -g_b.vy;
 	}
 
 	px = TO_PX(g_b.bx);
@@ -191,7 +215,7 @@ static void step(void)
 	    py + BALL_R <= PADDLE_Y + PADDLE_H + 2 &&
 	    px >= g_b.paddle_x && px <= g_b.paddle_x + PADDLE_W) {
 		g_b.by = TO_FIX(PADDLE_Y - BALL_R);
-		g_b.vy = (int16_t)-g_b.vy;
+		g_b.vy = -g_b.vy;
 
 		/*
 		 * Where it lands on the paddle steers it. Without this the
@@ -201,7 +225,7 @@ static void step(void)
 		 */
 		int off = px - (g_b.paddle_x + PADDLE_W / 2); /* -19..+19 */
 
-		g_b.vx = (int16_t)((off * BALL_SPEED) / (PADDLE_W / 2));
+		g_b.vx = (fix_t)off * BALL_SPEED / (PADDLE_W / 2);
 		nexus_sound_play(NEXUS_SOUND_TETRIS_ROTATE);
 	}
 
@@ -420,6 +444,10 @@ static bool breakout_input(enum nexus_action action)
 		return true;
 	case NEXUS_ACTION_UP:
 	case NEXUS_ACTION_DROP:
+	/* I is bound to ROTATE on the game layer, because Tetris needs it
+	 * there. Accepting it as "launch" means the same key does the
+	 * expected thing in every game rather than being inert in two. */
+	case NEXUS_ACTION_ROTATE:
 		if (g_state == NEXUS_GAME_RUNNING && !g_b.launched) {
 			g_b.launched = true;
 			nexus_sound_play(NEXUS_SOUND_GAME_START);

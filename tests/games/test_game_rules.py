@@ -126,6 +126,24 @@ def main():
     bad += check("edge deflection does not exceed base speed",
                  abs(steer(19)) <= SPEED, True)
 
+    print("\nFixed-point range - the ball-teleport bug")
+    # int16_t 8.8 spans -128.0 .. +127.996, and this field runs to x=230 with
+    # the paddle at y=210. Every position past 127 wrapped negative: the ball
+    # vanished off one edge, reappeared at nonsense coordinates, and
+    # reset_ball() parked it at -46 px where no paddle could reach it.
+    FIELD_X, FIELD_W, FIELD_Y, FIELD_H = 10, 220, 40, 180
+    extremes = {
+        "FIELD_R": FIELD_X + FIELD_W,
+        "FIELD_B": FIELD_Y + FIELD_H,
+        "PADDLE_Y": FIELD_Y + FIELD_H - 10,
+    }
+    I16, I32 = 2 ** 15 - 1, 2 ** 31 - 1
+    for name, v in extremes.items():
+        bad += check("%s (%d px) would overflow 8.8 in int16" % (name, v),
+                     (v << 8) > I16, True)
+    bad += check("int32 holds every position with room to spare",
+                 all((v << 8) < I32 for v in extremes.values()), True)
+
     print("\nThe C still holds these")
     snake_c = open(os.path.join(root, "src", "games", "snake", "snake.c"),
                    encoding="utf-8").read()
@@ -142,7 +160,10 @@ def main():
         print("  ok    snake frees the tail before the collision test")
 
     for frag, why in [("opposite[g_s.dir]", "a 180 turn is refused"),
-                      ("next_dir", "input writes next_dir, not dir")]:
+                      ("next_dir", "input writes next_dir, not dir"),
+                      ("CONFIG_NEXUS_SNAKE_WRAP", "edges wrap, no fatal walls"),
+                      ("CONFIG_NEXUS_SNAKE_TICK_MS", "speed comes from Kconfig"),
+                      ("NEXUS_ACTION_ROTATE", "I (ROTATE) steers up")]:
         ok = frag in snake_c
         print(("  ok    " if ok else "  FAIL  ") + "snake: " + why)
         if not ok:
@@ -151,8 +172,11 @@ def main():
     bo = open(os.path.join(root, "src", "games", "breakout", "breakout.c"),
               encoding="utf-8").read()
     for frag, why in [
-        ("(off * BALL_SPEED) / (PADDLE_W / 2)", "paddle position steers the ball"),
+        ("off * BALL_SPEED / (PADDLE_W / 2)", "paddle position steers the ball"),
+        ("typedef int32_t fix_t;",
+         "fixed point is 32-bit - int16 caps at 128 px and the field is 230"),
         ("TO_FIX", "positions are fixed point, not whole pixels"),
+        ("CONFIG_NEXUS_BREAKOUT_BALL_SPEED", "ball speed comes from Kconfig"),
         ("g_b.bricks[row] &= ", "a hit clears the brick bit"),
     ]:
         ok = frag in bo

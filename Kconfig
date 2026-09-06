@@ -237,6 +237,40 @@ config NEXUS_SNAKE
 	  cell indices plus an occupancy grid, so growing is O(1) and the
 	  self-collision test is one array read.
 
+config NEXUS_SNAKE_WRAP
+	bool "Snake wraps at the edges instead of dying"
+	default y
+	depends on NEXUS_SNAKE
+	help
+	  The board is a torus. Fatal walls make a 24x24 board very
+	  short-lived and turn the game into a test of not touching the frame
+	  rather than of not touching yourself.
+
+config NEXUS_SNAKE_TICK_MS
+	int "Snake starting step interval, ms"
+	default 160
+	depends on NEXUS_SNAKE
+	help
+	  Lower is faster. 160 is a relaxed start; 110 is brisk.
+
+config NEXUS_SNAKE_TICK_MIN_MS
+	int "Snake fastest step interval, ms"
+	default 70
+	depends on NEXUS_SNAKE
+	help
+	  The floor the speed-up cannot pass. Below about 50 the snake moves
+	  faster than a repaint, so input stops feeling connected to it.
+
+config NEXUS_SNAKE_SPEED_EVERY
+	int "Speed up after this many apples"
+	default 4
+	depends on NEXUS_SNAKE
+
+config NEXUS_SNAKE_SPEED_STEP_MS
+	int "Milliseconds removed per speed-up"
+	default 10
+	depends on NEXUS_SNAKE
+
 config NEXUS_BREAKOUT
 	bool "Breakout"
 	default y
@@ -247,6 +281,29 @@ config NEXUS_BREAKOUT
 	  least a pixel per tick - far too fast at any playable frame rate -
 	  and floating point does not belong in a display work queue handler.
 	  Under 100 bytes of RAM.
+
+config NEXUS_BREAKOUT_BALL_SPEED
+	int "Breakout ball speed, hundredths of a pixel per tick"
+	default 350
+	depends on NEXUS_BREAKOUT
+	help
+	  350 is 3.5 pixels a tick, about 125 px/s at the default tick rate.
+
+	  Hundredths rather than whole pixels because whole pixels would only
+	  offer 1, 2 and 3 - the difference between sedate and unplayable with
+	  nothing usable in between.
+
+	  Keep it under about half the paddle height per tick or the ball can
+	  cross the paddle inside one step and be missed entirely.
+
+config NEXUS_BREAKOUT_TICK_MS
+	int "Breakout simulation interval, ms"
+	default 28
+	depends on NEXUS_BREAKOUT
+	help
+	  Lower is smoother and faster. The ball moves BALL_SPEED per tick, so
+	  halving this doubles its speed as well - change one or the other,
+	  not both at once.
 
 config NEXUS_SETTINGS_PERSIST
 	bool "Remember sound, theme and brightness across restarts"
