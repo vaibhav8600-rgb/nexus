@@ -80,4 +80,38 @@ if bad:
 else:
     print('  no missing headers')
 
+# ---------------------------------------------------------------------------
+# Second class, and a nastier one: a header that IS included, but too late.
+#
+# `#if IS_ENABLED(CONFIG_X)` before <zephyr/kernel.h> has defined IS_ENABLED
+# does not fail as a missing macro - the preprocessor evaluates the #if with
+# IS_ENABLED as a bare identifier and reports "missing binary operator before
+# token \"(\"", which points at the paren and says nothing about headers.
+#
+# The presence check above passes such a file happily, because the include is
+# right there - just below the line that needed it.
+# ---------------------------------------------------------------------------
+GUARD_RE = re.compile(r'^\s*#\s*if\s+(IS_ENABLED|DT_HAS_\w+|COND_CODE_[12])\b')
+ZEPHYR_RE = re.compile(r'^\s*#\s*include\s+<zephyr/')
+
+order = []
+for f in files:
+    lines = io.open(f, encoding='utf-8', errors='replace').read().split('\n')
+    first_zephyr = next((i for i, ln in enumerate(lines) if ZEPHYR_RE.match(ln)),
+                        None)
+    if first_zephyr is None:
+        continue
+    for i, ln in enumerate(lines[:first_zephyr]):
+        if GUARD_RE.match(ln):
+            order.append('%s:%d uses %s before <zephyr/...> is included'
+                         % (f.replace('\\', '/'), i + 1, ln.strip()))
+
+print()
+if order:
+    for o in order:
+        print('  TOO EARLY  ' + o)
+    bad.extend(order)
+else:
+    print('  no Zephyr macros used before their header')
+
 sys.exit(1 if bad else 0)

@@ -6,9 +6,11 @@
  */
 
 #include <nexus/display.h>
-#if IS_ENABLED(CONFIG_NEXUS_GAMES)
+/* Unguarded: game.h is declarations only, and a guard here would have to be
+ * an #if IS_ENABLED() before <zephyr/kernel.h> has defined IS_ENABLED - which
+ * the preprocessor reads as a bare identifier and rejects. The call sites
+ * below are guarded instead, where the macro exists. */
 #include <nexus/game.h>
-#endif
 #include <nexus/settings.h>
 #include <nexus/sound.h>
 #include <nexus/theme.h>
