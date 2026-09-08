@@ -41,14 +41,23 @@
 
 /* ---- geometry ----------------------------------------------------------- */
 
-#define TILE 12
+/*
+ * 16px tiles over 11 rows, not 12 over 15.
+ *
+ * At 12px the whole thing read as a texture rather than a game from the
+ * distance a dongle is actually looked at - the same complaint Pac-Man got.
+ * Bigger tiles mean fewer rows fit, so the level is shallower and every
+ * physics constant below is re-tuned to match: motion has to scale with the
+ * tile or the character crawls across a bigger world.
+ */
+#define TILE 16
 #define LEVEL_W 64
-#define LEVEL_H 15
+#define LEVEL_H 11
 
 #define VIEW_X 0
 #define VIEW_Y 44
-#define VIEW_W GFX_W          /* 240 - 20 tiles visible */
-#define VIEW_H (LEVEL_H * TILE) /* 180 */
+#define VIEW_W GFX_W          /* 240 - 15 tiles visible */
+#define VIEW_H (LEVEL_H * TILE) /* 176 */
 
 #define HUD_Y 20
 #define HUD_H 22
@@ -66,14 +75,14 @@ typedef int32_t fix_t;
  * reaches 4.2 across, so a 3-tile pit has a tile of margin.
  * tests/games/test_mario_level.py re-derives that and fails if a pit grows.
  */
-#define GRAVITY 87        /* 0.34 px/tick^2 */
-#define JUMP_V (-1101)    /* -4.3 px/tick   */
-#define RUN_V 512         /* 2.0 px/tick    */
-#define MAX_FALL 1536     /* 6.0 px/tick    */
-#define ENEMY_V 128       /* 0.5 px/tick    */
+#define GRAVITY 128       /* 0.50 px/tick^2 */
+#define JUMP_V (-1562)    /* -6.1 px/tick   */
+#define RUN_V 819         /* 3.2 px/tick    */
+#define MAX_FALL 2048     /* 8.0 px/tick    */
+#define ENEMY_V 192       /* 0.75 px/tick   */
 
-#define PLAYER_W 9
-#define PLAYER_H 11
+#define PLAYER_W 12
+#define PLAYER_H 15
 
 /*
  * How long a direction keeps running after the last press. It has to exceed
@@ -93,17 +102,13 @@ static const char *const level[LEVEL_H] = {
 	"                                                                ",
 	"                                                                ",
 	"                                                                ",
-	"                                                                ",
-	"                                                                ",
-	"                   oo          oo               ooo             ",
-	"                  ===         ====             =====            ",
-	"              ooo        ooo                oo                  ",
-	"             ====       =====              ===                  ",
-	"         oo                            oo                       ",
-	"        ===                 ===       ====      ===       oo    ",
-	"   P           E               E         E               oo F   ",
-	"###################   ############   ###############   #########",
-	"###################   ############   ###############   #########",
+	"              ooo        oo                 ooo                 ",
+	"             ====       ====               ===                  ",
+	"         oo                  oo        oo                       ",
+	"        ===                 ===       ====    ===        oo     ",
+	"   P          E               E         E               oo  F   ",
+	"##################   ############   ##############   ###########",
+	"##################   ############   ##############   ###########",
 };
 
 struct enemy {
@@ -127,6 +132,7 @@ struct plat {
 	uint8_t taken[(LEVEL_W * LEVEL_H + 7) / 8];
 
 	int cam;
+	int prev_cam;
 	uint32_t score;
 	uint8_t lives;
 	uint8_t anim;
@@ -237,6 +243,7 @@ static void spawn(void)
 	g_m.on_ground = false;
 	g_m.run_left = g_m.run_right = 0;
 	g_m.cam = 0;
+	g_m.prev_cam = -1; /* forces one full repaint on the first frame */
 }
 
 static void arm_tick(void)
@@ -451,7 +458,46 @@ static void step(void)
 	if (scored) {
 		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
 	}
-	nexus_screen_invalidate_rows(VIEW_Y, VIEW_Y + VIEW_H);
+
+	/*
+	 * Repaint only what moved, and this is what makes the game playable
+	 * rather than a slideshow.
+	 *
+	 * The whole view is 176 rows, which is 84 ms of SPI at the 8 MHz this
+	 * panel actually runs at - nearly twice the tick interval. The work
+	 * queue then serialises tick and paint, so the real frame time was the
+	 * PUSH, not the tick, and every per-tick constant played out at about
+	 * 11 fps. Nothing was wrong with the physics; there was just no time
+	 * left to run it in.
+	 *
+	 * The camera only scrolls when the player leaves the middle third. On
+	 * every other frame the background is identical and only the actors
+	 * have moved, so dirtying the band they occupy - typically three tiles
+	 * - drops the push to around 20 ms and lets the tick rate stand.
+	 */
+	if (g_m.cam != g_m.prev_cam) {
+		g_m.prev_cam = g_m.cam;
+		nexus_screen_invalidate_rows(VIEW_Y, VIEW_Y + VIEW_H);
+		return;
+	}
+
+	int lo = TO_PX(g_m.y);
+	int hi = lo + PLAYER_H;
+
+	for (int i = 0; i < g_m.enemies; i++) {
+		int ey = TO_PX(g_m.enemy[i].y);
+
+		if (ey < lo) {
+			lo = ey;
+		}
+		if (ey + PLAYER_H > hi) {
+			hi = ey + PLAYER_H;
+		}
+	}
+
+	/* A tile of slack each way covers the previous frame's position, which
+	 * is what has to be painted over. */
+	nexus_screen_invalidate_rows(VIEW_Y + lo - TILE, VIEW_Y + hi + TILE);
 }
 
 static void tick_fn(struct k_work *work)
@@ -475,16 +521,16 @@ static void draw_player(int sx, int sy)
 
 	/* Cap and body in two colours, so which way it faces is readable at
 	 * 9x11 without drawing a face. */
-	gfx_rect(sx, sy, PLAYER_W, 4, t->error, GFX_OPAQUE);
-	gfx_rect(sx + (g_m.facing > 0 ? 3 : 0), sy + 2, PLAYER_W - 3, 2,
+	gfx_rect(sx, sy, PLAYER_W, 5, t->error, GFX_OPAQUE);
+	gfx_rect(sx + (g_m.facing > 0 ? 4 : 0), sy + 3, PLAYER_W - 4, 2,
 		 t->error, GFX_OPAQUE);
-	gfx_rect(sx + 1, sy + 4, PLAYER_W - 2, 4, t->warning, GFX_OPAQUE);
-	gfx_rect(sx, sy + 8, PLAYER_W, 3, t->accent_alt, GFX_OPAQUE);
+	gfx_rect(sx + 1, sy + 5, PLAYER_W - 2, 6, t->warning, GFX_OPAQUE);
+	gfx_rect(sx, sy + 11, PLAYER_W, 4, t->accent_alt, GFX_OPAQUE);
 
 	/* Legs alternate while running and hold apart in the air. */
 	if (!g_m.on_ground || (g_m.anim & 4)) {
-		gfx_rect(sx, sy + PLAYER_H - 1, 3, 1, t->value, GFX_OPAQUE);
-		gfx_rect(sx + PLAYER_W - 3, sy + PLAYER_H - 1, 3, 1, t->value,
+		gfx_rect(sx, sy + PLAYER_H - 2, 4, 2, t->value, GFX_OPAQUE);
+		gfx_rect(sx + PLAYER_W - 4, sy + PLAYER_H - 2, 4, 2, t->value,
 			 GFX_OPAQUE);
 	}
 }
@@ -495,11 +541,11 @@ static void draw_enemy(int sx, int sy)
 
 	gfx_round_rect(sx, sy + 2, PLAYER_W, PLAYER_H - 2, 3, t->success,
 		       GFX_OPAQUE);
-	gfx_rect(sx + 1, sy + PLAYER_H - 2, 2, 2, t->muted, GFX_OPAQUE);
-	gfx_rect(sx + PLAYER_W - 3, sy + PLAYER_H - 2, 2, 2, t->muted,
+	gfx_rect(sx + 1, sy + PLAYER_H - 3, 3, 3, t->muted, GFX_OPAQUE);
+	gfx_rect(sx + PLAYER_W - 4, sy + PLAYER_H - 3, 3, 3, t->muted,
 		 GFX_OPAQUE);
-	gfx_rect(sx + 2, sy + 5, 2, 2, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
-	gfx_rect(sx + PLAYER_W - 4, sy + 5, 2, 2, NEXUS_C(0xFFFFFFu),
+	gfx_rect(sx + 3, sy + 7, 3, 3, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
+	gfx_rect(sx + PLAYER_W - 6, sy + 7, 3, 3, NEXUS_C(0xFFFFFFu),
 		 GFX_OPAQUE);
 }
 
@@ -562,17 +608,17 @@ static void mario_draw(void)
 				break;
 			case 'o':
 				if (!taken(r, c) && !(g_m.anim & 8)) {
-					gfx_disc(x + TILE / 2, y + TILE / 2, 3,
+					gfx_disc(x + TILE / 2, y + TILE / 2, 5,
 						 t->warning, GFX_OPAQUE);
 				} else if (!taken(r, c)) {
-					gfx_disc(x + TILE / 2, y + TILE / 2, 2,
+					gfx_disc(x + TILE / 2, y + TILE / 2, 4,
 						 t->warning, GFX_OPAQUE);
 				}
 				break;
 			case 'F':
-				gfx_rect(x + TILE / 2 - 1, y - TILE, 2,
+				gfx_rect(x + TILE / 2 - 1, y - TILE, 3,
 					 TILE * 2, t->value, GFX_OPAQUE);
-				gfx_rect(x + TILE / 2 + 1, y - TILE, 6, 5,
+				gfx_rect(x + TILE / 2 + 2, y - TILE, 9, 7,
 					 t->success, GFX_OPAQUE);
 				break;
 			default:

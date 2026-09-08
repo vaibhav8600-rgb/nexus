@@ -250,8 +250,8 @@ plays, double-tap skips to the next one.
 | **Tetris** | 10x20 | ~245 B | Seven-bag randomiser, symmetric wall kicks, 100/300/500/800 per 1-4 lines times level. |
 | **Snake** | 16x16 | ~768 B | Walls or wrap, toggled in Settings. Moving into your own vacated tail is legal. |
 | **Breakout** | free | ~24 B | 8.8 fixed point, 5x8 bricks, three lives, paddle position steers the ball. |
-| **Pac-Man** | 19x15 | ~300 B | 144 dots, four power pellets, three chasers that never reverse, and a wrapping tunnel. |
-| **Mario** | 64x15 | ~180 B | A scrolling platformer. Level in flash, coins as a bitmask, jump arc tuned to the pits. |
+| **Pac-Man** | 15x11 | ~180 B | 74 dots, four power pellets, three chasers that never reverse, and a wrapping tunnel. |
+| **Mario** | 64x11 | ~140 B | A scrolling platformer. Level in flash, coins as a bitmask, and it repaints only the band that moved. |
 
 High scores persist per game and are written only when a record actually
 improves. Difficulty is a **runtime** setting, not a build option.

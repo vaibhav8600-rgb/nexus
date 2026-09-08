@@ -161,6 +161,32 @@ def main():
        'the hold window outlasts the repeat interval, so a held key does not '
        'stutter')
 
+    print('\nIt repaints only what moved')
+    # The whole view is 84 ms of SPI at 8 MHz - nearly twice the tick - so
+    # dirtying all of it every frame made the queue serialise tick and paint,
+    # and the game ran at about 11 fps in permanent slow motion. Repainting
+    # the full view ONLY when the camera scrolls is what fixes that, and it is
+    # invisible to every other test: the game still works, just crawls.
+    HZ = 8000000
+    full = num['LEVEL_H'] * num['TILE']
+    band = 3 * num['TILE']
+
+    def push_ms(rows):
+        return rows * 240 * 2 * 8 / HZ * 1000
+
+    print('    full view %3d rows = %.0f ms;  actor band %2d rows = %.0f ms'
+          % (full, push_ms(full), band, push_ms(band)))
+    ok('g_m.cam != g_m.prev_cam' in src,
+       'the full repaint is gated on the camera actually scrolling')
+    ok('prev_cam = -1' in src,
+       'and prev_cam starts mismatched, so the first frame paints everything')
+    ok(push_ms(band) < tick,
+       'the actor band (%.0f ms) fits inside one %d ms tick'
+       % (push_ms(band), tick))
+    ok(push_ms(full) > tick,
+       'while the full view (%.0f ms) does not - which is why the gate exists'
+       % push_ms(full))
+
     ram = (num['LEVEL_W'] * num['LEVEL_H'] + 7) // 8
     print('\nCoin bitmask %d B; level is %d B of flash, not RAM'
           % (ram, num['LEVEL_W'] * num['LEVEL_H']))

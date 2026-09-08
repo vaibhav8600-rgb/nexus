@@ -170,8 +170,8 @@ Worth copying.
 | Tetris | 10x20 | ~245 B | integer grid, gravity on its own clock |
 | Snake | 16x16 | ~768 B | integer grid, ring of cells |
 | Breakout | free | ~24 B | 8.8 fixed point |
-| Pac-Man | 19x15 | ~300 B | integer grid, greedy chasers |
-| Mario | 64x15 | ~180 B | 8.8 fixed point, scrolling camera |
+| Pac-Man | 15x11 | ~180 B | integer grid, greedy chasers |
+| Mario | 64x11 | ~140 B | 8.8 fixed point, scrolling camera |
 
 Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
 four faint slivers and the apple a speck -- on a panel you look at from across
@@ -252,8 +252,14 @@ life goes to a collision test that never ran.
 
 ### Pac-Man
 
-A 19x15 maze at 12px cells, 144 dots, four power pellets, three chasers and a
+A 15x11 maze at 15px cells, 74 dots, four power pellets, three chasers and a
 wrapping tunnel row.
+
+The board started at 19x15 of 12px and was rebuilt bigger after the first
+hardware test: the finer version looked correct in a render and read as a
+texture rather than a game from the distance a dongle is actually looked at.
+Fewer, larger cells cost maze complexity and buy pieces you can see - the
+same trade Snake made going from 24x24 to 16x16.
 
 **The maze is stored as text** and decoded once at round start:
 
@@ -263,7 +269,7 @@ wrapping tunnel row.
 "####.###.#.###.####",
 ```
 
-That costs 285 bytes of flash for the layout and buys a level you can read and
+That costs 165 bytes of flash for the layout and buys a level you can read and
 edit without counting bits. It also makes the level testable:
 `tests/games/test_pacman_maze.py` flood-fills it from the spawn and fails if a
 single dot is unreachable -- a walled-in dot makes the level uncompletable, and
@@ -300,7 +306,7 @@ repeats, with no new plumbing -- and the test asserts the window still outlasts
 the repeat interval, because if that inverts, running stutters and the cause is
 not obvious.
 
-**The level lives in flash.** 64x15 tiles of text is 960 bytes of flash and a
+**The level lives in flash.** 64x11 tiles of text is 704 bytes of flash and a
 level you can see; only what changes is in RAM -- a bit per coin, four enemies
 and the player, about 180 bytes against the 960 a mutable copy would need.
 
@@ -317,9 +323,17 @@ how a platformer ends up sticking to walls.
 Enemies turn at ledges as well as walls. Without the ledge test they walk off
 every platform in the first ten seconds and the level empties itself.
 
-It is also the most expensive game here to draw. The camera scrolls, so a
-moving frame repaints the whole play area rather than a few cells, and it will
-not hold the tick rate the grid games do.
+**It repaints only what moved**, and that is the difference between a game and
+a slideshow. The whole view is 176 rows, which is 84 ms of SPI at the 8 MHz
+this panel actually runs at - nearly twice the 45 ms tick. Dirtying all of it
+every frame made the work queue serialise tick and paint, so the real frame
+time was the *push*, and every per-tick constant played out at about 11 fps.
+Nothing was wrong with the physics; there was no time left to run it in.
+
+The camera only scrolls when the player leaves the middle third, so on most
+frames the background is identical and only the actors have moved. Dirtying
+just the band they occupy drops the push to about 23 ms and lets the tick rate
+stand. The full repaint is gated on the camera actually changing.
 
 ## Difficulty, without reflashing
 

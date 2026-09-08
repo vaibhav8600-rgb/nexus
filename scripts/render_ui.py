@@ -805,7 +805,7 @@ PAC_MAZE = re.findall(
     .split('\n};')[0])
 
 
-def pacman(cv, t, pac=(13, 9), pdir=1, ghosts=((7, 9), (7, 6), (6, 10)),
+def pacman(cv, t, pac=(9, 7), pdir=1, ghosts=((5, 7), (3, 7), (5, 11)),
            eaten=(), score='340', lives=3, fright=False, anim=0):
     u, K = UI(cv, t), PAC
     u.ground()
@@ -832,10 +832,10 @@ def pacman(cv, t, pac=(13, 9), pdir=1, ghosts=((7, 9), (7, 6), (6, 10)),
             elif (r, c) in eaten:
                 continue
             elif ch == '.':
-                cv.rect(x + CELL // 2 - 1, y + CELL // 2 - 1, 2, 2,
+                cv.rect(x + CELL // 2 - 1, y + CELL // 2 - 1, 3, 3,
                         t['caption'])
             elif ch == 'o' and not (anim & 2):
-                cv.disc(x + CELL // 2, y + CELL // 2, 3, t['value'])
+                cv.disc(x + CELL // 2, y + CELL // 2, 4, t['value'])
 
     for i, (gr, gc) in enumerate(ghosts):
         x, y = K['WELL_X'] + gc * CELL, K['WELL_Y'] + gr * CELL
@@ -916,7 +916,7 @@ MAR_LEVEL = re.findall(
     .split(';')[0])
 
 
-def mario(cv, t, cam=132, player=(12, 14), facing=1, dead=(), score='1700',
+def mario(cv, t, cam=140, player=(8, 14), facing=1, dead=(), score='1700',
           lives=3, anim=0):
     u, K = UI(cv, t), MAR
     TILE, VY = K['TILE'], K['VIEW_Y']
@@ -942,29 +942,29 @@ def mario(cv, t, cam=132, player=(12, 14), facing=1, dead=(), score='1700',
                 cv.hline(x, y, TILE, t['edge_hi'], 90)
                 cv.hline(x, y + TILE - 1, TILE, t['edge_lo'], 110)
             elif ch == 'o':
-                cv.disc(x + TILE // 2, y + TILE // 2, 3, t['warning'])
+                cv.disc(x + TILE // 2, y + TILE // 2, 5, t['warning'])
             elif ch == 'F':
-                cv.rect(x + TILE // 2 - 1, y - TILE, 2, TILE * 2, t['value'])
-                cv.rect(x + TILE // 2 + 1, y - TILE, 6, 5, t['success'])
+                cv.rect(x + TILE // 2 - 1, y - TILE, 3, TILE * 2, t['value'])
+                cv.rect(x + TILE // 2 + 2, y - TILE, 9, 7, t['success'])
             elif ch == 'E' and (r, c) not in dead:
                 px_, py_ = x, y
                 cv.round_rect(px_, py_ + 2, K['PLAYER_W'], K['PLAYER_H'] - 2,
                               3, t['success'])
-                cv.rect(px_ + 1, py_ + K['PLAYER_H'] - 2, 2, 2, t['muted'])
-                cv.rect(px_ + K['PLAYER_W'] - 3, py_ + K['PLAYER_H'] - 2, 2, 2,
+                cv.rect(px_ + 1, py_ + K['PLAYER_H'] - 3, 3, 3, t['muted'])
+                cv.rect(px_ + K['PLAYER_W'] - 4, py_ + K['PLAYER_H'] - 3, 3, 3,
                         t['muted'])
-                cv.rect(px_ + 2, py_ + 5, 2, 2, 0xFFFF)
-                cv.rect(px_ + K['PLAYER_W'] - 4, py_ + 5, 2, 2, 0xFFFF)
+                cv.rect(px_ + 3, py_ + 7, 3, 3, 0xFFFF)
+                cv.rect(px_ + K['PLAYER_W'] - 6, py_ + 7, 3, 3, 0xFFFF)
 
     PW, PH = K['PLAYER_W'], K['PLAYER_H']
     sx = player[1] * TILE - cam
     sy = VY + player[0] * TILE
-    cv.rect(sx, sy, PW, 4, t['error'])
-    cv.rect(sx + (3 if facing > 0 else 0), sy + 2, PW - 3, 2, t['error'])
-    cv.rect(sx + 1, sy + 4, PW - 2, 4, t['warning'])
-    cv.rect(sx, sy + 8, PW, 3, t['accent_alt'])
-    cv.rect(sx, sy + PH - 1, 3, 1, t['value'])
-    cv.rect(sx + PW - 3, sy + PH - 1, 3, 1, t['value'])
+    cv.rect(sx, sy, PW, 5, t['error'])
+    cv.rect(sx + (4 if facing > 0 else 0), sy + 3, PW - 4, 2, t['error'])
+    cv.rect(sx + 1, sy + 5, PW - 2, 6, t['warning'])
+    cv.rect(sx, sy + 11, PW, 4, t['accent_alt'])
+    cv.rect(sx, sy + PH - 2, 4, 2, t['value'])
+    cv.rect(sx + PW - 4, sy + PH - 2, 4, 2, t['value'])
 
 
 # ------------------------------------------------------------------ main
