@@ -170,8 +170,8 @@ Worth copying.
 | Tetris | 10x20 | ~245 B | integer grid, gravity on its own clock |
 | Snake | 16x16 | ~768 B | integer grid, ring of cells |
 | Breakout | free | ~24 B | 8.8 fixed point |
-| Pac-Man | 15x11 | ~180 B | integer grid, greedy chasers |
-| Mario | 64x11 | ~140 B | 8.8 fixed point, scrolling camera |
+| Pac-Man | 13x10 | ~170 B | integer grid, greedy chasers |
+| Mario | 64x10 | ~170 B | 8.8 fixed point, scrolling camera |
 
 Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
 four faint slivers and the apple a speck -- on a panel you look at from across
@@ -252,7 +252,7 @@ life goes to a collision test that never ran.
 
 ### Pac-Man
 
-A 15x11 maze at 15px cells, 74 dots, four power pellets, three chasers and a
+A 13x10 maze at 18px cells, 61 dots, four power pellets, three chasers and a
 wrapping tunnel row.
 
 The board started at 19x15 of 12px and was rebuilt bigger after the first
@@ -269,7 +269,7 @@ same trade Snake made going from 24x24 to 16x16.
 "####.###.#.###.####",
 ```
 
-That costs 165 bytes of flash for the layout and buys a level you can read and
+That costs 130 bytes of flash for the layout and buys a level you can read and
 edit without counting bits. It also makes the level testable:
 `tests/games/test_pacman_maze.py` flood-fills it from the spawn and fails if a
 single dot is unreachable -- a walled-in dot makes the level uncompletable, and
@@ -306,7 +306,7 @@ repeats, with no new plumbing -- and the test asserts the window still outlasts
 the repeat interval, because if that inverts, running stutters and the cause is
 not obvious.
 
-**The level lives in flash.** 64x11 tiles of text is 704 bytes of flash and a
+**The level lives in flash.** 64x10 tiles of text is 640 bytes of flash and a
 level you can see; only what changes is in RAM -- a bit per coin, four enemies
 and the player, about 180 bytes against the 960 a mutable copy would need.
 

@@ -167,7 +167,20 @@ def main():
     # and the game ran at about 11 fps in permanent slow motion. Repainting
     # the full view ONLY when the camera scrolls is what fixes that, and it is
     # invisible to every other test: the game still works, just crawls.
-    HZ = 8000000
+    # Derived from the overlay, not hardcoded. The panel's bus rate is the
+    # single number every frame budget here rests on, and it is a devicetree
+    # choice: spi0/1/2 are capped at 8 MHz by the SoC and the driver clamps
+    # silently, so a revert to &spi0 quadruples every push time without one
+    # line of C changing. Reading it means that shows up here as a failed
+    # tick budget rather than as a game that mysteriously crawls again.
+    ovl = open(os.path.join(ROOT, 'boards', 'shields', 'nexus_dongle',
+                            'nexus_dongle.overlay'), encoding='utf-8').read()
+    inst = re.search(r'^&(spi\d) \{', ovl, re.M).group(1)
+    asked = int(re.search(r'mipi-max-frequency = <(\d+)>', ovl).group(1))
+    HZ = min(asked, 32000000 if inst == 'spi3' else 8000000)
+    print('    panel on %s, %d MHz requested -> %d MHz effective'
+          % (inst, asked // 1000000, HZ // 1000000))
+
     full = num['LEVEL_H'] * num['TILE']
     band = 3 * num['TILE']
 

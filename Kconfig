@@ -273,7 +273,7 @@ config NEXUS_PACMAN
 	default y
 	depends on NEXUS_GAMES
 	help
-	  A 19x15 maze, dots, power pellets and three chasers. About 300 bytes
+	  A 13x10 maze, dots, power pellets and three chasers. About 170 bytes
 	  of RAM: the maze is one byte per cell and every actor is a row, a
 	  column and a direction.
 
@@ -285,23 +285,26 @@ config NEXUS_MARIO
 	default y
 	depends on NEXUS_GAMES
 	help
-	  A 64x15 scrolling level with coins, enemies and a flag. About 180
+	  A 64x10 scrolling level with coins, enemies and a flag. About 170
 	  bytes of RAM: the level is text in flash and only what changes -
 	  a bit per coin, four enemies and the player - is held.
 
-	  It is the most expensive game here to draw. The camera scrolls, so
-	  a moving frame repaints the whole play area rather than a few cells,
-	  and it will not hold the tick rate the others do.
+	  It repaints only the band the actors moved through, and the whole
+	  view only when the camera actually scrolls, which is what lets it
+	  hold 50 fps on SPIM3.
 
 config NEXUS_MARIO_TICK_MS
 	int "Platformer physics interval, ms"
-	default 38
+	default 20
 	depends on NEXUS_MARIO
 	help
 	  The gravity and jump constants are tuned to this interval, so
 	  changing it changes how far a jump reaches - and the level's pits are
-	  sized against that reach. 45 is about as fast as the panel keeps up
-	  with a full-width scroll.
+	  sized against that reach.
+
+	  20 ms is 50 fps, which the panel keeps up with on SPIM3: the actor
+	  band is 8 ms of bus time and even a full-width scroll is 23. On
+	  SPIM0 the same scroll was 86 ms and this had to be 45.
 
 	  Settings > SPEED scales it at runtime like every other game.
 

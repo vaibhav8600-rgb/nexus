@@ -805,7 +805,7 @@ PAC_MAZE = re.findall(
     .split('\n};')[0])
 
 
-def pacman(cv, t, pac=(9, 7), pdir=1, ghosts=((5, 7), (3, 7), (5, 11)),
+def pacman(cv, t, pac=(8, 6), pdir=1, ghosts=((4, 6), (3, 4), (6, 8)),
            eaten=(), score='340', lives=3, fright=False, anim=0):
     u, K = UI(cv, t), PAC
     u.ground()
@@ -832,10 +832,10 @@ def pacman(cv, t, pac=(9, 7), pdir=1, ghosts=((5, 7), (3, 7), (5, 11)),
             elif (r, c) in eaten:
                 continue
             elif ch == '.':
-                cv.rect(x + CELL // 2 - 1, y + CELL // 2 - 1, 3, 3,
+                cv.rect(x + CELL // 2 - 2, y + CELL // 2 - 2, 4, 4,
                         t['caption'])
             elif ch == 'o' and not (anim & 2):
-                cv.disc(x + CELL // 2, y + CELL // 2, 4, t['value'])
+                cv.disc(x + CELL // 2, y + CELL // 2, 5, t['value'])
 
     for i, (gr, gc) in enumerate(ghosts):
         x, y = K['WELL_X'] + gc * CELL, K['WELL_Y'] + gr * CELL
@@ -844,8 +844,8 @@ def pacman(cv, t, pac=(9, 7), pdir=1, ghosts=((5, 7), (3, 7), (5, 11)),
         w = h = CELL - 2
         cv.round_rect(x + 1, y + 1, w, h, w // 2, body)
         cv.rect(x + 1, y + 1 + h // 2, w, h // 2, body)
-        cv.rect(x + 3, y + 4, 2, 3, 0xFFFF)
-        cv.rect(x + w - 3, y + 4, 2, 3, 0xFFFF)
+        cv.rect(x + 4, y + 5, 3, 4, 0xFFFF)
+        cv.rect(x + w - 4, y + 5, 3, 4, 0xFFFF)
 
     # The eater, with its mouth cut back out in the well colour.
     px_ = K['WELL_X'] + pac[1] * CELL
@@ -916,7 +916,7 @@ MAR_LEVEL = re.findall(
     .split(';')[0])
 
 
-def mario(cv, t, cam=140, player=(8, 14), facing=1, dead=(), score='1700',
+def mario(cv, t, cam=150, player=(7, 14), facing=1, dead=(), score='1700',
           lives=3, anim=0):
     u, K = UI(cv, t), MAR
     TILE, VY = K['TILE'], K['VIEW_Y']
@@ -942,7 +942,7 @@ def mario(cv, t, cam=140, player=(8, 14), facing=1, dead=(), score='1700',
                 cv.hline(x, y, TILE, t['edge_hi'], 90)
                 cv.hline(x, y + TILE - 1, TILE, t['edge_lo'], 110)
             elif ch == 'o':
-                cv.disc(x + TILE // 2, y + TILE // 2, 5, t['warning'])
+                cv.disc(x + TILE // 2, y + TILE // 2, 6, t['warning'])
             elif ch == 'F':
                 cv.rect(x + TILE // 2 - 1, y - TILE, 3, TILE * 2, t['value'])
                 cv.rect(x + TILE // 2 + 2, y - TILE, 9, 7, t['success'])
@@ -953,18 +953,18 @@ def mario(cv, t, cam=140, player=(8, 14), facing=1, dead=(), score='1700',
                 cv.rect(px_ + 1, py_ + K['PLAYER_H'] - 3, 3, 3, t['muted'])
                 cv.rect(px_ + K['PLAYER_W'] - 4, py_ + K['PLAYER_H'] - 3, 3, 3,
                         t['muted'])
-                cv.rect(px_ + 3, py_ + 7, 3, 3, 0xFFFF)
-                cv.rect(px_ + K['PLAYER_W'] - 6, py_ + 7, 3, 3, 0xFFFF)
+                cv.rect(px_ + 3, py_ + 8, 4, 4, 0xFFFF)
+                cv.rect(px_ + K['PLAYER_W'] - 7, py_ + 8, 4, 4, 0xFFFF)
 
     PW, PH = K['PLAYER_W'], K['PLAYER_H']
     sx = player[1] * TILE - cam
     sy = VY + player[0] * TILE
-    cv.rect(sx, sy, PW, 5, t['error'])
-    cv.rect(sx + (4 if facing > 0 else 0), sy + 3, PW - 4, 2, t['error'])
-    cv.rect(sx + 1, sy + 5, PW - 2, 6, t['warning'])
-    cv.rect(sx, sy + 11, PW, 4, t['accent_alt'])
-    cv.rect(sx, sy + PH - 2, 4, 2, t['value'])
-    cv.rect(sx + PW - 4, sy + PH - 2, 4, 2, t['value'])
+    cv.rect(sx, sy, PW, 6, t['error'])
+    cv.rect(sx + (5 if facing > 0 else 0), sy + 4, PW - 5, 2, t['error'])
+    cv.rect(sx + 1, sy + 6, PW - 2, 7, t['warning'])
+    cv.rect(sx, sy + 13, PW, 4, t['accent_alt'])
+    cv.rect(sx, sy + PH - 2, 5, 2, t['value'])
+    cv.rect(sx + PW - 5, sy + PH - 2, 5, 2, t['value'])
 
 
 # ------------------------------------------------------------------ main

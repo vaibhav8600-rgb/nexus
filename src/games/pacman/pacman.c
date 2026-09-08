@@ -39,12 +39,14 @@
  * Fewer, larger cells cost maze complexity and buy pieces you can see - the
  * same trade Snake made going from 24x24 to 16x16.
  *
- * 15px rather than 16 so the well is 225 wide and the frame keeps a margin;
- * at 16 it is exactly 240 and the frame draws off the edge of the screen.
+ * 18px is as far as this goes: 13 columns of it is 234 wide, which leaves
+ * the frame three pixels of margin, and ten rows is 180 tall against the
+ * 190 the HUD leaves. One more pixel per cell and the frame draws off the
+ * edge of the screen.
  */
-#define COLS 15
-#define ROWS 11
-#define CELL 15
+#define COLS 13
+#define ROWS 10
+#define CELL 18
 
 #define WELL_W (COLS * CELL) /* 228 */
 #define WELL_H (ROWS * CELL) /* 180 */
@@ -87,17 +89,16 @@ static const int8_t dc[4] = { 0, 1, 0, -1 };
  * 'G' where the ghosts come out.
  */
 static const char *const maze_src[ROWS] = {
-	"###############",
-	"#.....#.#.....#",
-	"#o###.#.#.###o#",
-	"#.............#",
-	"#.###.###.###.#",
-	"#...#..G..#...#",
-	"##.#.#####.#.##",
-	"...............",
-	"##.#.#####.#.##",
-	"#o.....P.....o#",
-	"###############",
+	"#############",
+	"#....#.#....#",
+	"#o##.#.#.##o#",
+	"#...........#",
+	"##.#..G..#.##",
+	".....#.#.....",
+	"##.#.....#.##",
+	"#..#.###.#..#",
+	"#o....P....o#",
+	"#############",
 };
 
 struct actor {
@@ -505,8 +506,8 @@ static void draw_ghost(int x, int y, int idx)
 	gfx_rect(x + 1, y + 1 + h / 2, w, h / 2, body, GFX_OPAQUE);
 
 	/* Eyes, always white - they are what makes it read as a face at 10px. */
-	gfx_rect(x + 3, y + 4, 2, 3, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
-	gfx_rect(x + w - 3, y + 4, 2, 3, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
+	gfx_rect(x + 4, y + 5, 3, 4, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
+	gfx_rect(x + w - 4, y + 5, 3, 4, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
 }
 
 static void pacman_draw(void)
@@ -568,14 +569,14 @@ static void pacman_draw(void)
 				gfx_hline(x, y, CELL, t->edge_hi, 40);
 				break;
 			case DOT:
-				gfx_rect(x + CELL / 2 - 1, y + CELL / 2 - 1, 3,
-					 3, t->caption, GFX_OPAQUE);
+				gfx_rect(x + CELL / 2 - 2, y + CELL / 2 - 2, 4,
+					 4, t->caption, GFX_OPAQUE);
 				break;
 			case PELLET:
 				/* Blinks, so it reads as the thing worth
 				 * detouring for rather than as a big dot. */
 				if (!(g_p.anim & 2)) {
-					gfx_disc(x + CELL / 2, y + CELL / 2, 4,
+					gfx_disc(x + CELL / 2, y + CELL / 2, 5,
 						 t->value, GFX_OPAQUE);
 				}
 				break;

@@ -50,14 +50,14 @@
  * physics constant below is re-tuned to match: motion has to scale with the
  * tile or the character crawls across a bigger world.
  */
-#define TILE 16
+#define TILE 18
 #define LEVEL_W 64
-#define LEVEL_H 11
+#define LEVEL_H 10
 
 #define VIEW_X 0
 #define VIEW_Y 44
-#define VIEW_W GFX_W          /* 240 - 15 tiles visible */
-#define VIEW_H (LEVEL_H * TILE) /* 176 */
+#define VIEW_W GFX_W          /* 240 - 13 tiles visible */
+#define VIEW_H (LEVEL_H * TILE) /* 180 */
 
 #define HUD_Y 20
 #define HUD_H 22
@@ -75,8 +75,14 @@ typedef int32_t fix_t;
  * reaches 4.2 across, so a 3-tile pit has a tile of margin.
  * tests/games/test_mario_level.py re-derives that and fails if a pit grows.
  */
-#define GRAVITY 128       /* 0.50 px/tick^2 */
-#define JUMP_V (-1562)    /* -6.1 px/tick   */
+/*
+ * Re-tuned for a 20 ms tick on SPIM3. The arc is expressed per TICK, so
+ * halving the tick without touching these would halve every distance in
+ * pixels-per-second terms; instead the whole set is solved again for the new
+ * rate at 18px tiles - 2.06 tiles of height, 4.5 across, against 3-tile pits.
+ */
+#define GRAVITY 104       /* 0.41 px/tick^2 */
+#define JUMP_V (-1462)    /* -5.7 px/tick   */
 /*
  * RUN_V is the free speed knob. Jump HEIGHT is v^2/2g and depends only on
  * GRAVITY and JUMP_V, so running faster carries the same arc further rather
@@ -84,19 +90,19 @@ typedef int32_t fix_t;
  * 3-tile pit easier, never harder. Lowering the tick would speed everything
  * up too, but that is capped by how long a frame takes to push.
  */
-#define RUN_V 1075        /* 4.2 px/tick    */
+#define RUN_V 768         /* 3.0 px/tick    */
 #define MAX_FALL 2048     /* 8.0 px/tick    */
-#define ENEMY_V 230       /* 0.9 px/tick    */
+#define ENEMY_V 256       /* 1.0 px/tick    */
 
-#define PLAYER_W 12
-#define PLAYER_H 15
+#define PLAYER_W 14
+#define PLAYER_H 17
 
 /*
  * How long a direction keeps running after the last press. It has to exceed
  * CONFIG_NEXUS_ACTION_REPEAT_MS or a held key stutters; two ticks past it is
  * enough and still stops promptly on release.
  */
-#define RUN_HOLD_TICKS 3
+#define RUN_HOLD_TICKS 5
 
 #define TICK_MS CONFIG_NEXUS_MARIO_TICK_MS
 
@@ -105,7 +111,6 @@ typedef int32_t fix_t;
  * 'F' the flag. Solid is '#' and '='; everything else you walk through.
  */
 static const char *const level[LEVEL_H] = {
-	"                                                                ",
 	"                                                                ",
 	"                                                                ",
 	"                                                                ",
@@ -534,16 +539,16 @@ static void draw_player(int sx, int sy)
 
 	/* Cap and body in two colours, so which way it faces is readable at
 	 * 9x11 without drawing a face. */
-	gfx_rect(sx, sy, PLAYER_W, 5, t->error, GFX_OPAQUE);
-	gfx_rect(sx + (g_m.facing > 0 ? 4 : 0), sy + 3, PLAYER_W - 4, 2,
+	gfx_rect(sx, sy, PLAYER_W, 6, t->error, GFX_OPAQUE);
+	gfx_rect(sx + (g_m.facing > 0 ? 5 : 0), sy + 4, PLAYER_W - 5, 2,
 		 t->error, GFX_OPAQUE);
-	gfx_rect(sx + 1, sy + 5, PLAYER_W - 2, 6, t->warning, GFX_OPAQUE);
-	gfx_rect(sx, sy + 11, PLAYER_W, 4, t->accent_alt, GFX_OPAQUE);
+	gfx_rect(sx + 1, sy + 6, PLAYER_W - 2, 7, t->warning, GFX_OPAQUE);
+	gfx_rect(sx, sy + 13, PLAYER_W, 4, t->accent_alt, GFX_OPAQUE);
 
 	/* Legs alternate while running and hold apart in the air. */
 	if (!g_m.on_ground || (g_m.anim & 4)) {
-		gfx_rect(sx, sy + PLAYER_H - 2, 4, 2, t->value, GFX_OPAQUE);
-		gfx_rect(sx + PLAYER_W - 4, sy + PLAYER_H - 2, 4, 2, t->value,
+		gfx_rect(sx, sy + PLAYER_H - 2, 5, 2, t->value, GFX_OPAQUE);
+		gfx_rect(sx + PLAYER_W - 5, sy + PLAYER_H - 2, 5, 2, t->value,
 			 GFX_OPAQUE);
 	}
 }
@@ -557,8 +562,8 @@ static void draw_enemy(int sx, int sy)
 	gfx_rect(sx + 1, sy + PLAYER_H - 3, 3, 3, t->muted, GFX_OPAQUE);
 	gfx_rect(sx + PLAYER_W - 4, sy + PLAYER_H - 3, 3, 3, t->muted,
 		 GFX_OPAQUE);
-	gfx_rect(sx + 3, sy + 7, 3, 3, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
-	gfx_rect(sx + PLAYER_W - 6, sy + 7, 3, 3, NEXUS_C(0xFFFFFFu),
+	gfx_rect(sx + 3, sy + 8, 4, 4, NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
+	gfx_rect(sx + PLAYER_W - 7, sy + 8, 4, 4, NEXUS_C(0xFFFFFFu),
 		 GFX_OPAQUE);
 }
 
@@ -621,10 +626,10 @@ static void mario_draw(void)
 				break;
 			case 'o':
 				if (!taken(r, c) && !(g_m.anim & 8)) {
-					gfx_disc(x + TILE / 2, y + TILE / 2, 5,
+					gfx_disc(x + TILE / 2, y + TILE / 2, 6,
 						 t->warning, GFX_OPAQUE);
 				} else if (!taken(r, c)) {
-					gfx_disc(x + TILE / 2, y + TILE / 2, 4,
+					gfx_disc(x + TILE / 2, y + TILE / 2, 5,
 						 t->warning, GFX_OPAQUE);
 				}
 				break;
