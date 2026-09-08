@@ -210,9 +210,30 @@ def main():
        'the %dpx slack still covers the furthest anything moves in a frame '
        '(%.0f px)' % (slack, num['MAX_FALL'] / 256.0))
 
-    ok(push_ms(full) > tick,
-       'while the full view (%.0f ms) does not - which is why the gate exists'
-       % push_ms(full))
+    # A scroll frame does not have to repaint the sky: it does not move with
+    # the camera. Everything above the first row with content in it is skipped.
+    sky = next(r for r in range(num['LEVEL_H']) if rows[r].strip())
+    sky = max(0, sky - 1)          # the flag draws a tile above its own row
+    scroll = (num['LEVEL_H'] - sky) * num['TILE']
+    print('    scroll skips %d sky rows -> %d rows = %.0f ms'
+          % (sky, scroll, push_ms(scroll)))
+    ok('g_m.sky * TILE' in src,
+       'the scroll repaint starts below the sky, not at the top of the view')
+    ok(push_ms(scroll) < tick,
+       'so even a scroll frame (%.0f ms) fits the %d ms tick'
+       % (push_ms(scroll), tick))
+
+    print('\nGrounded means standing, not landing')
+    # on_ground used to be set only on the tick a downward collision happened.
+    # Landing zeroes vy, so the next tick's 0.4px of gravity moves no whole
+    # pixel, no collision occurs, and the flag cleared - it alternated every
+    # tick while standing still and silently ate half the jump presses.
+    ok('g_m.on_ground = hits(px, py + 1' in src,
+       'on_ground probes one pixel down rather than latching a collision')
+    ok('g_m.on_ground && g_m.vy > 0' in src,
+       'and vy is zeroed while grounded, so there is no sub-pixel creep')
+    ok('jump_want' in src and 'JUMP_BUFFER_TICKS' in src,
+       'a jump asked for just before landing is buffered, not dropped')
 
     ram = (num['LEVEL_W'] * num['LEVEL_H'] + 7) // 8
     print('\nCoin bitmask %d B; level is %d B of flash, not RAM'

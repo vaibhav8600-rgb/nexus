@@ -90,7 +90,7 @@ typedef int32_t fix_t;
  * 3-tile pit easier, never harder. Lowering the tick would speed everything
  * up too, but that is capped by how long a frame takes to push.
  */
-#define RUN_V 768         /* 3.0 px/tick    */
+#define RUN_V 1178        /* 4.6 px/tick    */
 #define MAX_FALL 2048     /* 8.0 px/tick    */
 #define ENEMY_V 256       /* 1.0 px/tick    */
 
@@ -134,8 +134,9 @@ struct plat {
 	fix_t vx, vy;
 	bool on_ground;
 	int8_t facing;
-	uint8_t run_left;  /* ticks of held-left remaining  */
-	uint8_t run_right; /* ticks of held-right remaining */
+	uint8_t run_left;  /* ticks of held-left remaining   */
+	uint8_t run_right; /* ticks of held-right remaining  */
+	uint8_t jump_want; /* ticks a buffered jump survives */
 
 	struct enemy enemy[MAX_ENEMIES];
 	uint8_t enemies;
@@ -145,6 +146,7 @@ struct plat {
 
 	int cam;
 	int prev_cam;
+	uint8_t sky; /* first row with content; above it never changes */
 	uint32_t score;
 	uint8_t lives;
 	uint8_t anim;
@@ -254,7 +256,31 @@ static void spawn(void)
 	g_m.facing = 1;
 	g_m.on_ground = false;
 	g_m.run_left = g_m.run_right = 0;
+	g_m.jump_want = 0;
 	g_m.cam = 0;
+
+	/*
+	 * The topmost row with anything in it. Everything above is sky, which
+	 * does not move when the camera scrolls, so there is no reason to push
+	 * it again - and on this level that is three rows, a third of the
+	 * scroll frame. One row of margin because the flag is drawn a tile
+	 * above its own row.
+	 */
+	g_m.sky = 0;
+	for (int r = 0; r < LEVEL_H; r++) {
+		bool empty = true;
+
+		for (int c = 0; c < LEVEL_W; c++) {
+			if (level[r][c] != ' ') {
+				empty = false;
+				break;
+			}
+		}
+		if (!empty) {
+			g_m.sky = (uint8_t)(r > 0 ? r - 1 : 0);
+			break;
+		}
+	}
 	g_m.prev_cam = -1; /* forces one full repaint on the first frame */
 }
 
@@ -367,7 +393,6 @@ static void step(void)
 	px = TO_PX(g_m.x);
 	int wanty = TO_PX(g_m.y + g_m.vy);
 
-	g_m.on_ground = false;
 	if (!hits(px, wanty, PLAYER_W, PLAYER_H)) {
 		g_m.y += g_m.vy;
 	} else {
@@ -376,7 +401,6 @@ static void step(void)
 			int row = (wanty + PLAYER_H) / TILE;
 
 			g_m.y = TO_FIX(row * TILE - PLAYER_H);
-			g_m.on_ground = true;
 		} else {
 			/* Head on a brick. */
 			int row = wanty / TILE;
@@ -388,6 +412,43 @@ static void step(void)
 
 	px = TO_PX(g_m.x);
 	py = TO_PX(g_m.y);
+
+	/*
+	 * Grounded means "is there floor under me", NOT "did I collide going
+	 * down this tick", and the difference was a real bug: jumping worked
+	 * about half the time.
+	 *
+	 * Landing zeroes vy, so the next tick applies only GRAVITY - 0.4px,
+	 * which does not move a whole pixel. No collision happens, the old
+	 * code cleared on_ground, and the tick after that the accumulated
+	 * fraction crossed a pixel and collided again. on_ground therefore
+	 * alternated true/false EVERY TICK while simply standing still, and a
+	 * press landing on a false tick was silently dropped. It read as the
+	 * key being unreliable rather than as the ground being unreliable.
+	 *
+	 * Probing one pixel down is true the whole time the player is resting.
+	 */
+	g_m.on_ground = hits(px, py + 1, PLAYER_W, PLAYER_H);
+	if (g_m.on_ground && g_m.vy > 0) {
+		/* Stops the sub-pixel creep that caused the flicker at all. */
+		g_m.vy = 0;
+	}
+
+	/*
+	 * A jump asked for just before touching down still counts. Even with
+	 * on_ground correct, a press one tick early would be thrown away, and
+	 * at 18 ms a tick that is easy to do by accident - every platformer
+	 * buffers this for the same reason.
+	 */
+	if (g_m.jump_want) {
+		g_m.jump_want--;
+		if (g_m.on_ground) {
+			g_m.vy = JUMP_V;
+			g_m.on_ground = false;
+			g_m.jump_want = 0;
+			nexus_sound_play(NEXUS_SOUND_TETRIS_DROP);
+		}
+	}
 
 	/* Fell off the world. */
 	if (py > LEVEL_H * TILE) {
@@ -489,7 +550,8 @@ static void step(void)
 	 */
 	if (g_m.cam != g_m.prev_cam) {
 		g_m.prev_cam = g_m.cam;
-		nexus_screen_invalidate_rows(VIEW_Y, VIEW_Y + VIEW_H);
+		nexus_screen_invalidate_rows(VIEW_Y + g_m.sky * TILE,
+					     VIEW_Y + VIEW_H);
 		return;
 	}
 
@@ -717,13 +779,18 @@ static void mario_resume(void)
 	nexus_screen_invalidate();
 }
 
+#define JUMP_BUFFER_TICKS 4
+
 static void jump(void)
 {
 	if (!g_m.on_ground) {
+		/* In the air: remember it briefly rather than drop it. */
+		g_m.jump_want = JUMP_BUFFER_TICKS;
 		return;
 	}
 	g_m.vy = JUMP_V;
 	g_m.on_ground = false;
+	g_m.jump_want = 0;
 	nexus_sound_play(NEXUS_SOUND_TETRIS_DROP);
 }
 
