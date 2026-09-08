@@ -295,7 +295,7 @@ config NEXUS_MARIO
 
 config NEXUS_MARIO_TICK_MS
 	int "Platformer physics interval, ms"
-	default 45
+	default 38
 	depends on NEXUS_MARIO
 	help
 	  The gravity and jump constants are tuned to this interval, so

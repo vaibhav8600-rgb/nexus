@@ -77,9 +77,16 @@ typedef int32_t fix_t;
  */
 #define GRAVITY 128       /* 0.50 px/tick^2 */
 #define JUMP_V (-1562)    /* -6.1 px/tick   */
-#define RUN_V 819         /* 3.2 px/tick    */
+/*
+ * RUN_V is the free speed knob. Jump HEIGHT is v^2/2g and depends only on
+ * GRAVITY and JUMP_V, so running faster carries the same arc further rather
+ * than changing it: the reach grows from 4.8 tiles to 6.3, which makes every
+ * 3-tile pit easier, never harder. Lowering the tick would speed everything
+ * up too, but that is capped by how long a frame takes to push.
+ */
+#define RUN_V 1075        /* 4.2 px/tick    */
 #define MAX_FALL 2048     /* 8.0 px/tick    */
-#define ENEMY_V 192       /* 0.75 px/tick   */
+#define ENEMY_V 230       /* 0.9 px/tick    */
 
 #define PLAYER_W 12
 #define PLAYER_H 15
@@ -495,9 +502,15 @@ static void step(void)
 		}
 	}
 
-	/* A tile of slack each way covers the previous frame's position, which
-	 * is what has to be painted over. */
-	nexus_screen_invalidate_rows(VIEW_Y + lo - TILE, VIEW_Y + hi + TILE);
+	/*
+	 * Half a tile of slack covers the previous frame's position, which is
+	 * what has to be painted over. A whole tile was the first guess and it
+	 * is twice what is needed - nothing moves more than MAX_FALL, 8px, in
+	 * a frame. The difference is 16 rows, which at 8 MHz is 8 ms, and that
+	 * is the margin that keeps a jumping frame inside the tick.
+	 */
+	nexus_screen_invalidate_rows(VIEW_Y + lo - TILE / 2,
+				     VIEW_Y + hi + TILE / 2);
 }
 
 static void tick_fn(struct k_work *work)

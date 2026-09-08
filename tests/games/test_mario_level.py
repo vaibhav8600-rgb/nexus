@@ -181,8 +181,22 @@ def main():
     ok('prev_cam = -1' in src,
        'and prev_cam starts mismatched, so the first frame paints everything')
     ok(push_ms(band) < tick,
-       'the actor band (%.0f ms) fits inside one %d ms tick'
+       'the resting band (%.0f ms) fits inside one %d ms tick'
        % (push_ms(band), tick))
+
+    # The band that actually sets the floor is the one where the player is at
+    # the apex of a jump and the enemies are still on the floor - the dirty
+    # span then covers everything between them. Checking only the resting case
+    # would let the tick be lowered until every jump stutters.
+    slack = num['TILE'] // 2
+    jump_band = int(height) + num['PLAYER_H'] + 2 * slack
+    ok(push_ms(jump_band) < tick,
+       'and so does the worst case, mid-jump: %d rows = %.0f ms'
+       % (jump_band, push_ms(jump_band)))
+    ok(slack * 256 >= num['MAX_FALL'],
+       'the %dpx slack still covers the furthest anything moves in a frame '
+       '(%.0f px)' % (slack, num['MAX_FALL'] / 256.0))
+
     ok(push_ms(full) > tick,
        'while the full view (%.0f ms) does not - which is why the gate exists'
        % push_ms(full))
