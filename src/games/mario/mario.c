@@ -209,12 +209,24 @@ static void spawn(void)
 
 			if (ch == 'P') {
 				g_m.x = TO_FIX(c * TILE);
-				g_m.y = TO_FIX(r * TILE);
+				/* Feet on the floor, same as the enemies.
+				 * Gravity would settle the player anyway, but
+				 * only after a visible drop on every respawn. */
+				g_m.y = TO_FIX(r * TILE + TILE - PLAYER_H);
 			} else if (ch == 'E' && g_m.enemies < MAX_ENEMIES) {
 				struct enemy *e = &g_m.enemy[g_m.enemies++];
 
 				e->x = TO_FIX(c * TILE);
-				e->y = TO_FIX(r * TILE);
+				/*
+				 * Feet ON the floor, not at the top of the
+				 * tile. The sprite is 11px in a 12px cell and
+				 * enemies have no gravity to settle them, so
+				 * spawning at r*TILE leaves them a pixel high
+				 * - and the ledge test below then reads their
+				 * own row, finds no floor, and reverses them
+				 * every tick. They vibrate instead of walking.
+				 */
+				e->y = TO_FIX(r * TILE + TILE - PLAYER_H);
 				e->dir = -1;
 				e->alive = true;
 			}

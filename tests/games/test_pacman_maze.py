@@ -34,7 +34,7 @@ def main():
 
     C = {k: int(v) for k, v in
          re.findall(r'^#define (COLS|ROWS|CELL|WELL_Y|GHOSTS|LIVES|'
-                    r'TUNNEL_ROW|HUD_Y|HUD_H)\s+(\d+)', src, re.M)}
+                    r'HUD_Y|HUD_H)\s+(\d+)', src, re.M)}
 
     block = re.search(r'maze_src\[ROWS\] = \{(.*?)\n\};', src, re.S).group(1)
     maze = re.findall(r'"([^"]*)"', block)
@@ -87,13 +87,19 @@ def main():
     ok(ghost in seen, 'the chasers can leave their spawn')
 
     print('\nThe tunnel')
-    row = maze[C['TUNNEL_ROW']]
-    ok(row[0] != '#' and row[-1] != '#',
-       'row %d is open at both ends, so the wrap leads somewhere'
-       % C['TUNNEL_ROW'])
-    ok(all(r[0] == '#' and r[-1] == '#'
-           for i, r in enumerate(maze) if i != C['TUNNEL_ROW']),
-       'and it is the only row that is - otherwise the maze leaks')
+    # Found, not declared. wrap_c() wraps every row, so what actually confines
+    # the player is the wall down each edge - the tunnel is simply the one row
+    # that has no wall there. Reading a TUNNEL_ROW constant would have tested
+    # a number rather than the maze.
+    open_ends = [i for i, r in enumerate(maze) if r[0] != '#' and r[-1] != '#']
+    ok(len(open_ends) == 1,
+       'exactly one row is open at both ends, found %s' % open_ends)
+    if open_ends:
+        ok(open_ends[0] in {r for r, _ in
+                            [(rr, cc) for rr in range(C['ROWS'])
+                             for cc in range(C['COLS'])
+                             if (rr, cc) in seen]},
+           'and the tunnel row (%d) is reachable' % open_ends[0])
 
     print('\nIt fits the panel')
     ww, wh = C['COLS'] * C['CELL'], C['ROWS'] * C['CELL']

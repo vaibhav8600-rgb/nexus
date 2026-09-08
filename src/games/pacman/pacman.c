@@ -50,10 +50,11 @@
 #define LIVES 3
 
 /*
- * The tunnel row wraps, the rest does not. That single row is what stops the
- * maze being a closed box and gives the classic escape route.
+ * Columns wrap on EVERY row - what actually confines you is the wall down each
+ * edge of the maze. Exactly one row is open at both ends, and that is the
+ * tunnel. The test finds it by looking rather than trusting a constant here,
+ * because a constant that nothing reads is a comment pretending to be code.
  */
-#define TUNNEL_ROW 7
 
 #define TICK_MS CONFIG_NEXUS_PACMAN_TICK_MS
 #define FRIGHT_TICKS CONFIG_NEXUS_PACMAN_FRIGHT_TICKS
@@ -168,6 +169,20 @@ static int dist(int r0, int c0, int r1, int c1)
 	int dr_ = r0 - r1;
 
 	return (dr_ < 0 ? -dr_ : dr_) + dc_;
+}
+
+/* Just this one chaser, back to the pen. */
+static void send_home(struct actor *g)
+{
+	for (int r = 0; r < ROWS; r++) {
+		for (int c = 0; c < COLS; c++) {
+			if (maze_src[r][c] == 'G') {
+				g->r = (int8_t)r;
+				g->c = (int8_t)c;
+				return;
+			}
+		}
+	}
 }
 
 static void place_actors(void)
@@ -366,7 +381,7 @@ static void step(void)
 		if (g_p.fright) {
 			g_p.score += 200;
 			scored = true;
-			place_actors();
+			send_home(&g_p.ghost[i]);
 			nexus_sound_play(NEXUS_SOUND_TETRIS_TETRIS);
 		} else {
 			lose_life();
@@ -385,8 +400,7 @@ static void step(void)
 		if (g_p.fright) {
 			g_p.score += 200;
 			scored = true;
-			g_p.ghost[i].r = g_p.pac.r;
-			place_actors();
+			send_home(&g_p.ghost[i]);
 			nexus_sound_play(NEXUS_SOUND_TETRIS_TETRIS);
 		} else {
 			lose_life();
