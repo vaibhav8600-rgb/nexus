@@ -466,6 +466,17 @@ def home(cv, t, st):
 
     # brand plate
     u.card(K['COL_L'], K['BRAND_Y'], CONTENT_W, K['BRAND_H'])
+
+    # Corner dots: jiggler top right, Studio bottom left. Diagonally opposite
+    # so they cannot be confused at a glance.
+    def dot(x, y, c):
+        cv.disc(x, y, 7, c, 60)
+        cv.disc(x, y, 4, c)
+
+    if st.get('anti_idle'):
+        dot(K['COL_L'] + CONTENT_W - 10, K['BRAND_Y'] + 9, t['success'])
+    if st.get('studio'):
+        dot(K['COL_L'] + 10, K['BRAND_Y'] + K['BRAND_H'] - 9, t['accent'])
     u.wordmark(W // 2,
                K['BRAND_Y'] + (K['BRAND_H'] - wordmark_h(2)) // 2, 'NEXUS', 2)
 
@@ -1108,7 +1119,8 @@ DIAG_ROWS = [('FIRMWARE', 'V1.0.0'), ('BOARD', 'NICE_NANO'),
              ('L/R BATT', '78/64'), ('UI STATIC', '5984B'),
              ('UPTIME', '02:14'), ('BACK', '')]
 STATUS = dict(on_usb=False, usb=True, profile=0, bonded=True, connected=True,
-              layer='DEFAULT', mods=0b0010, wpm=42, batt=[78, 64])
+              layer='DEFAULT', mods=0b0010, wpm=42, batt=[78, 64],
+              anti_idle=True, studio=True)
 
 
 # Nearest-neighbour, integer, no smoothing.

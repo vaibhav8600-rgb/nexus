@@ -57,7 +57,8 @@ enum nexus_battery_band {
 #define NEXUS_STATUS_LOCKS    BIT(5)
 #define NEXUS_STATUS_LINKS    BIT(6)
 #define NEXUS_STATUS_JIGGLE   BIT(7)
-#define NEXUS_STATUS_ALL      0xFF
+#define NEXUS_STATUS_STUDIO   BIT(8)
+#define NEXUS_STATUS_ALL      0x1FF
 
 struct nexus_status {
 	const char *layer_name;
@@ -105,6 +106,11 @@ struct nexus_status {
 	 * present in the struct so widgets need no #ifdef; simply never true
 	 * without the module that reports it. */
 	bool anti_idle;
+
+	/* ZMK Studio has been unlocked, so the keymap is live-editable. Same
+	 * rule as anti_idle: always in the struct, never true unless the
+	 * build has Studio and CONFIG_NEXUS_STUDIO_STATUS to report it. */
+	bool studio;
 };
 
 /** Live model. Read-only for everything outside src/status/. */

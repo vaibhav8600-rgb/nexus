@@ -330,6 +330,29 @@ static void refresh_anti_idle(bool active)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_NEXUS_STUDIO_STATUS)
+/*
+ * ZMK Studio's lock state.
+ *
+ * UNLOCKED is the state worth showing: it is the one in which the keymap can
+ * be rewritten from under you, which is exactly the thing a dongle with a
+ * screen should be able to tell you at a glance. LOCKED and UNLOCKING both
+ * read as "not editable" and share the off state.
+ */
+#include <zmk/studio/core.h>
+
+static void refresh_studio(enum zmk_studio_core_lock_state state)
+{
+	struct nexus_status *st = nexus_status_mut();
+	bool open = (state == ZMK_STUDIO_CORE_LOCK_STATE_UNLOCKED);
+
+	if (st->studio != open) {
+		st->studio = open;
+		nexus_status_mark(NEXUS_STATUS_STUDIO);
+	}
+}
+#endif
+
 /* ------------------------------------------------------------- listener -- */
 
 static int nexus_status_listener(const zmk_event_t *eh)
@@ -364,6 +387,11 @@ static int nexus_status_listener(const zmk_event_t *eh)
 #if IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)
 	else if (as_zmk_anti_idle_state(eh)) {
 		refresh_anti_idle(as_zmk_anti_idle_state(eh)->active);
+	}
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_STUDIO_STATUS)
+	else if (as_zmk_studio_core_lock_state_changed(eh)) {
+		refresh_studio(as_zmk_studio_core_lock_state_changed(eh)->state);
 	}
 #endif
 	else if (as_zmk_battery_state_changed(eh)) {
@@ -414,6 +442,9 @@ ZMK_SUBSCRIPTION(nexus_status, zmk_activity_state_changed);
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)
 ZMK_SUBSCRIPTION(nexus_status, zmk_anti_idle_state);
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_STUDIO_STATUS)
+ZMK_SUBSCRIPTION(nexus_status, zmk_studio_core_lock_state_changed);
 #endif
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 ZMK_SUBSCRIPTION(nexus_status, zmk_peripheral_battery_state_changed);

@@ -257,23 +257,36 @@ static void draw_link(const struct nexus_status *st)
  * lock state you cannot act on is not worth a permanent fixture on a 240px
  * panel; the host already shows it.
  *
- * The jiggler is different: it is a mode YOU turned on, it is invisible
- * otherwise, and forgetting it is running is the actual failure mode. So it
- * gets the corner, green, with a soft halo - lit when active, and nothing at
- * all when it is not.
+ * The two that are left are different: each is a mode YOU turned on, each is
+ * invisible otherwise, and forgetting it is on is the actual failure mode.
+ * The jiggler takes the top right in green; Studio unlocked takes the bottom
+ * left in the accent, diagonally opposite so they can never be read as each
+ * other. Both are a solid disc inside a soft halo, so they look lit rather
+ * than like a stray pixel, and neither draws anything at all when it is off.
  */
+static void dot(int x, int y, gfx_color c)
+{
+	const int r = 4;
+
+	gfx_disc(x, y, r + 3, c, 60);
+	gfx_disc(x, y, r, c, GFX_OPAQUE);
+}
+
 static void draw_flags(const struct nexus_status *st)
 {
-	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
-		const struct nexus_theme *t = nexus_theme();
-		const int r = 4;
-		int y = BRAND_Y + 9;
-		int x = COL_L + NEXUS_CONTENT_W - 10;
+	const struct nexus_theme *t = nexus_theme();
 
-		if (st->anti_idle) {
-			gfx_disc(x, y, r + 3, t->success, 60);
-			gfx_disc(x, y, r, t->success, GFX_OPAQUE);
-		}
+	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS) && st->anti_idle) {
+		dot(COL_L + NEXUS_CONTENT_W - 10, BRAND_Y + 9, t->success);
+	}
+
+	/*
+	 * Studio unlocked. The accent rather than success, because this is not
+	 * a healthy-green fact - it means the keymap is editable from a host
+	 * right now, which is worth noticing rather than reassuring.
+	 */
+	if (IS_ENABLED(CONFIG_NEXUS_STUDIO_STATUS) && st->studio) {
+		dot(COL_L + 10, BRAND_Y + BRAND_H - 9, t->accent);
 	}
 }
 
@@ -438,7 +451,8 @@ static void on_status(const struct nexus_status *st, uint32_t changed)
 	/* Locks and the jiggler live on the brand band now, not row 1. Marking
 	 * the wrong band is not a crash, it is worse: the dot simply never
 	 * updates and the bug looks like the feature is broken. */
-	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_JIGGLE)) {
+	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_JIGGLE |
+		       NEXUS_STATUS_STUDIO)) {
 		nexus_screen_invalidate_rows(BRAND_Y, BRAND_Y + BRAND_H);
 	}
 	if (changed & (NEXUS_STATUS_ENDPOINT | NEXUS_STATUS_LAYER)) {

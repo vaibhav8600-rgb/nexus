@@ -66,6 +66,14 @@ The title is drawn as glass -- a near-white face over a soft accent halo, with
 a one-pixel bevel -- in the active theme's colours. `CONFIG_NEXUS_PRODUCT` sets
 the word; nothing sits under it, deliberately.
 
+The plate's two corners carry the only flags on the dashboard, diagonally
+opposite so they can never be read as each other: **top right, green**, the
+mouse jiggler is running (`CONFIG_NEXUS_ANTI_IDLE_STATUS`); **bottom left, in
+the theme accent**, ZMK Studio is unlocked and the keymap is editable from a
+host right now (`CONFIG_NEXUS_STUDIO_STATUS`). Each is a solid disc inside a
+soft halo, and neither draws anything at all when it is off -- an indicator
+that is always there and usually grey is one more thing to learn to ignore.
+
 Gutters are 5px rather than the usual 7, which is what buys the link row the
 height for a readable transport cluster.
 

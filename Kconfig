@@ -494,12 +494,25 @@ config NEXUS_GAME_HIGHSCORE_PERSIST
 # --------------------------------------------------------------------------
 # Status sources
 # --------------------------------------------------------------------------
+config NEXUS_STUDIO_STATUS
+	bool "Show a dot on the brand plate while ZMK Studio is unlocked"
+	default y
+	depends on NEXUS_DISPLAY && ZMK_STUDIO
+	help
+	  Unlocked means the keymap can be rewritten from a host right now,
+	  which is worth being able to see at a glance on a device that sits on
+	  your desk. Locked and unlocking both read as "not editable" and show
+	  nothing.
+
+	  Bottom left of the brand plate, diagonally opposite the jiggler dot so
+	  the two can never be confused.
+
 config NEXUS_ANTI_IDLE_STATUS
 	bool "Show a mouse-jiggler indicator on the dashboard"
 	default n
 	help
-	  Subscribes to zmk_anti_idle_state and lights a cursor icon on the
-	  LINK card while the jiggler is on.
+	  Subscribes to zmk_anti_idle_state and lights a dot in the top right
+	  of the brand plate while the jiggler is on.
 
 	  Off by default because the behavior that raises that event is not
 	  part of NEXUS - it comes from the snake-module ZMK module. Enable
