@@ -68,8 +68,23 @@ static void gc_draw(void)
 			if (game->draw_icon) {
 				game->draw_icon(GFX_W / 2, ICON_CY);
 			}
-			gfx_text_c(GFX_W / 2, NAME_Y, game->name,
-				   NEXUS_TXT_VALUE, t->accent, GFX_OPAQUE);
+
+			/*
+			 * Drop a size rather than run out of the card. Every
+			 * name fitted at VALUE until "SUPER MARIO" - eleven
+			 * characters is 195px inside a 150px card, so it hung
+			 * out of both sides of the very box that is meant to
+			 * frame it. Long names are the caller's business, not
+			 * something this screen should be able to break on.
+			 */
+			int room = CARD_W - 2 * 8;
+			int ns = NEXUS_TXT_VALUE;
+
+			if (gfx_text_w(game->name, ns) > room) {
+				ns = NEXUS_TXT_BODY;
+			}
+			gfx_text_c(GFX_W / 2, NAME_Y + (NEXUS_TXT_VALUE - ns) * 3,
+				   game->name, ns, t->accent, GFX_OPAQUE);
 		}
 	}
 

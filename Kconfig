@@ -91,7 +91,17 @@ config NEXUS_ANIMATIONS
 
 config NEXUS_UI_REFRESH_FAST_MS
 	int "Fast (game / animation) UI period, ms"
-	default 33
+	default 16
+	help
+	  The coalesce window a FAST screen repaints on, and therefore the hard
+	  ceiling on every game's frame rate - a game may tick as often as it
+	  likes, but nothing reaches the panel more than once per period.
+
+	  It was 33 (30 fps) from when the panel ran at 8 MHz and a full frame
+	  cost 115 ms, where asking for more would only have queued work that
+	  could never land. On SPIM3 a game's dirty band is under 10 ms, so 16
+	  is both achievable and what makes motion look continuous rather than
+	  stepped.
 
 config NEXUS_UI_REFRESH_NORMAL_MS
 	int "Normal (status) UI period, ms"
@@ -268,6 +278,106 @@ config NEXUS_SNAKE
 	  cell indices plus an occupancy grid, so growing is O(1) and the
 	  self-collision test is one array read.
 
+config NEXUS_PACMAN
+	bool "Maze chase"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  A 13x10 maze, dots, power pellets and three chasers. About 170 bytes
+	  of RAM: the maze is one byte per cell and every actor is a row, a
+	  column and a direction.
+
+	  The level is stored as text and decoded at round start, so editing it
+	  means editing a picture rather than counting bits.
+
+config NEXUS_JUMPER
+	bool "Jumper - single-screen platformer"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  A 16x12 screen of platforms, coins, patrolling enemies and a flag.
+	  About 90 bytes of RAM: the level is text in flash and only a bit per
+	  coin plus the actors is held.
+
+	  Single-screen on purpose. A scrolling platformer has to repaint every
+	  row on any frame the camera moves, which on this panel is the whole
+	  play area and, once you are running, most frames. Fixing the level to
+	  one screen means only the actors are ever dirty - about a fifth of
+	  the work, permanently.
+
+config NEXUS_JUMPER_TICK_MS
+	int "Jumper physics interval, ms"
+	default 16
+	help
+	  Matched to NEXUS_UI_REFRESH_FAST_MS: there is nothing to gain from
+	  running physics faster than the panel can show it. The gravity and
+	  jump constants are solved for this interval, and the level's gaps
+	  are sized against the resulting arc.
+
+config NEXUS_INVADERS
+	bool "Space Invaders"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  A 8x4 formation that steps in lockstep and drops a row at the wall.
+	  About 70 bytes: the fleet is a bitmask per row, so the whole board is
+	  four uint16_t and one position.
+
+	  The fleet speeds up as it thins because there are fewer aliens to
+	  step, not because a difficulty variable ramps.
+
+config NEXUS_INVADERS_TICK_MS
+	int "Invaders simulation interval, ms"
+	default 16
+
+config NEXUS_PONG
+	bool "Pong"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  Two paddles and a ball, about 30 bytes and no board at all. The
+	  cheapest game here to draw, and the opponent is deliberately
+	  beatable - a paddle that tracks the ball exactly never loses.
+
+config NEXUS_PONG_TICK_MS
+	int "Pong simulation interval, ms"
+	default 16
+
+config NEXUS_PONG_BALL_SPEED
+	int "Pong ball speed, hundredths of a pixel per tick"
+	default 640
+	help
+	  Hundredths, not whole pixels: at 8.8 fixed point the useful range is
+	  well under one pixel of granularity, and an integer knob would only
+	  offer sedate, brisk and unplayable.
+
+config NEXUS_PONG_PADDLE_STEP
+	int "Pong paddle travel per key repeat, px"
+	default 22
+	help
+	  A key repeat is CONFIG_NEXUS_ACTION_REPEAT_MS apart, so this is the
+	  paddle's real top speed: it has to be worth roughly what the ball
+	  does in the same time, or the ball simply cannot be reached.
+
+config NEXUS_PACMAN_TICK_MS
+	int "Maze chase step interval, ms"
+	default 150
+	depends on NEXUS_PACMAN
+	help
+	  Lower is faster. Movement is cell to cell, so this is also how far
+	  you travel per second: 150 ms at 12px cells is 80 px/s.
+
+	  Settings > SPEED scales it at runtime the same way it scales Snake.
+
+config NEXUS_PACMAN_FRIGHT_TICKS
+	int "Ticks the chasers stay edible after a power pellet"
+	default 40
+	depends on NEXUS_PACMAN
+	help
+	  40 ticks is about six seconds at the default interval - long enough
+	  to cross the maze and take one, short enough that a pellet is worth
+	  saving. The chasers flash for the last eight.
+
 config NEXUS_SNAKE_WRAP
 	bool "Snake wraps at the edges instead of dying (power-on default)"
 	default y
@@ -383,8 +493,8 @@ config NEXUS_ANTI_IDLE_STATUS
 	bool "Show a mouse-jiggler indicator on the dashboard"
 	default n
 	help
-	  Subscribes to zmk_anti_idle_state and lights a cursor icon on the
-	  LINK card while the jiggler is on.
+	  Subscribes to zmk_anti_idle_state and lights a dot in the top right
+	  of the brand plate while the jiggler is on.
 
 	  Off by default because the behavior that raises that event is not
 	  part of NEXUS - it comes from the snake-module ZMK module. Enable

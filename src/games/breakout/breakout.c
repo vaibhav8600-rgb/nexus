@@ -83,7 +83,9 @@ typedef int32_t fix_t;
 #define HUD_Y 20
 #define HUD_H 22
 
-#define BALL_R 3
+/* 5, not 3. A 6px ball was the smallest moving thing in any game here and
+ * the first to disappear at any distance; 10px still clears the paddle. */
+#define BALL_R 5
 
 /*
  * Speed and tick rate come from Kconfig so they can be tuned from a config
@@ -104,7 +106,7 @@ typedef int32_t fix_t;
  * broken game. Velocity also scales the OPPOSITE way to Snake's interval for
  * the same word "faster", which is why the two expressions do not match.
  */
-#define BALL_SPEED (BALL_SPEED_BASE * (2 + nexus_game_speed()) / 5)
+#define BALL_SPEED ball_speed()
 
 #define TICK_MS CONFIG_NEXUS_BREAKOUT_TICK_MS
 #define LIVES 3
@@ -117,11 +119,34 @@ struct breakout {
 	int16_t paddle_x; /* left edge, whole pixels - no fraction needed */
 
 	uint32_t score;
+	uint8_t level;
 	uint8_t lives;
 	bool launched;
 };
 
 static struct breakout g_b;
+
+/*
+ * ... and clamped to under one brick row.
+ *
+ * hit_bricks() tests the ball's CENTRE against a single cell, so a tick
+ * longer than BRICK_H steps clean through a brick without ever being inside
+ * it - the ball crosses the wall and nothing happens, which reads as the game
+ * being broken rather than as being fast. At LUDICROUS on a late board the
+ * unclamped value is 11.2 px against a 9 px row, so this is not theoretical.
+ *
+ * ponytail: clamped rather than swept. If the ball ever needs to go faster
+ * than a brick row, hit_bricks() has to test the segment from the previous
+ * centre, not the new one.
+ */
+static inline fix_t ball_speed(void)
+{
+	fix_t v = BALL_SPEED_BASE * (2 + nexus_game_speed()) / 5 *
+		  (fix_t)nexus_game_level_pct(g_b.level) / 100;
+	const fix_t cap = TO_FIX(BRICK_H - 1);
+
+	return v > cap ? cap : v;
+}
 static enum nexus_game_state g_state;
 static const char *g_over_title;
 static const char *g_over_hint;
@@ -159,16 +184,37 @@ static void reset_ball(void)
 	g_b.vy = -BALL_SPEED;
 }
 
-static void end_round(bool won)
+/*
+ * Clearing the wall is no longer the end of the game - it is the end of a
+ * board. The score, the lives and the level carry; the wall comes back and
+ * the ball is faster, because BALL_SPEED reads the level.
+ *
+ * Losing the last life is still the only ending, which is what makes the
+ * level worth printing: it is how far you got, not whether you finished.
+ */
+static void end_round(void)
 {
 	g_state = NEXUS_GAME_OVER;
 	k_work_cancel_delayable(&g_tick);
 	nexus_game_submit_score(&nexus_game_breakout, g_b.score);
 
-	g_over_title = won ? "CLEARED" : "GAME OVER";
+	g_over_title = "GAME OVER";
 	g_over_hint = "ACTION=RESTART";
 	g_over_hint2 = "HOLD=EXIT";
-	nexus_sound_play(won ? NEXUS_SOUND_TETRIS_TETRIS : NEXUS_SOUND_GAME_OVER);
+	nexus_sound_play(NEXUS_SOUND_GAME_OVER);
+	nexus_screen_invalidate();
+}
+
+static void next_board(void)
+{
+	if (g_b.level < 255) {
+		g_b.level++;
+	}
+	for (int r = 0; r < BRICK_ROWS; r++) {
+		g_b.bricks[r] = (uint8_t)((1u << BRICK_COLS) - 1u);
+	}
+	reset_ball();
+	nexus_sound_play(NEXUS_SOUND_TETRIS_LEVEL);
 	nexus_screen_invalidate();
 }
 
@@ -238,7 +284,7 @@ static void step(void)
 	py = TO_PX(g_b.by);
 
 	if (hit_bricks(px, py) && !bricks_left()) {
-		end_round(true);
+		next_board();
 		return;
 	}
 
@@ -278,7 +324,7 @@ static void step(void)
 	/* Missed. */
 	if (py - BALL_R > FIELD_B) {
 		if (--g_b.lives == 0) {
-			end_round(false);
+			end_round();
 			return;
 		}
 		nexus_sound_play(NEXUS_SOUND_BACK);
@@ -322,10 +368,12 @@ static void breakout_draw(void)
 			 gfx_utoa(g_b.score, buf, sizeof(buf), 0),
 			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
 
+		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_b.level);
+
 		/* Lives as pips, not a number: you glance at them mid-rally. */
 		for (int i = 0; i < g_b.lives; i++) {
-			gfx_disc(GFX_W - NEXUS_PAD - 6 - i * 12, 30, 4,
-				 t->accent, GFX_OPAQUE);
+			gfx_disc(lx - 12 - i * 12, 30, 4, t->accent,
+				 GFX_OPAQUE);
 		}
 	}
 
@@ -381,6 +429,7 @@ static void new_round(void)
 	}
 	g_b.paddle_x = FIELD_X + (FIELD_W - PADDLE_W) / 2;
 	g_b.lives = LIVES;
+	g_b.level = 1;
 	g_b.score = 0;
 	reset_ball();
 

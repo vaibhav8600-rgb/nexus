@@ -86,6 +86,25 @@ enum nexus_game_state nexus_game_state(void);
 #define NEXUS_GAME_SPEED_DEFAULT 3
 
 uint8_t nexus_game_speed(void);
+
+/**
+ * How much harder level @p level is than level 1, as a percentage.
+ *
+ * 100 at level 1, +12 per level after it, capped at 200. Two things make the
+ * cap non-negotiable: the tick can never go below
+ * CONFIG_NEXUS_UI_REFRESH_FAST_MS - the panel simply will not repaint faster -
+ * and a velocity that outruns half the paddle tunnels straight through it.
+ * A level that cannot be survived is not difficulty, it is an ending with
+ * extra steps, so the curve flattens at level 9 and the boards themselves get
+ * harder after that.
+ *
+ * One helper for both kinds of clock, because a percentage divides an
+ * interval and multiplies a velocity - which is the whole reason games here
+ * do not share a "speed" number.
+ *
+ *     interval = base * 100 / pct;    velocity = base * pct / 100;
+ */
+uint16_t nexus_game_level_pct(uint8_t level);
 void nexus_game_speed_set(uint8_t speed);
 /** Human label for the current setting, for the Settings screen. */
 const char *nexus_game_speed_name(void);

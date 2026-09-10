@@ -6,7 +6,7 @@ Action button from Home opens the Game Center. Left/right pick a game, the
 button launches it.
 
 One button cannot play any of these, so movement comes from the keyboard. The
-same six bindings drive all three games -- the game never sees a keycode, only
+same six bindings drive every game -- the game never sees a keycode, only
 a `NEXUS_ACTION_*`, exactly the value the physical button would have produced
 (Section 42).
 
@@ -146,8 +146,14 @@ Game Center can legitimately be built with every game turned off.
   `uint8_t[22][10]` and the compositor paints straight from it, so the whole
   game is about 220 bytes. Reach for a canvas only when you can say why the
   band compositor cannot do the job.
-- **No copyrighted assets.** Original graphics and original names only. A maze
-  chase game is fine; a Pac-Man clone with Pac-Man's artwork is not (Section 52).
+- **No copyrighted assets.** Original graphics only - every sprite in this
+  repo is drawn with compositor primitives, none is traced or imported.
+
+  Names are the owner's call and the maze chase ships as `PAC-MAN`, which is a
+  Bandai Namco trademark. Mechanics are not copyrightable and the artwork here
+  is original, so the name is the only exposure; if this repo ever needs to be
+  uncontroversial, that string in `pacman.c` and its Kconfig prompt are the
+  whole change.
 
 ### Distinguishing pieces without colour
 
@@ -157,13 +163,17 @@ pattern all carry the identity, so the board reads correctly in monochrome or
 to a colourblind player -- colour is never the only signal (Section 106).
 Worth copying.
 
-## The three games
+## The seven games
 
 | | board | RAM | how it moves |
 | --- | --- | --- | --- |
 | Tetris | 10x20 | ~245 B | integer grid, gravity on its own clock |
 | Snake | 16x16 | ~768 B | integer grid, ring of cells |
 | Breakout | free | ~24 B | 8.8 fixed point |
+| Pac-Man | 13x10 | ~170 B | integer grid, greedy chasers |
+| Jumper | 16x12 | ~90 B | 8.8 fixed point, single screen |
+| Invaders | 8x4 | ~70 B | one formation position, bitmask per row |
+| Pong | free | ~30 B | 8.8 fixed point |
 
 Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
 four faint slivers and the apple a speck -- on a panel you look at from across
@@ -171,10 +181,146 @@ a desk that is not detail, it is just small. The grid and the ring are both
 O(cells), so the larger cells also cost a third of the RAM: 768 bytes rather
 than 1,728.
 
-All three go through `struct nexus_game`, so the Game Center pages between
+All seven go through `struct nexus_game`, so the Game Center pages between
 them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
-of them off with `CONFIG_NEXUS_TETRIS` / `_SNAKE` / `_BREAKOUT` removes it from
-the build entirely.
+off with its `CONFIG_NEXUS_*` removes it from the build entirely.
+
+### They all have levels now
+
+Every game shows an **`L`** badge in its HUD, and every game can reach `L2`.
+What advances it differs, because a level has to mean something in the game it
+is in:
+
+| | a level is | what changes |
+| --- | --- | --- |
+| Tetris | ten lines | its own gravity table, unchanged - it had levels first |
+| Snake | five apples | the step interval it was already dropping |
+| Breakout | the wall cleared | the wall comes back, the ball is faster |
+| Pac-Man | the maze cleared | the maze refills, the chasers step sooner |
+| Jumper | the flag reached | the **next of three boards**, then it wraps |
+| Invaders | the fleet cleared | a new fleet, one row lower, marching sooner |
+| Pong | every point played | the ball, whoever won the point |
+
+Clearing the board is no longer an ending. Breakout, Pac-Man, Jumper and
+Invaders used to stop and say `CLEARED`, which made winning and losing the
+same event - the board froze and the score stopped. Now the only ending is
+running out of lives, which is what makes the level worth printing: it is how
+far you got.
+
+`nexus_game_level_pct()` is the shared curve: **100% at level 1, +12% a level,
+capped at 200%**. One helper for both kinds of clock, because a percentage
+divides an interval and multiplies a velocity - and that is the whole reason
+these games do not share a "speed" number.
+
+The cap is not politeness. The tick can never go below
+`CONFIG_NEXUS_UI_REFRESH_FAST_MS` because the panel will not repaint faster,
+and two of the games collide by testing a point rather than a swept segment:
+
+- Breakout's `hit_bricks()` tests the ball's **centre** against one cell, so a
+  tick longer than the 9px brick row steps straight through a brick without
+  ever being inside it. Unclamped, LUDICROUS on a late board is 11.2px.
+- Pong's paddle test is the same shape against an 18px window, and unclamped
+  reaches 20.5px.
+
+Both clamp to their own geometry -- `TO_FIX(BRICK_H - 1)` and
+`TO_FIX(PAD_W + BALL_R - 1)` -- rather than to a number that happens to work,
+and the test derives the same bound from the Kconfig defaults.
+
+Snake is the one game that does not use the shared curve: it had its own
+speed-step in milliseconds long before there was a level, so its badge is
+simply that step given a number. Two curves stacked on one game is how a
+difficulty setting stops meaning anything.
+
+### They all look like one product
+
+Anything solid is drawn through `nexus_draw_block()`, anything round through
+`nexus_draw_orb()`, and both agree that the light comes from the top-left: a
+contact shadow, light pooling down from the top edge, a lit top-left bevel and
+a shaded bottom-right one. Before that, each game shaded its own pieces its own
+way, which is what makes a collection look assembled rather than designed.
+
+A square block is drawn with radius 0 on purpose where pieces tile - a rounded
+one leaves a gap against its neighbour, so a ledge reads as a row of separate
+lozenges instead of one surface.
+
+### Jumper, and why it is single-screen
+
+It replaces a side-scrolling platformer that was removed after four rounds of
+tuning failed to make it feel good, and the reason is structural rather than a
+matter of constants.
+
+A scrolling platformer must repaint **every** row on any frame the camera
+moves, because every row's contents shift. On this panel that is the whole play
+area, and once you are running the camera moves on most frames - so the cost of
+the worst frame becomes the cost of the normal frame. No physics tuning fixes
+that.
+
+Fix the level to one screen and the background never changes. Only the player,
+the enemies and a collected coin are ever dirty, which is about three tile rows
+- a fifth of the work, on every frame, permanently. The game got smooth by
+having less to draw rather than by drawing faster.
+
+Grounded means "is there floor under me", probed one pixel down, not "did I
+collide going down this tick". The latched version alternates true and false
+every tick while you stand still, because landing zeroes the vertical velocity
+and the next tick's fraction of a pixel moves nothing - which silently ate half
+the jump presses in the game this replaced. A jump pressed just before touching
+down is buffered rather than dropped.
+
+### Invaders
+
+The fleet is a **bitmask per row** - eight columns in a `uint16_t` - and it has
+one position and one direction, with every alien drawn at an offset from it. A
+formation of 32 therefore costs about the same to simulate as a single sprite.
+
+It turns on the **live** extent rather than its nominal width: clearing the
+left column has to let it slide further left, and testing the origin instead
+makes it turn early against a wall that is not there.
+
+Speed rises as the fleet thins because there are fewer aliens to step, which is
+the arc of the original - nothing ramps a difficulty variable.
+
+`SELECT` fires rather than pauses while a round is running. A shooter whose
+main button pauses is unplayable on the dongle's own button, and pause is still
+a hold away.
+
+Clearing the fleet starts the next wave rather than ending the round: same
+formation, one row lower, marching sooner. The drop caps at six waves, because
+past that the fleet starts level with the cannon, which is not difficulty but
+an instant loss.
+
+**Hold to fire.** The original allowed one shot at a time, which is what made a
+miss cost you something - but that rule was written for a cabinet with its own
+fire button. Here the key repeats every `CONFIG_NEXUS_ACTION_REPEAT_MS`, and
+under the old rule holding it gave you a shot, a long wait while it flew the
+length of the field, then another: the gun felt broken rather than strict. Now
+it fires every four ticks with up to three in the air. The cap is what keeps it
+a game - three in flight is a stream you still have to aim.
+
+### Pong
+
+The cheapest game here: two paddles, a ball, no board. Where the ball lands on
+the paddle steers it, exactly as in Breakout - without that one line the angle
+never changes and a rally is a metronome neither player can influence.
+
+The opponent is deliberately beatable. It moves at **two thirds of the ball's
+own speed** and only reacts once the ball is coming at it; a paddle that tracks
+exactly never loses, and a game you cannot win is a screensaver.
+
+That fraction is the whole difficulty curve, and it used to be a constant 4 px
+per tick - which was *faster* than the ball's steepest return. The opponent
+could not be beaten by aiming, only outlasted, so points ran until someone got
+bored. The game read as slow because the rally never ended, not because the
+ball was gentle. It is a fraction of `speed()` now, so it keeps tracking the
+ball if you move the knob.
+
+The ball crosses the court in a little over half a second, and the paddle's
+travel per key repeat is sized against that - a ball you cannot reach is not
+difficulty, it is a bug.
+
+Pong has no board to clear, so its level is the point you are on: every point
+played speeds up the next ball, whoever won it. A match to seven is therefore a
+short difficulty curve rather than seven identical rallies.
 
 ### Snake
 
@@ -242,11 +388,50 @@ fixed `PADDLE_H + 2`. That margin was enough at the old top speed and is not at
 LUDICROUS: a ball moving 5.6px a tick steps straight over a 7px window, and the
 life goes to a collision test that never ran.
 
+### Pac-Man
+
+A 13x10 maze at 18px cells, 61 dots, four power pellets, three chasers and a
+wrapping tunnel row.
+
+The board started at 19x15 of 12px and was rebuilt bigger after the first
+hardware test: the finer version looked correct in a render and read as a
+texture rather than a game from the distance a dongle is actually looked at.
+Fewer, larger cells cost maze complexity and buy pieces you can see - the
+same trade Snake made going from 24x24 to 16x16.
+
+**The maze is stored as text** and decoded once at round start:
+
+```c
+"####.###.#.###.####",
+".........G.........",      /* the tunnel - the only row that wraps */
+"####.###.#.###.####",
+```
+
+That costs 130 bytes of flash for the layout and buys a level you can read and
+edit without counting bits. It also makes the level testable:
+`tests/games/test_pacman_maze.py` flood-fills it from the spawn and fails if a
+single dot is unreachable -- a walled-in dot makes the level uncompletable, and
+the only symptom on hardware is eating all the others and nothing happening.
+
+**The chasers are greedy with one rule: never reverse.** That single constraint
+is what turns "walks at you" into something that commits to a route and can be
+led away from a corridor; without it a chaser oscillates on the spot every time
+you cross its axis. Frightened mode is the *same* search with the sign flipped,
+not a second pathfinder.
+
+**Collisions are tested twice**, before and after the chasers move. Testing once
+lets a chaser and the player swap cells in a single tick and pass straight
+through each other, which reads as broken hit detection rather than a near miss.
+
+A turn is a *request*: it is stored and taken at the next junction that allows
+it, so you can press early into a corner rather than having to time it. That is
+also why turning makes no sound - the press often does not become a move.
+
 ## Difficulty, without reflashing
 
 **Settings -> SPEED** cycles SLOW / EASY / NORMAL / FAST / INSANE / LUDICROUS
-and persists with sound, theme and brightness. It applies to all three games
-and takes effect on the next round.
+and persists with sound, theme and brightness. It applies to every game
+with a clock, and takes effect on the next round.
 
 That is the knob to reach for. "The ball is too slow" is a judgement you make
 while playing, and one you have to reflash to act on is one you turn once and
@@ -276,6 +461,13 @@ the Settings knob moves around it.
 | `NEXUS_BREAKOUT_BALL_SPEED` | 350 | hundredths of a pixel per tick |
 | `NEXUS_BREAKOUT_TICK_MS` | 28 | simulation interval |
 | `NEXUS_BREAKOUT_PADDLE_STEP` | 24 | pixels the paddle travels per key repeat |
+| `NEXUS_PACMAN_TICK_MS` | 150 | maze step interval - **lower is faster** |
+| `NEXUS_PACMAN_FRIGHT_TICKS` | 40 | ticks a power pellet lasts, ~6 s |
+| `NEXUS_JUMPER_TICK_MS` | 16 | platformer physics - **the jump is tuned to it** |
+| `NEXUS_INVADERS_TICK_MS` | 16 | fleet and shot simulation |
+| `NEXUS_PONG_TICK_MS` | 16 | ball simulation |
+| `NEXUS_PONG_BALL_SPEED` | 320 | hundredths of a pixel per tick |
+| `NEXUS_PONG_PADDLE_STEP` | 14 | paddle travel per key repeat |
 
 Two things worth knowing before turning them:
 
@@ -295,7 +487,7 @@ entirely. And note that `TICK_MS` scales speed as well, since the ball moves
 `I` is bound to `NEXUS_ACT_ROTATE` on the game layer because Tetris needs
 rotation there. Snake and Breakout have nothing to rotate, so both accept
 `ROTATE` as their natural top-of-cluster action - up for Snake, launch for
-Breakout. Otherwise `I` would simply be inert in two of the three games, which
+Breakout. Otherwise `I` would simply be inert in most of the games, which
 reads as a broken key rather than as an unused one.
 
 ## Switching games

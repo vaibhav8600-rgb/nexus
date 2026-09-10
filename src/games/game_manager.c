@@ -26,6 +26,18 @@ extern const struct nexus_game nexus_game_snake;
 #if IS_ENABLED(CONFIG_NEXUS_BREAKOUT)
 extern const struct nexus_game nexus_game_breakout;
 #endif
+#if IS_ENABLED(CONFIG_NEXUS_PACMAN)
+extern const struct nexus_game nexus_game_pacman;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_JUMPER)
+extern const struct nexus_game nexus_game_jumper;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_INVADERS)
+extern const struct nexus_game nexus_game_invaders;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_PONG)
+extern const struct nexus_game nexus_game_pong;
+#endif
 
 static const struct nexus_game *const games[] = {
 #if IS_ENABLED(CONFIG_NEXUS_TETRIS)
@@ -36,6 +48,18 @@ static const struct nexus_game *const games[] = {
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_BREAKOUT)
 	&nexus_game_breakout,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_PACMAN)
+	&nexus_game_pacman,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_JUMPER)
+	&nexus_game_jumper,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_INVADERS)
+	&nexus_game_invaders,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_PONG)
+	&nexus_game_pong,
 #endif
 	/* Terminator. A zero-length array is not valid C, and the Game Center
 	 * can legitimately be built with every game turned off. */
@@ -65,6 +89,18 @@ void nexus_game_speed_set(uint8_t speed)
 		speed = NEXUS_GAME_SPEED_MAX;
 	}
 	g_speed = speed;
+}
+
+uint16_t nexus_game_level_pct(uint8_t level)
+{
+	uint16_t pct;
+
+	if (level < 1) {
+		level = 1;
+	}
+	pct = (uint16_t)(100U + (uint16_t)(level - 1U) * 12U);
+
+	return pct > 200U ? 200U : pct;
 }
 
 const char *nexus_game_speed_name(void)

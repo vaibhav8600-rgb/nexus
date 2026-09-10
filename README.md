@@ -9,7 +9,7 @@ already have.
 </p>
 
 ```
-  POWER ON  →  SPLASH  →  HOME  ─tap─►  GAME CENTER  ─tap─►  TETRIS · SNAKE · BREAKOUT
+  POWER ON  →  SPLASH  →  HOME  ─tap─►  GAME CENTER  ─tap─►  EIGHT GAMES
                             │
                             └─hold─►  SETTINGS · DIAGNOSTICS · ABOUT
 ```
@@ -25,9 +25,12 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 
 - **Live dashboard** -- layer, WPM, both halves' batteries, modifiers, caps
   lock, USB/BLE endpoint and profile.
-- **Game Center** with three playable games -- Tetris, Snake and Breakout.
-  Real rules, real scoring, persistent high scores, and a difficulty knob in
-  Settings so you never reflash to change how a game feels.
+- **Game Center** with seven playable games -- Tetris, Snake, Breakout,
+  Pac-Man, Jumper, Space Invaders and Pong. All drawn through one
+  lit-from-the-top-left vocabulary, so they look like one product.
+  Real rules, real scoring, levels that actually change the board, persistent
+  high scores, and a difficulty knob in Settings so you never reflash to
+  change how a game feels.
   ([watch them play](docs/ui.md#games))
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
   nRF52840 to blur a framebuffer.
@@ -113,7 +116,7 @@ buzzer and two tactile switches.
 | [ui.md](docs/ui.md) | Every screen and symbol, the themes, what the button does |
 | [splash.md](docs/splash.md) | Custom artwork from your own repo |
 | [themes.md](docs/themes.md) | The seven palettes, and how the glass is faked |
-| [games.md](docs/games.md) | The three games, difficulty, and adding your own |
+| [games.md](docs/games.md) | The seven games, difficulty, and adding your own |
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |
@@ -159,7 +162,7 @@ v1.0.0, **running on hardware** -- an nRF52840 dongle driving a 240x240
 ST7789, paired to a split Sofle. Built against ZMK `main` as of 2026-09.
 
 Exercised on the real thing, not just in CI: the splash (drawn badge and a
-config-repo PNG), the dashboard, all three games, Settings and its persistence
+config-repo PNG), the dashboard, the games, Settings and its persistence
 across reflashes, the sound engine, split half connect and disconnect, BLE to
 phones, laptops and a TV, USB, and ZMK Studio over the USB transport.
 

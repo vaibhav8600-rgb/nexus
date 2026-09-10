@@ -102,6 +102,34 @@ void nexus_draw_label(int x, int y, const char *text)
 		 GFX_OPAQUE);
 }
 
+/*
+ * The level badge.
+ *
+ * A caption "L" and the number at body size, on the accent, right-aligned.
+ * Small on purpose: it is a thing you glance at between rounds, not something
+ * you track while playing, and the games it sits in have already spent their
+ * HUD on the score.
+ */
+int nexus_draw_level(int right, int y, uint8_t level)
+{
+	const struct nexus_theme *t = nexus_theme();
+	char buf[8];
+	const char *num = gfx_utoa(level, buf, sizeof(buf), 0);
+	int lw = gfx_text_w("L", NEXUS_TXT_BODY);
+	int x = right - lw - gfx_text_w(num, NEXUS_TXT_BODY);
+
+	/*
+	 * One size, two colours. A caption-sized L beside a body numeral has
+	 * to be baseline-aligned to not look dropped, and at 7px against 14px
+	 * it still reads as a smudge; the same size in the caption colour says
+	 * "label" just as clearly and takes one less measurement to place.
+	 */
+	gfx_text(x, y, "L", NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
+	gfx_text(x + lw, y, num, NEXUS_TXT_BODY, t->accent, GFX_OPAQUE);
+
+	return x;
+}
+
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill)
 {
 	const struct nexus_theme *t = nexus_theme();
@@ -125,6 +153,77 @@ void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill)
 	}
 }
 
+/* ---- the shared solid --------------------------------------------------- */
+
+/*
+ * One light source, top-left, for the whole product.
+ *
+ * Every game used to shade its own pieces its own way - Tetris bevelled,
+ * Snake had a single highlight line, the maze had nothing - and five games
+ * lit five different ways is what makes a collection look assembled rather
+ * than designed. These two functions are the entire vocabulary now: anything
+ * solid and square goes through nexus_draw_block(), anything solid and round
+ * through nexus_draw_orb(), and they agree about where the light is.
+ *
+ * The cost is four extra ops per piece over a flat rect. At the sizes these
+ * games draw - a 16px cell, a 10px ball - that is nothing next to the blend
+ * the fill itself already does.
+ */
+#define SHADOW NEXUS_C(0x000000u)
+#define SPECULAR NEXUS_C(0xFFFFFFu)
+
+void nexus_draw_block(int x, int y, int w, int h, int r, gfx_color c)
+{
+	if (w <= 0 || h <= 0) {
+		return;
+	}
+
+	/* Contact shadow. This is what puts the piece ON the board instead of
+	 * in it, and it is the single cheapest thing that reads as depth. */
+	gfx_round_rect(x + 2, y + 2, w, h, r, SHADOW, 80);
+
+	gfx_round_rect(x, y, w, h, r, c, GFX_OPAQUE);
+
+	/* Light pooling down from the top edge, three steps. A real vertical
+	 * gradient would mean a per-row blend; three bands are visually the
+	 * same thing at this size for a fraction of the work. */
+	int inset = r > 1 ? r : 1;
+
+	for (int i = 0; i < 3 && i < h / 2; i++) {
+		gfx_rect(x + inset, y + 1 + i, w - 2 * inset, 1, SPECULAR,
+			 (uint8_t)(64 - i * 18));
+	}
+
+	/* The bevel: lit top and left, shaded bottom and right. */
+	gfx_hline(x + inset, y, w - 2 * inset, SPECULAR, 120);
+	gfx_vline(x, y + inset, h - 2 * inset, SPECULAR, 80);
+	gfx_hline(x + inset, y + h - 1, w - 2 * inset, SHADOW, 120);
+	gfx_vline(x + w - 1, y + inset, h - 2 * inset, SHADOW, 100);
+}
+
+void nexus_draw_orb(int cx, int cy, int r, gfx_color c)
+{
+	if (r <= 0) {
+		return;
+	}
+
+	gfx_disc(cx + 1, cy + 2, r, SHADOW, 80);
+	gfx_disc(cx, cy, r, c, GFX_OPAQUE);
+
+	/*
+	 * Specular up and to the left, matching the block. One disc at a third
+	 * the radius is enough to turn a flat circle into a sphere - the eye
+	 * needs the highlight to be off-centre far more than it needs it to be
+	 * shaped correctly.
+	 */
+	if (r >= 3) {
+		gfx_disc(cx - r / 3, cy - r / 3, r / 3, SPECULAR, 150);
+	}
+	/* A darker rim on the far side finishes the roundness. */
+	if (r >= 4) {
+		gfx_disc(cx + r / 3, cy + r / 3, r / 3, SHADOW, 45);
+	}
+}
 
 int nexus_tracked_w(const char *text, int scale, int track)
 {

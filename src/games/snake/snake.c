@@ -181,6 +181,23 @@ static uint32_t tick_ms(void)
 	return base - step;
 }
 
+/*
+ * Snake's level is not a new rule - it is the speed step it has already been
+ * climbing since the first apple, given a number. tick_ms() drops by
+ * SPEED_STEP_MS every SPEED_EVERY apples; this is that same quotient, so the
+ * badge and the clock can never disagree.
+ *
+ * Which is why Snake does not use nexus_game_level_pct(): it had its own
+ * curve first, in milliseconds rather than percent, and two curves stacked on
+ * one game is how a difficulty setting stops meaning anything.
+ */
+static uint8_t level(void)
+{
+	uint16_t n = (uint16_t)(1U + g_s.eaten / SPEED_EVERY);
+
+	return n > 255U ? 255U : (uint8_t)n;
+}
+
 static void arm_tick(void)
 {
 	k_work_reschedule_for_queue(nexus_workq(), &g_tick, K_MSEC(tick_ms()));
@@ -326,8 +343,10 @@ static void snake_draw(void)
 
 		/* Wrap on or off is a setting now, and which one you are
 		 * playing changes the whole game, so the board says. */
-		gfx_text(GFX_W - NEXUS_PAD - gfx_text_w("WALLS", NEXUS_TXT_CAPTION),
-			 26, nexus_snake_wrap() ? "WRAP" : "WALLS",
+		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, level());
+
+		gfx_text(lx - 8 - gfx_text_w("WALLS", NEXUS_TXT_CAPTION), 26,
+			 nexus_snake_wrap() ? "WRAP" : "WALLS",
 			 NEXUS_TXT_CAPTION, t->caption, GFX_OPAQUE);
 	}
 

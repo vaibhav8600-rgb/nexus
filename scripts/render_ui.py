@@ -352,6 +352,15 @@ class UI:
     def label(self, x, y, s):
         self.cv.text(x, y, s, LABEL, self.t['caption'])
 
+    def level(self, right, y, n):
+        """Mirrors nexus_draw_level(): L in caption, number in accent."""
+        num = str(n)
+        lw = text_w('L', BODY)
+        x = right - lw - text_w(num, BODY)
+        self.cv.text(x, y, 'L', BODY, self.t['caption'])
+        self.cv.text(x + lw, y, num, BODY, self.t['accent'])
+        return x
+
     def meter(self, x, y, w, h, pct, fill):
         r = h // 2
         self.cv.round_rect(x, y, w, h, r, self.t['track'], 190)
@@ -360,6 +369,31 @@ class UI:
             fw = h
         if fw > 0:
             self.cv.round_rect(x, y, fw, h, r, fill)
+
+    def block(self, x, y, w, h, r, c):
+        """nexus_draw_block(): shadow, fill, light pooling, bevel."""
+        cv = self.cv
+        SH, SP = 0x0000, 0xFFFF
+        cv.round_rect(x + 2, y + 2, w, h, r, SH, 80)
+        cv.round_rect(x, y, w, h, r, c)
+        inset = r if r > 1 else 1
+        for i in range(min(3, h // 2)):
+            cv.rect(x + inset, y + 1 + i, w - 2 * inset, 1, SP, 64 - i * 18)
+        cv.hline(x + inset, y, w - 2 * inset, SP, 120)
+        cv.vline(x, y + inset, h - 2 * inset, SP, 80)
+        cv.hline(x + inset, y + h - 1, w - 2 * inset, SH, 120)
+        cv.vline(x + w - 1, y + inset, h - 2 * inset, SH, 100)
+
+    def orb(self, cx, cy, r, c):
+        """nexus_draw_orb(): shadow, fill, specular up-left, dark far rim."""
+        cv = self.cv
+        SH, SP = 0x0000, 0xFFFF
+        cv.disc(cx + 1, cy + 2, r, SH, 80)
+        cv.disc(cx, cy, r, c)
+        if r >= 3:
+            cv.disc(cx - r // 3, cy - r // 3, r // 3, SP, 150)
+        if r >= 4:
+            cv.disc(cx + r // 3, cy + r // 3, r // 3, SH, 45)
 
     def tracked(self, cx, y, s, scale, track, c):
         x = cx - tracked_w(s, scale, track) // 2
@@ -728,7 +762,8 @@ def snake(cv, t, body=None, food=(3, 12), score='120'):
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
     cv.text(PAD + 40, 24, score, BODY, t['value'])
-    cv.text(W - PAD - text_w('WRAP', CAPTION), 26, 'WRAP', CAPTION,
+    lx = u.level(W - PAD, 24, 4)
+    cv.text(lx - 8 - text_w('WRAP', CAPTION), 26, 'WRAP', CAPTION,
             t['caption'])
 
     cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
@@ -770,8 +805,9 @@ def breakout(cv, t, ball=None, paddle=None, gone=None, score='340', lives=3):
     u.label(PAD, 8, 'BREAKOUT')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 3)
     for i in range(lives):
-        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['accent'])
+        cv.disc(lx - 12 - i * 12, 30, 4, t['accent'])
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
@@ -793,6 +829,77 @@ def breakout(cv, t, ball=None, paddle=None, gone=None, score='340', lives=3):
                   K['PADDLE_H'] // 2, t['value'])
     bx, by = (128, 120) if ball is None else ball
     cv.disc(K['FIELD_X'] + bx, K['FIELD_Y'] + by, K['BALL_R'], t['warning'])
+
+
+# ----------------------------------------------------------------- pacman
+PAC = defines(read('src/games/pacman/pacman.c'),
+              ['COLS', 'ROWS', 'CELL', 'WELL_W', 'WELL_H', 'WELL_X', 'WELL_Y',
+               'FRAME_X', 'FRAME_Y', 'FRAME_W', 'FRAME_H'])
+PAC_MAZE = re.findall(
+    r'"([^"]*)"',
+    read('src/games/pacman/pacman.c').split('maze_src[ROWS] = {')[1]
+    .split('\n};')[0])
+
+
+def pacman(cv, t, pac=(8, 6), pdir=1, ghosts=((4, 6), (3, 4), (6, 8)),
+           eaten=(), score='340', lives=3, fright=False, anim=0):
+    u, K = UI(cv, t), PAC
+    u.ground()
+    u.label(PAD, 8, 'PAC-MAN')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
+    cv.text(PAD + 40, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 2)
+    for i in range(lives):
+        cv.disc(lx - 12 - i * 12, 30, 4, t['warning'])
+
+    cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
+                   t['border'], t['border_alpha'])
+    cv.rect(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'], t['track'], 120)
+
+    CELL = K['CELL']
+    for r in range(K['ROWS']):
+        for c in range(K['COLS']):
+            ch = PAC_MAZE[r][c]
+            x = K['WELL_X'] + c * CELL
+            y = K['WELL_Y'] + r * CELL
+            if ch == '#':
+                cv.rect(x, y, CELL, CELL, t['accent'], 70)
+                cv.hline(x, y, CELL, t['edge_hi'], 40)
+            elif (r, c) in eaten:
+                continue
+            elif ch == '.':
+                cv.rect(x + CELL // 2 - 3, y + CELL // 2 - 3, 6, 6,
+                        t['caption'])
+            elif ch == 'o' and not (anim & 2):
+                cv.disc(x + CELL // 2, y + CELL // 2, 5, t['value'])
+
+    for i, (gr, gc) in enumerate(ghosts):
+        x, y = K['WELL_X'] + gc * CELL, K['WELL_Y'] + gr * CELL
+        body = t['accent_alt'] if fright else mix(
+            t['error'], t['accent'], (0, 128, 255)[i % 3])
+        w = h = CELL - 2
+        cv.round_rect(x + 1, y + 1, w, h, w // 2, body)
+        cv.rect(x + 1, y + 1 + h // 2, w, h // 2, body)
+        cv.rect(x + 4, y + 5, 3, 4, 0xFFFF)
+        cv.rect(x + w - 4, y + 5, 3, 4, 0xFFFF)
+
+    # The eater, with its mouth cut back out in the well colour.
+    px_ = K['WELL_X'] + pac[1] * CELL
+    py_ = K['WELL_Y'] + pac[0] * CELL
+    cx, cy, rad = px_ + CELL // 2, py_ + CELL // 2, CELL // 2 - 1
+    cv.disc(cx, cy, rad, t['warning'])
+    if not (anim & 1):
+        for i in range(rad):
+            half = i // 2 + 1
+            if pdir == 1:
+                cv.rect(cx + i, cy - half, 1, half * 2, t['track'], 220)
+            elif pdir == 3:
+                cv.rect(cx - i, cy - half, 1, half * 2, t['track'], 220)
+            elif pdir == 0:
+                cv.rect(cx - half, cy - i, half * 2, 1, t['track'], 220)
+            else:
+                cv.rect(cx - half, cy + i, half * 2, 1, t['track'], 220)
 
 
 # ---------------------------------------------------------------- splash
@@ -837,6 +944,140 @@ def splash(cv, t, lit=-1):
     u.tracked(W // 2, K['BRAND_Y'], 'VAIBHAV TECH', BODY, 2, BRAND_C)
 
 
+# ----------------------------------------------------------------- jumper
+JMP = defines(read('src/games/jumper/jumper.c'),
+              ['TILE', 'COLS', 'ROWS', 'VIEW_Y', 'PLAYER_W', 'PLAYER_H'])
+# The first of the three boards; the doc shot is always level 1.
+JMP_LEVEL = re.findall(
+    r'"([^"]*)"',
+    read('src/games/jumper/jumper.c')
+    .split('stage_map[STAGES][ROWS] = {')[1].split('\n\t},')[0])
+
+
+def jumper(cv, t, player=(7, 2), facing=1, taken=(), dead=(), score='700',
+           lives=3, anim=0):
+    u, K = UI(cv, t), JMP
+    TILE, VY = K['TILE'], K['VIEW_Y']
+    u.ground()
+    u.label(PAD, 8, 'JUMPER')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(PAD, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 2)
+    for i in range(lives):
+        cv.disc(lx - 12 - i * 12, 30, 4, t['error'])
+
+    cv.rect(0, VY, W, K['ROWS'] * TILE, t['track'], 130)
+    for r in range(K['ROWS']):
+        y = VY + r * TILE
+        for c in range(K['COLS']):
+            x = c * TILE
+            ch = JMP_LEVEL[r][c]
+            if ch == '=':
+                u.block(x, y, TILE, TILE, 0,
+                        mix(t['accent'], t['accent_alt'], min(255, r * 20)))
+            elif ch == 'o' and (r, c) not in taken:
+                u.orb(x + TILE // 2, y + TILE // 2, 7, t['warning'])
+            elif ch == 'F':
+                cv.rect(x + TILE // 2 - 2, y, 4, TILE, t['value'])
+                u.block(x + TILE // 2 + 2, y, 12, 10, 2, t['muted'])
+            elif ch == 'E' and (r, c) not in dead:
+                PW, PH = K['PLAYER_W'], K['PLAYER_H']
+                ey = y + TILE - PH
+                u.block(x, ey + 3, PW, PH - 3, 5, t['success'])
+                cv.rect(x + 3, ey + 7, 3, 3, C(0x0A0A12))
+                cv.rect(x + PW - 6, ey + 7, 3, 3, C(0x0A0A12))
+
+    PW, PH = K['PLAYER_W'], K['PLAYER_H']
+    sx = player[1] * TILE
+    sy = VY + player[0] * TILE + TILE - PH
+    u.block(sx, sy, PW, 7, 2, t['error'])
+    u.block(sx + 1, sy + 7, PW - 2, 6, 1, t['warning'])
+    u.block(sx, sy + 13, PW, 4, 1, t['accent_alt'])
+    cv.rect(sx + (PW - 5 if facing > 0 else 3), sy + 8, 3, 3, 0xFFFF)
+
+
+# --------------------------------------------------------------- invaders
+INV = defines(read('src/games/invaders/invaders.c'),
+              ['COLS', 'ROWS', 'ALIEN_W', 'ALIEN_H', 'FIELD_X', 'FIELD_Y',
+               'FIELD_W', 'FIELD_H', 'CANNON_W', 'CANNON_H', 'CANNON_Y'])
+
+
+def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
+             cannon=None, score='430', lives=3, anim=0):
+    u, K = UI(cv, t), INV
+    fx = K['FIELD_X'] + 8 if fx is None else fx
+    fy = K['FIELD_Y'] + 6 if fy is None else fy
+    cannon = (K['FIELD_X'] + (K['FIELD_W'] - K['CANNON_W']) // 2
+              if cannon is None else cannon)
+    u.ground()
+    u.label(PAD, 8, 'INVADERS')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(PAD, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 2)
+    for i in range(lives):
+        cv.disc(lx - 12 - i * 12, 30, 4, t['success'])
+
+    cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
+                   K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
+
+    AW, AH = K['ALIEN_W'], K['ALIEN_H']
+    for r in range(K['ROWS']):
+        for c in range(K['COLS']):
+            if (r, c) in dead:
+                continue
+            x, y = fx + c * (AW + 4), fy + r * (AH + 6)
+            body = mix(t['accent'], t['accent_alt'],
+                       r * 255 // (K['ROWS'] - 1))
+            u.block(x + 3, y, AW - 6, AH - 5, 4, body)
+            cv.rect(x, y + AH - 6, 5, 6, body)
+            cv.rect(x + AW - 5, y + AH - 9, 5, 6, body)
+            cv.rect(x + 7, y + 5, 4, 4, C(0x0A0A12))
+            cv.rect(x + AW - 11, y + 5, 4, 4, C(0x0A0A12))
+
+    # three in the air, which is what holding the fire key looks like
+    for dy in (40, 96, 138):
+        u.block(120, K['CANNON_Y'] - dy, 4, 10, 1, t['warning'])
+    u.block(cannon, K['CANNON_Y'] + 4, K['CANNON_W'], K['CANNON_H'] - 4, 2,
+            t['success'])
+    u.block(cannon + K['CANNON_W'] // 2 - 2, K['CANNON_Y'], 4, 6, 1,
+            t['success'])
+
+
+# ------------------------------------------------------------------- pong
+PNG = defines(read('src/games/pong/pong.c'),
+              ['FIELD_X', 'FIELD_Y', 'FIELD_W', 'FIELD_H', 'PAD_W', 'PAD_H',
+               'PAD_INSET', 'BALL_R', 'HUD_Y'])
+
+
+def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
+    u, K = UI(cv, t), PNG
+    B = K['FIELD_Y'] + K['FIELD_H']
+    you = K['FIELD_Y'] + 70 if you is None else you
+    cpu = K['FIELD_Y'] + 40 if cpu is None else cpu
+    ball = (150, K['FIELD_Y'] + 66) if ball is None else ball
+    u.ground()
+    u.label(PAD, 8, 'PONG')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(W // 2 - 30 - text_w('0', VALUE), K['HUD_Y'], str(sy), VALUE,
+            t['accent'])
+    cv.text(W // 2 + 30, K['HUD_Y'], str(sc), VALUE, t['error'])
+    u.level(W - PAD, K['HUD_Y'] + 4, 3)
+
+    cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
+                   K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
+    cv.rect(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'],
+            t['track'], 120)
+    y = K['FIELD_Y'] + 6
+    while y < B - 4:
+        cv.rect(W // 2 - 1, y, 3, 8, t['border'], 90)
+        y += 14
+    u.block(K['FIELD_X'] + K['PAD_INSET'], you, K['PAD_W'], K['PAD_H'], 3,
+            t['accent'])
+    u.block(K['FIELD_X'] + K['FIELD_W'] - K['PAD_INSET'] - K['PAD_W'], cpu,
+            K['PAD_W'], K['PAD_H'], 3, t['error'])
+    u.orb(ball[0], ball[1], K['BALL_R'], t['warning'])
+
+
 # ------------------------------------------------------------------ main
 SETTINGS_ROWS = [('SOUND', 'ON'), ('BRIGHT', '80%'), ('THEME', 'NEXUS'),
                  ('ANIM', 'ON'), ('SPEED', 'NORMAL'), ('SNAKE WALL', 'OFF'),
@@ -875,6 +1116,10 @@ def main():
         ('tetris', lambda cv: tetris(cv, nx)),
         ('snake', lambda cv: snake(cv, nx)),
         ('breakout', lambda cv: breakout(cv, nx)),
+        ('pacman', lambda cv: pacman(cv, nx)),
+        ('jumper', lambda cv: jumper(cv, nx)),
+        ('invaders', lambda cv: invaders(cv, nx)),
+        ('pong', lambda cv: pong(cv, nx)),
         ('settings', lambda cv: menu(cv, nx, 'SETTINGS', SETTINGS_ROWS, 4)),
         ('diagnostics', lambda cv: menu(cv, nx, 'DIAGNOSTICS', DIAG_ROWS, 9)),
         ('about', lambda cv: about(cv, nx)),

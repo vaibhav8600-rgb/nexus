@@ -69,7 +69,7 @@
 	};
 
 	/* --- WIRING VARIANT: BL on a GPIO (Section 5 prose table) ------------
-	 * Move LCD CS to P0.10 in the &spi0 node below, then uncomment this
+	 * Move LCD CS to P0.10 in the &spi3 node below, then uncomment this
 	 * block and add `nexus-backlight = &nexus_bl_led;` to aliases above.
 	 *
 	 * nexus_backlight: nexus-backlight {
@@ -122,27 +122,30 @@
 };
 
 /*
- * SPIM0, the same instance snake-module drives, and deliberately back from
- * SPIM3.
+ * SPIM3, and this is the one change on the whole board worth being careful
+ * about.
  *
  * SPIM3 is the only instance on an nRF52840 that exceeds 8 MHz
  * (nrf52840.dtsi: spi0/1/2 are `max-frequency = DT_FREQ_M(8)`, spi3 is
  * `DT_FREQ_M(32)`), and the driver clamps silently rather than complaining -
- * `MIN(spi_cfg->frequency, max_freq)` in spi_nrfx_spim.c. So the 30 MHz below
- * is really 8, a full 240x240 frame is ~115 ms of bus time instead of ~31 ms,
- * and moving to spi3 was a genuine 4x on every pixel pushed.
+ * `MIN(spi_cfg->frequency, max_freq)` in spi_nrfx_spim.c. On spi0 the 30 MHz
+ * requested below was really 8, so a full frame cost ~115 ms of bus time
+ * instead of ~31. Everything the UI does is bounded by that number.
  *
- * It is reverted anyway, because BLE stopped working on the build that
- * introduced it and a dongle that renders quickly but will not pair is not a
- * dongle. This is the ONLY hardware-level difference between NEXUS and the
- * snake firmware that is known to work on this board, so it goes back first
- * and stays back until BLE is confirmed good.
+ * IT WAS ON SPI0 BEFORE, AND FOR A REASON. BLE stopped working on the build
+ * that first introduced spi3, and it was reverted on the principle that a
+ * dongle which renders fast but will not pair is not a dongle. What the later
+ * bisect actually found was CONFIG_ZMK_STUDIO_TRANSPORT_BLE forcing
+ * BT_CONN_TX_MAX=64 - a Kconfig problem that had nothing to do with the SPI
+ * instance, and which is fixed independently. BLE has since been confirmed
+ * good on hardware against phones, laptops and a TV.
  *
- * To try the optimisation again once BLE is proven: change this node and the
- * spi-dev phandle below to &spi3. Nothing else in the module cares which
- * instance it is. If BLE survives that, keep it - the speed is real.
+ * So this comes back. If BLE misbehaves after this change, revert THIS COMMIT
+ * first and alone - it is deliberately the only thing in it - and the two
+ * lines to put back are this node and the spi-dev phandle below, both to
+ * &spi0. Nothing else in the module cares which instance it is.
  */
-&spi0 {
+&spi3 {
 	status = "okay";
 	compatible = "nordic,nrf-spim";
 	pinctrl-0 = <&nexus_spi_default>;
@@ -161,7 +164,7 @@
 	 */
 	nexus_mipi_dbi: mipi-dbi {
 		compatible = "zephyr,mipi-dbi-spi";
-		spi-dev = <&spi0>;
+		spi-dev = <&spi3>;
 		dc-gpios = <&gpio0 24 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
 		write-only;

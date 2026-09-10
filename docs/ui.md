@@ -145,7 +145,7 @@ A held slot changes three things at once -- glyph colour, slot fill and border
 | `BRIGHT` | Backlight level, if the panel has a controllable one. |
 | `THEME` | Cycles the seven palettes below. |
 | `ANIM` | Whether meters animate to their new value. Read-only display of the build option. |
-| `SPEED` | SLOW / EASY / NORMAL / FAST / INSANE / LUDICROUS. Applies to all three games. |
+| `SPEED` | SLOW / EASY / NORMAL / FAST / INSANE / LUDICROUS. Applies to every game with a clock. |
 | `SNAKE WALL` | ON = fatal edges, OFF = the board wraps. |
 | `SPLASH` | Which splash the build got. Read-only. |
 | `GAMES` | How many games are built in. Read-only. |
@@ -237,15 +237,28 @@ See [themes.md](themes.md) for what every field means and how to add a palette.
   <img src="images/anim/snake.gif" width="170" alt="Snake">
   <img src="images/anim/breakout.gif" width="170" alt="Breakout">
 </p>
+<p align="center">
+  <img src="images/screens/pacman.png" width="170" alt="Pac-Man">
+  <img src="images/screens/jumper.png" width="170" alt="Jumper">
+</p>
+<p align="center">
+  <img src="images/screens/invaders.png" width="170" alt="Invaders">
+  <img src="images/screens/pong.png" width="170" alt="Pong">
+</p>
 
-Three, all reached from the Game Center. `J`/`L` page between them, the button
+Seven, all reached from the Game Center. `J`/`L` page between them, the button
 plays, double-tap skips to the next one.
 
 | | board | RAM | |
 | --- | --- | --- | --- |
 | **Tetris** | 10x20 | ~245 B | Seven-bag randomiser, symmetric wall kicks, 100/300/500/800 per 1-4 lines times level. |
+| | | | *Every game carries an `L` badge; what advances it is per game - see [games.md](games.md#they-all-have-levels-now).* |
 | **Snake** | 16x16 | ~768 B | Walls or wrap, toggled in Settings. Moving into your own vacated tail is legal. |
 | **Breakout** | free | ~24 B | 8.8 fixed point, 5x8 bricks, three lives, paddle position steers the ball. |
+| **Pac-Man** | 13x10 | ~170 B | 61 dots, four power pellets, three chasers that never reverse, and a wrapping tunnel. |
+| **Jumper** | 16x12 | ~90 B | Single-screen platformer, three boards that then wrap. No camera, so only the actors are ever dirty. |
+| **Invaders** | 8x4 | ~70 B | A fleet as a bitmask per row, turning on its live extent and speeding up as it thins. Hold to fire, three shots in the air. |
+| **Pong** | free | ~30 B | Two paddles and a ball, crossing the court in half a second. The opponent tracks two thirds of the ball's speed, so it is beatable by aiming. |
 
 High scores persist per game and are written only when a record actually
 improves. Difficulty is a **runtime** setting, not a build option.

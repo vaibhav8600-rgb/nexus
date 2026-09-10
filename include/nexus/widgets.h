@@ -51,8 +51,41 @@ void nexus_draw_caption_c(int cx, int y, const char *text);
  */
 void nexus_draw_label(int x, int y, const char *text);
 
+/**
+ * The level badge every game's HUD carries, drawn from its right edge at
+ * @p right so a two-digit level grows leftwards instead of into the score.
+ *
+ * One widget rather than seven hand-placed pairs of gfx_text calls: the games
+ * disagree about everything else in their HUDs - lives, WALLS/WRAP, two
+ * scores - and the one number they all now have should at least look the same
+ * in all of them.
+ *
+ * @return the x it started drawing at, so a caller can place something to the
+ *         left of it without measuring the text itself.
+ */
+int nexus_draw_level(int right, int y, uint8_t level);
+
 /** Horizontal capsule meter, 0-100, with a rounded cap at low values. */
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill);
+
+/**
+ * The shared solid: a raised block with a contact shadow, light pooling at the
+ * top, a lit top-left bevel and a shaded bottom-right one.
+ *
+ * Every game draws anything solid through this, which is what makes five very
+ * different games look like one product. Doing it per-game is how you end up
+ * with a maze that looks nothing like a brick wall.
+ *
+ * @param r corner radius; 0 is a hard square, and squares tile seamlessly
+ *          where rounded ones leave gaps between neighbours.
+ */
+void nexus_draw_block(int x, int y, int w, int h, int r, gfx_color c);
+
+/**
+ * The shared round solid: a lit sphere with a contact shadow and a specular
+ * highlight up and to the left, matching the block's light direction.
+ */
+void nexus_draw_orb(int cx, int cy, int r, gfx_color c);
 
 
 /**
