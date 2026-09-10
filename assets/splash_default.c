@@ -125,17 +125,24 @@ static void draw_default_mark(int x, int y)
 		HAIRLINE_OPA);
 
 	/*
-	 * The N: accent copy 1px right of a white one, as in the original. The
-	 * splash highlight lands on it when the sweep reaches the wordmark's
-	 * first letter, so the badge pulses with the name rather than beside
-	 * it.
+	 * The N, in one colour.
+	 *
+	 * It used to be an accent copy offset one pixel from a white one. At a
+	 * one-pixel offset that does not read as a deliberate split - it reads
+	 * as channel misconvergence, a display fault, on the first frame the
+	 * device ever shows. An offset large enough to be read as intentional
+	 * is a different decision and a different design.
+	 *
+	 * The splash highlight still lands on it when the sweep reaches the
+	 * wordmark's first letter, so the badge pulses with the name rather
+	 * than beside it - the colour change carries that on its own, which is
+	 * what the second copy was obscuring.
 	 */
 	int nw = gfx_face_w("N", N_SCALE);
 	int nh = gfx_face_h(N_SCALE);
 	int nx = 120 - nw / 2;
 	int ny = DISC_CY - nh / 2;
 
-	gfx_face_text(nx + 1, ny, "N", N_SCALE, COL_ACCENT, GFX_OPAQUE);
 	gfx_face_text(nx, ny, "N", N_SCALE, lit == 0 ? COL_ACCENT : COL_WHITE,
 		      GFX_OPAQUE);
 

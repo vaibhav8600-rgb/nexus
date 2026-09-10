@@ -971,8 +971,9 @@ def splash(cv, t, lit=-1):
     nx = 120 - face_w('N', ns) // 2
     ny = K['DISC_CY'] - FACE_H * ns // 2
     g = F10[ord('N') - 32]
-    cv.glyph(nx + 1, ny, g, FACE_W, FACE_H, ns, ACCENT)
-    cv.glyph(nx, ny, g, FACE_W, FACE_H, ns, WHITE)
+    # One colour: a one-pixel offset copy reads as channel misconvergence,
+    # not as a deliberate split.
+    cv.glyph(nx, ny, g, FACE_W, FACE_H, ns, ACCENT if lit == 0 else WHITE)
 
     u.wordmark(W // 2, K['WORD_Y'], 'NEXUS', K['WORD_SCALE'], lit=lit)
     u.tracked(W // 2, K['SUB_Y'], 'SMART ZMK DONGLE', CAPTION, 2, PROD_C)

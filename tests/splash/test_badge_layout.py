@@ -137,6 +137,13 @@ def main():
     ok(src.count('nexus_draw_tracked') == 2,
        'the subtitle and the brand are both tracked')
 
+    # The monogram was an accent copy one pixel off a white one. At that
+    # offset it does not read as a split, it reads as channel
+    # misconvergence - a display fault, on the first frame the device shows.
+    ok(src.count('gfx_face_text(nx') == 1,
+       'the N is drawn once - one colour, no offset copy')
+    ok('nx + 1' not in src, 'and nothing is offset by a single pixel')
+
     print('\n%s' % ('FAILED (%d)' % len(bad) if bad else 'PASSED'))
     return 1 if bad else 0
 
