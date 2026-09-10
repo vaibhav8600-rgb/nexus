@@ -29,8 +29,17 @@ extern const struct nexus_game nexus_game_breakout;
 #if IS_ENABLED(CONFIG_NEXUS_PACMAN)
 extern const struct nexus_game nexus_game_pacman;
 #endif
-#if IS_ENABLED(CONFIG_NEXUS_MARIO)
-extern const struct nexus_game nexus_game_mario;
+#if IS_ENABLED(CONFIG_NEXUS_JUMPER)
+extern const struct nexus_game nexus_game_jumper;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_INVADERS)
+extern const struct nexus_game nexus_game_invaders;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_PONG)
+extern const struct nexus_game nexus_game_pong;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_2048)
+extern const struct nexus_game nexus_game_2048;
 #endif
 
 static const struct nexus_game *const games[] = {
@@ -46,8 +55,17 @@ static const struct nexus_game *const games[] = {
 #if IS_ENABLED(CONFIG_NEXUS_PACMAN)
 	&nexus_game_pacman,
 #endif
-#if IS_ENABLED(CONFIG_NEXUS_MARIO)
-	&nexus_game_mario,
+#if IS_ENABLED(CONFIG_NEXUS_JUMPER)
+	&nexus_game_jumper,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_INVADERS)
+	&nexus_game_invaders,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_PONG)
+	&nexus_game_pong,
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_2048)
+	&nexus_game_2048,
 #endif
 	/* Terminator. A zero-length array is not valid C, and the Game Center
 	 * can legitimately be built with every game turned off. */

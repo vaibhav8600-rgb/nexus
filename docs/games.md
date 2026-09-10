@@ -6,7 +6,7 @@ Action button from Home opens the Game Center. Left/right pick a game, the
 button launches it.
 
 One button cannot play any of these, so movement comes from the keyboard. The
-same six bindings drive all three games -- the game never sees a keycode, only
+same six bindings drive every game -- the game never sees a keycode, only
 a `NEXUS_ACTION_*`, exactly the value the physical button would have produced
 (Section 42).
 
@@ -163,7 +163,7 @@ pattern all carry the identity, so the board reads correctly in monochrome or
 to a colourblind player -- colour is never the only signal (Section 106).
 Worth copying.
 
-## The five games
+## The eight games
 
 | | board | RAM | how it moves |
 | --- | --- | --- | --- |
@@ -171,7 +171,10 @@ Worth copying.
 | Snake | 16x16 | ~768 B | integer grid, ring of cells |
 | Breakout | free | ~24 B | 8.8 fixed point |
 | Pac-Man | 13x10 | ~170 B | integer grid, greedy chasers |
-| Mario | 64x10 | ~170 B | 8.8 fixed point, scrolling camera |
+| Jumper | 16x12 | ~90 B | 8.8 fixed point, single screen |
+| Invaders | 8x4 | ~70 B | one formation position, bitmask per row |
+| Pong | free | ~30 B | 8.8 fixed point |
+| 2048 | 4x4 | ~24 B | turn-based; no clock at all |
 
 Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
 four faint slivers and the apple a speck -- on a panel you look at from across
@@ -179,10 +182,88 @@ a desk that is not detail, it is just small. The grid and the ring are both
 O(cells), so the larger cells also cost a third of the RAM: 768 bytes rather
 than 1,728.
 
-All five go through `struct nexus_game`, so the Game Center pages between
+All eight go through `struct nexus_game`, so the Game Center pages between
 them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
-of them off with `CONFIG_NEXUS_TETRIS` / `_SNAKE` / `_BREAKOUT` / `_PACMAN` /
-`_MARIO` removes it from the build entirely.
+off with its `CONFIG_NEXUS_*` removes it from the build entirely.
+
+### They all look like one product
+
+Anything solid is drawn through `nexus_draw_block()`, anything round through
+`nexus_draw_orb()`, and both agree that the light comes from the top-left: a
+contact shadow, light pooling down from the top edge, a lit top-left bevel and
+a shaded bottom-right one. Before that, each game shaded its own pieces its own
+way, which is what makes a collection look assembled rather than designed.
+
+A square block is drawn with radius 0 on purpose where pieces tile - a rounded
+one leaves a gap against its neighbour, so a ledge reads as a row of separate
+lozenges instead of one surface.
+
+### Jumper, and why it is single-screen
+
+It replaces a side-scrolling platformer that was removed after four rounds of
+tuning failed to make it feel good, and the reason is structural rather than a
+matter of constants.
+
+A scrolling platformer must repaint **every** row on any frame the camera
+moves, because every row's contents shift. On this panel that is the whole play
+area, and once you are running the camera moves on most frames - so the cost of
+the worst frame becomes the cost of the normal frame. No physics tuning fixes
+that.
+
+Fix the level to one screen and the background never changes. Only the player,
+the enemies and a collected coin are ever dirty, which is about three tile rows
+- a fifth of the work, on every frame, permanently. The game got smooth by
+having less to draw rather than by drawing faster.
+
+Grounded means "is there floor under me", probed one pixel down, not "did I
+collide going down this tick". The latched version alternates true and false
+every tick while you stand still, because landing zeroes the vertical velocity
+and the next tick's fraction of a pixel moves nothing - which silently ate half
+the jump presses in the game this replaced. A jump pressed just before touching
+down is buffered rather than dropped.
+
+### Invaders
+
+The fleet is a **bitmask per row** - eight columns in a `uint16_t` - and it has
+one position and one direction, with every alien drawn at an offset from it. A
+formation of 32 therefore costs about the same to simulate as a single sprite.
+
+It turns on the **live** extent rather than its nominal width: clearing the
+left column has to let it slide further left, and testing the origin instead
+makes it turn early against a wall that is not there.
+
+Speed rises as the fleet thins because there are fewer aliens to step, which is
+the arc of the original - nothing ramps a difficulty variable.
+
+`SELECT` fires rather than pauses while a round is running. A shooter whose
+main button pauses is unplayable on the dongle's own button, and pause is still
+a hold away.
+
+### Pong
+
+The cheapest game here: two paddles, a ball, no board. Where the ball lands on
+the paddle steers it, exactly as in Breakout - without that one line the angle
+never changes and a rally is a metronome neither player can influence.
+
+The opponent is deliberately beatable. It moves at a fraction of the ball's
+speed and only reacts once the ball is coming at it; a paddle that tracks
+exactly never loses, and a game you cannot win is a screensaver.
+
+### 2048
+
+The only turn-based game, and that changes its cost completely: nothing moves
+between presses, so it has no tick and no work item and repaints once per move.
+
+Tiles hold the **exponent**, not the value - 1 means 2, 11 means 2048 - so the
+board is sixteen bytes.
+
+The rule everyone gets wrong: a tile that has just merged cannot merge again in
+the same move. `2 2 4` slides to `4 4`, not `8`. A `merged` flag per output
+cell is what enforces it, and the test pins the case because the greedy version
+looks right and just scores too fast.
+
+A move that changes nothing must not spawn a tile, or pressing into a wall
+fills the board and ends the game for you.
 
 ### Snake
 
@@ -289,57 +370,11 @@ A turn is a *request*: it is stored and taken at the next junction that allows
 it, so you can press early into a corner rather than having to time it. That is
 also why turning makes no sound - the press often does not become a move.
 
-### Mario
-
-The only game here that is not on a grid, and the two things that follow from
-that are the whole story.
-
-**Held keys, from an event system that has none.** Running needs "is left held
-right now", and NEXUS dispatches discrete actions -- there is no key state to
-poll. A naive port moves one step per press and the character twitches.
-
-What there *is* is auto-repeat. A press sets a direction and winds a timer,
-each tick unwinds it, and movement continues while it is above zero. Set the
-window longer than `CONFIG_NEXUS_ACTION_REPEAT_MS` and a held key keeps it
-topped up; release and it runs down in two frames. Held input, rebuilt from
-repeats, with no new plumbing -- and the test asserts the window still outlasts
-the repeat interval, because if that inverts, running stutters and the cause is
-not obvious.
-
-**The level lives in flash.** 64x10 tiles of text is 640 bytes of flash and a
-level you can see; only what changes is in RAM -- a bit per coin, four enemies
-and the player, about 180 bytes against the 960 a mutable copy would need.
-
-The physics constants and the level are tuned against each other: the jump
-clears 2.1 tiles and reaches 4.2 across, so pits are 3 tiles with one of
-margin. `tests/games/test_mario_level.py` re-derives the arc from the constants
-in the C and measures every pit against it, because a platformer's failure mode
-is a level that compiles, runs, looks right and simply cannot be finished.
-
-Axes are resolved separately, X then Y. Doing both at once and backing out of
-the overlap cannot tell "walked into a wall" from "landed on a floor", which is
-how a platformer ends up sticking to walls.
-
-Enemies turn at ledges as well as walls. Without the ledge test they walk off
-every platform in the first ten seconds and the level empties itself.
-
-**It repaints only what moved**, and that is the difference between a game and
-a slideshow. The whole view is 176 rows, which is 84 ms of SPI at the 8 MHz
-this panel actually runs at - nearly twice the 45 ms tick. Dirtying all of it
-every frame made the work queue serialise tick and paint, so the real frame
-time was the *push*, and every per-tick constant played out at about 11 fps.
-Nothing was wrong with the physics; there was no time left to run it in.
-
-The camera only scrolls when the player leaves the middle third, so on most
-frames the background is identical and only the actors have moved. Dirtying
-just the band they occupy drops the push to about 23 ms and lets the tick rate
-stand. The full repaint is gated on the camera actually changing.
-
 ## Difficulty, without reflashing
 
 **Settings -> SPEED** cycles SLOW / EASY / NORMAL / FAST / INSANE / LUDICROUS
-and persists with sound, theme and brightness. It applies to all three games
-and takes effect on the next round.
+and persists with sound, theme and brightness. It applies to every game
+with a clock, and takes effect on the next round.
 
 That is the knob to reach for. "The ball is too slow" is a judgement you make
 while playing, and one you have to reflash to act on is one you turn once and
@@ -371,7 +406,11 @@ the Settings knob moves around it.
 | `NEXUS_BREAKOUT_PADDLE_STEP` | 24 | pixels the paddle travels per key repeat |
 | `NEXUS_PACMAN_TICK_MS` | 150 | maze step interval - **lower is faster** |
 | `NEXUS_PACMAN_FRIGHT_TICKS` | 40 | ticks a power pellet lasts, ~6 s |
-| `NEXUS_MARIO_TICK_MS` | 45 | platformer physics interval - **the jump is tuned to it** |
+| `NEXUS_JUMPER_TICK_MS` | 16 | platformer physics - **the jump is tuned to it** |
+| `NEXUS_INVADERS_TICK_MS` | 16 | fleet and shot simulation |
+| `NEXUS_PONG_TICK_MS` | 16 | ball simulation |
+| `NEXUS_PONG_BALL_SPEED` | 320 | hundredths of a pixel per tick |
+| `NEXUS_PONG_PADDLE_STEP` | 14 | paddle travel per key repeat |
 
 Two things worth knowing before turning them:
 
@@ -391,7 +430,7 @@ entirely. And note that `TICK_MS` scales speed as well, since the ball moves
 `I` is bound to `NEXUS_ACT_ROTATE` on the game layer because Tetris needs
 rotation there. Snake and Breakout have nothing to rotate, so both accept
 `ROTATE` as their natural top-of-cluster action - up for Snake, launch for
-Breakout. Otherwise `I` would simply be inert in two of the three games, which
+Breakout. Otherwise `I` would simply be inert in most of the games, which
 reads as a broken key rather than as an unused one.
 
 ## Switching games

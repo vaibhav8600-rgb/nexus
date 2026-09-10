@@ -54,6 +54,25 @@ void nexus_draw_label(int x, int y, const char *text);
 /** Horizontal capsule meter, 0-100, with a rounded cap at low values. */
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill);
 
+/**
+ * The shared solid: a raised block with a contact shadow, light pooling at the
+ * top, a lit top-left bevel and a shaded bottom-right one.
+ *
+ * Every game draws anything solid through this, which is what makes five very
+ * different games look like one product. Doing it per-game is how you end up
+ * with a maze that looks nothing like a brick wall.
+ *
+ * @param r corner radius; 0 is a hard square, and squares tile seamlessly
+ *          where rounded ones leave gaps between neighbours.
+ */
+void nexus_draw_block(int x, int y, int w, int h, int r, gfx_color c);
+
+/**
+ * The shared round solid: a lit sphere with a contact shadow and a specular
+ * highlight up and to the left, matching the block's light direction.
+ */
+void nexus_draw_orb(int cx, int cy, int r, gfx_color c);
+
 
 /**
  * Letter-spaced text, centred. Tracking is what makes a small uppercase label

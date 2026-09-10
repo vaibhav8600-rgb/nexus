@@ -24,7 +24,7 @@ string, and CI fails the build if one appears (Requirement B).
 | `CONFIG_NEXUS_DISPLAY_ROTATION` | `0` | 0/90/180/270, done in the compositor so all drawing stays in logical coordinates. Try the panel's `mdac` byte in your overlay first -- that rotates in the controller for free. 90/270 cost a second 5,760-byte transpose buffer. |
 | `CONFIG_NEXUS_ANIMATIONS` | `y` | Battery bars animate to their new value instead of snapping. |
 | `CONFIG_NEXUS_DEFAULT_SCREEN_HOME` | `y` | Which screen the splash hands off to. The alternatives are `CONFIG_NEXUS_DEFAULT_SCREEN_GAME_CENTER` and `CONFIG_NEXUS_DEFAULT_SCREEN_DIAGNOSTICS` -- pick exactly one. |
-| `CONFIG_NEXUS_UI_REFRESH_FAST_MS` | `33` | Games and animations (~30 FPS). |
+| `CONFIG_NEXUS_UI_REFRESH_FAST_MS` | `16` | Games and animations. This is the **hard ceiling on every game's frame rate** -- a game may tick as often as it likes, but nothing reaches the panel more than once per period. It was 33 when the bus ran at 8 MHz and more would only have queued work that could never land. |
 | `CONFIG_NEXUS_UI_REFRESH_NORMAL_MS` | `200` | Status dashboard. |
 | `CONFIG_NEXUS_UI_REFRESH_IDLE_MS` | `1000` | Static screens. |
 | `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` | `0` | Blank after N idle seconds. `0` disables. Never fires during a game. Needs a controllable backlight -- see [hardware.md](hardware.md#backlight). |
@@ -127,8 +127,15 @@ difference between a half that dozed and a half that dropped.
 | `CONFIG_NEXUS_PACMAN` | `y` | The maze chase. |
 | `CONFIG_NEXUS_PACMAN_TICK_MS` | `150` | Step interval. Movement is cell to cell, so this is also the speed. |
 | `CONFIG_NEXUS_PACMAN_FRIGHT_TICKS` | `40` | How long a power pellet lasts, in ticks -- about six seconds at the default interval. |
-| `CONFIG_NEXUS_MARIO` | `y` | The platformer. The most expensive game here to draw -- it scrolls, so a moving frame repaints the whole play area. |
-| `CONFIG_NEXUS_MARIO_TICK_MS` | `45` | Physics interval. The gravity and jump constants are tuned to it, and the level's pits are sized against the resulting jump -- changing it changes what is clearable. |
+| `CONFIG_NEXUS_JUMPER` | `y` | Single-screen platformer. No camera, so only the actors are ever repainted. |
+| `CONFIG_NEXUS_JUMPER_TICK_MS` | `16` | Physics interval, matched to the panel's own refresh. The jump arc is solved for it and the level's gaps are sized against the result. |
+| `CONFIG_NEXUS_INVADERS` | `y` | |
+| `CONFIG_NEXUS_INVADERS_TICK_MS` | `16` | |
+| `CONFIG_NEXUS_PONG` | `y` | |
+| `CONFIG_NEXUS_PONG_TICK_MS` | `16` | |
+| `CONFIG_NEXUS_PONG_BALL_SPEED` | `320` | Hundredths of a pixel per tick. Whole pixels would only offer sedate, brisk and unplayable. |
+| `CONFIG_NEXUS_PONG_PADDLE_STEP` | `14` | |
+| `CONFIG_NEXUS_2048` | `y` | Turn-based, so it has no tick to configure. |
 | `CONFIG_NEXUS_GAME_HIGHSCORE_PERSIST` | `y` | Store high scores in Zephyr settings. Written only when a record actually improves. |
 
 Turning a game off removes it from the build entirely, not just from the

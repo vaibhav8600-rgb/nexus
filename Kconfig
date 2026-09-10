@@ -91,7 +91,17 @@ config NEXUS_ANIMATIONS
 
 config NEXUS_UI_REFRESH_FAST_MS
 	int "Fast (game / animation) UI period, ms"
-	default 33
+	default 16
+	help
+	  The coalesce window a FAST screen repaints on, and therefore the hard
+	  ceiling on every game's frame rate - a game may tick as often as it
+	  likes, but nothing reaches the panel more than once per period.
+
+	  It was 33 (30 fps) from when the panel ran at 8 MHz and a full frame
+	  cost 115 ms, where asking for more would only have queued work that
+	  could never land. On SPIM3 a game's dirty band is under 10 ms, so 16
+	  is both achievable and what makes motion look continuous rather than
+	  stepped.
 
 config NEXUS_UI_REFRESH_NORMAL_MS
 	int "Normal (status) UI period, ms"
@@ -280,33 +290,79 @@ config NEXUS_PACMAN
 	  The level is stored as text and decoded at round start, so editing it
 	  means editing a picture rather than counting bits.
 
-config NEXUS_MARIO
-	bool "Side-scrolling platformer"
+config NEXUS_JUMPER
+	bool "Jumper - single-screen platformer"
 	default y
 	depends on NEXUS_GAMES
 	help
-	  A 64x10 scrolling level with coins, enemies and a flag. About 170
-	  bytes of RAM: the level is text in flash and only what changes -
-	  a bit per coin, four enemies and the player - is held.
+	  A 16x12 screen of platforms, coins, patrolling enemies and a flag.
+	  About 90 bytes of RAM: the level is text in flash and only a bit per
+	  coin plus the actors is held.
 
-	  It repaints only the band the actors moved through, and the whole
-	  view only when the camera actually scrolls, which is what lets it
-	  hold 50 fps on SPIM3.
+	  Single-screen on purpose. A scrolling platformer has to repaint every
+	  row on any frame the camera moves, which on this panel is the whole
+	  play area and, once you are running, most frames. Fixing the level to
+	  one screen means only the actors are ever dirty - about a fifth of
+	  the work, permanently.
 
-config NEXUS_MARIO_TICK_MS
-	int "Platformer physics interval, ms"
-	default 20
-	depends on NEXUS_MARIO
+config NEXUS_JUMPER_TICK_MS
+	int "Jumper physics interval, ms"
+	default 16
 	help
-	  The gravity and jump constants are tuned to this interval, so
-	  changing it changes how far a jump reaches - and the level's pits are
-	  sized against that reach.
+	  Matched to NEXUS_UI_REFRESH_FAST_MS: there is nothing to gain from
+	  running physics faster than the panel can show it. The gravity and
+	  jump constants are solved for this interval, and the level's gaps
+	  are sized against the resulting arc.
 
-	  20 ms is 50 fps, which the panel keeps up with on SPIM3: the actor
-	  band is 8 ms of bus time and even a full-width scroll is 23. On
-	  SPIM0 the same scroll was 86 ms and this had to be 45.
+config NEXUS_INVADERS
+	bool "Space Invaders"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  A 8x4 formation that steps in lockstep and drops a row at the wall.
+	  About 70 bytes: the fleet is a bitmask per row, so the whole board is
+	  four uint16_t and one position.
 
-	  Settings > SPEED scales it at runtime like every other game.
+	  The fleet speeds up as it thins because there are fewer aliens to
+	  step, not because a difficulty variable ramps.
+
+config NEXUS_INVADERS_TICK_MS
+	int "Invaders simulation interval, ms"
+	default 16
+
+config NEXUS_PONG
+	bool "Pong"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  Two paddles and a ball, about 30 bytes and no board at all. The
+	  cheapest game here to draw, and the opponent is deliberately
+	  beatable - a paddle that tracks the ball exactly never loses.
+
+config NEXUS_PONG_TICK_MS
+	int "Pong simulation interval, ms"
+	default 16
+
+config NEXUS_PONG_BALL_SPEED
+	int "Pong ball speed, hundredths of a pixel per tick"
+	default 320
+	help
+	  Hundredths, not whole pixels: at 8.8 fixed point the useful range is
+	  well under one pixel of granularity, and an integer knob would only
+	  offer sedate, brisk and unplayable.
+
+config NEXUS_PONG_PADDLE_STEP
+	int "Pong paddle travel per key repeat, px"
+	default 14
+
+config NEXUS_2048
+	bool "2048"
+	default y
+	depends on NEXUS_GAMES
+	help
+	  The only turn-based game here, so it has no tick and no work item:
+	  nothing moves between presses and it repaints once per move. 16 bytes
+	  of board plus a score.
 
 config NEXUS_PACMAN_TICK_MS
 	int "Maze chase step interval, ms"

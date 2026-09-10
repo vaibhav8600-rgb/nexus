@@ -361,6 +361,31 @@ class UI:
         if fw > 0:
             self.cv.round_rect(x, y, fw, h, r, fill)
 
+    def block(self, x, y, w, h, r, c):
+        """nexus_draw_block(): shadow, fill, light pooling, bevel."""
+        cv = self.cv
+        SH, SP = 0x0000, 0xFFFF
+        cv.round_rect(x + 2, y + 2, w, h, r, SH, 80)
+        cv.round_rect(x, y, w, h, r, c)
+        inset = r if r > 1 else 1
+        for i in range(min(3, h // 2)):
+            cv.rect(x + inset, y + 1 + i, w - 2 * inset, 1, SP, 64 - i * 18)
+        cv.hline(x + inset, y, w - 2 * inset, SP, 120)
+        cv.vline(x, y + inset, h - 2 * inset, SP, 80)
+        cv.hline(x + inset, y + h - 1, w - 2 * inset, SH, 120)
+        cv.vline(x + w - 1, y + inset, h - 2 * inset, SH, 100)
+
+    def orb(self, cx, cy, r, c):
+        """nexus_draw_orb(): shadow, fill, specular up-left, dark far rim."""
+        cv = self.cv
+        SH, SP = 0x0000, 0xFFFF
+        cv.disc(cx + 1, cy + 2, r, SH, 80)
+        cv.disc(cx, cy, r, c)
+        if r >= 3:
+            cv.disc(cx - r // 3, cy - r // 3, r // 3, SP, 150)
+        if r >= 4:
+            cv.disc(cx + r // 3, cy + r // 3, r // 3, SH, 45)
+
     def tracked(self, cx, y, s, scale, track, c):
         x = cx - tracked_w(s, scale, track) // 2
         for ch in s:
@@ -907,64 +932,168 @@ def splash(cv, t, lit=-1):
     u.tracked(W // 2, K['BRAND_Y'], 'VAIBHAV TECH', BODY, 2, BRAND_C)
 
 
-# ------------------------------------------------------------------ mario
-MAR = defines(read('src/games/mario/mario.c'),
-              ['TILE', 'LEVEL_W', 'LEVEL_H', 'VIEW_Y', 'PLAYER_W', 'PLAYER_H'])
-MAR_LEVEL = re.findall(
+# ----------------------------------------------------------------- jumper
+JMP = defines(read('src/games/jumper/jumper.c'),
+              ['TILE', 'COLS', 'ROWS', 'VIEW_Y', 'PLAYER_W', 'PLAYER_H'])
+JMP_LEVEL = re.findall(
     r'"([^"]*)"',
-    read('src/games/mario/mario.c').split('level[LEVEL_H] = {')[1]
-    .split(';')[0])
+    read('src/games/jumper/jumper.c').split('level[ROWS] = {')[1]
+    .split('\n};')[0])
 
 
-def mario(cv, t, cam=150, player=(7, 14), facing=1, dead=(), score='1700',
-          lives=3, anim=0):
-    u, K = UI(cv, t), MAR
+def jumper(cv, t, player=(9, 3), facing=1, taken=(), dead=(), score='700',
+           lives=3, anim=0):
+    u, K = UI(cv, t), JMP
     TILE, VY = K['TILE'], K['VIEW_Y']
     u.ground()
-    u.label(PAD, 8, 'MARIO')
+    u.label(PAD, 8, 'JUMPER')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 24, score, BODY, t['value'])
     for i in range(lives):
         cv.disc(W - PAD - 6 - i * 12, 30, 4, t['error'])
 
-    cv.rect(0, VY, W, K['LEVEL_H'] * TILE, t['track'], 140)
-
-    for r in range(K['LEVEL_H']):
+    cv.rect(0, VY, W, K['ROWS'] * TILE, t['track'], 130)
+    for r in range(K['ROWS']):
         y = VY + r * TILE
-        for c in range(cam // TILE, min((cam + W) // TILE + 1, K['LEVEL_W'])):
-            x = c * TILE - cam
-            ch = MAR_LEVEL[r][c]
-            if ch == '#':
-                cv.rect(x, y, TILE, TILE, t['accent'], 80)
-                cv.hline(x, y, TILE, t['edge_hi'], 90)
-            elif ch == '=':
-                cv.rect(x, y, TILE, TILE, t['warning'], 110)
-                cv.hline(x, y, TILE, t['edge_hi'], 90)
-                cv.hline(x, y + TILE - 1, TILE, t['edge_lo'], 110)
-            elif ch == 'o':
-                cv.disc(x + TILE // 2, y + TILE // 2, 6, t['warning'])
+        for c in range(K['COLS']):
+            x = c * TILE
+            ch = JMP_LEVEL[r][c]
+            if ch == '=':
+                u.block(x, y, TILE, TILE, 0,
+                        mix(t['accent'], t['accent_alt'], min(255, r * 20)))
+            elif ch == 'o' and (r, c) not in taken:
+                u.orb(x + TILE // 2, y + TILE // 2, 5, t['warning'])
             elif ch == 'F':
-                cv.rect(x + TILE // 2 - 1, y - TILE, 3, TILE * 2, t['value'])
-                cv.rect(x + TILE // 2 + 2, y - TILE, 9, 7, t['success'])
+                cv.rect(x + TILE // 2 - 1, y, 3, TILE, t['value'])
+                u.block(x + TILE // 2 + 2, y, 9, 7, 1, t['muted'])
             elif ch == 'E' and (r, c) not in dead:
-                px_, py_ = x, y
-                cv.round_rect(px_, py_ + 2, K['PLAYER_W'], K['PLAYER_H'] - 2,
-                              3, t['success'])
-                cv.rect(px_ + 1, py_ + K['PLAYER_H'] - 3, 3, 3, t['muted'])
-                cv.rect(px_ + K['PLAYER_W'] - 4, py_ + K['PLAYER_H'] - 3, 3, 3,
-                        t['muted'])
-                cv.rect(px_ + 3, py_ + 8, 4, 4, 0xFFFF)
-                cv.rect(px_ + K['PLAYER_W'] - 7, py_ + 8, 4, 4, 0xFFFF)
+                PW, PH = K['PLAYER_W'], K['PLAYER_H']
+                u.block(x, y + TILE - PH + 2, PW, PH - 2, 4, t['success'])
+                cv.rect(x + 2, y + TILE - PH + 5, 2, 2, C(0x0A0A12))
+                cv.rect(x + PW - 4, y + TILE - PH + 5, 2, 2, C(0x0A0A12))
 
     PW, PH = K['PLAYER_W'], K['PLAYER_H']
-    sx = player[1] * TILE - cam
-    sy = VY + player[0] * TILE
-    cv.rect(sx, sy, PW, 6, t['error'])
-    cv.rect(sx + (5 if facing > 0 else 0), sy + 4, PW - 5, 2, t['error'])
-    cv.rect(sx + 1, sy + 6, PW - 2, 7, t['warning'])
-    cv.rect(sx, sy + 13, PW, 4, t['accent_alt'])
-    cv.rect(sx, sy + PH - 2, 5, 2, t['value'])
-    cv.rect(sx + PW - 5, sy + PH - 2, 5, 2, t['value'])
+    sx = player[1] * TILE
+    sy = VY + player[0] * TILE + TILE - PH
+    u.block(sx, sy, PW, 5, 2, t['error'])
+    u.block(sx + 1, sy + 5, PW - 2, 5, 1, t['warning'])
+    u.block(sx, sy + 10, PW, 3, 1, t['accent_alt'])
+    cv.rect(sx + (PW - 4 if facing > 0 else 2), sy + 6, 2, 2, 0xFFFF)
+
+
+# --------------------------------------------------------------- invaders
+INV = defines(read('src/games/invaders/invaders.c'),
+              ['COLS', 'ROWS', 'ALIEN_W', 'ALIEN_H', 'FIELD_X', 'FIELD_Y',
+               'FIELD_W', 'FIELD_H', 'CANNON_W', 'CANNON_H', 'CANNON_Y'])
+
+
+def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
+             cannon=None, score='430', lives=3, anim=0):
+    u, K = UI(cv, t), INV
+    fx = K['FIELD_X'] + 8 if fx is None else fx
+    fy = K['FIELD_Y'] + 6 if fy is None else fy
+    cannon = (K['FIELD_X'] + (K['FIELD_W'] - K['CANNON_W']) // 2
+              if cannon is None else cannon)
+    u.ground()
+    u.label(PAD, 8, 'INVADERS')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(PAD, 24, score, BODY, t['value'])
+    for i in range(lives):
+        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['success'])
+
+    cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
+                   K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
+
+    AW, AH = K['ALIEN_W'], K['ALIEN_H']
+    for r in range(K['ROWS']):
+        for c in range(K['COLS']):
+            if (r, c) in dead:
+                continue
+            x, y = fx + c * (AW + 4), fy + r * (AH + 6)
+            body = mix(t['accent'], t['accent_alt'],
+                       r * 255 // (K['ROWS'] - 1))
+            u.block(x + 2, y, AW - 4, AH - 4, 3, body)
+            cv.rect(x, y + AH - 5, 4, 4, body)
+            cv.rect(x + AW - 4, y + AH - 7, 4, 4, body)
+            cv.rect(x + 6, y + 4, 3, 3, C(0x0A0A12))
+            cv.rect(x + AW - 9, y + 4, 3, 3, C(0x0A0A12))
+
+    u.block(120, K['CANNON_Y'] - 40, 3, 8, 1, t['warning'])
+    u.block(cannon, K['CANNON_Y'] + 4, K['CANNON_W'], K['CANNON_H'] - 4, 2,
+            t['success'])
+    u.block(cannon + K['CANNON_W'] // 2 - 2, K['CANNON_Y'], 4, 6, 1,
+            t['success'])
+
+
+# ------------------------------------------------------------------- pong
+PNG = defines(read('src/games/pong/pong.c'),
+              ['FIELD_X', 'FIELD_Y', 'FIELD_W', 'FIELD_H', 'PAD_W', 'PAD_H',
+               'PAD_INSET', 'BALL_R'])
+
+
+def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
+    u, K = UI(cv, t), PNG
+    B = K['FIELD_Y'] + K['FIELD_H']
+    you = K['FIELD_Y'] + 70 if you is None else you
+    cpu = K['FIELD_Y'] + 40 if cpu is None else cpu
+    ball = (150, K['FIELD_Y'] + 66) if ball is None else ball
+    u.ground()
+    u.label(PAD, 8, 'PONG')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    cv.text(W // 2 - 30 - text_w('0', BIG), 22, str(sy), BIG, t['accent'])
+    cv.text(W // 2 + 30, 22, str(sc), BIG, t['error'])
+
+    cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
+                   K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
+    cv.rect(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'],
+            t['track'], 120)
+    y = K['FIELD_Y'] + 6
+    while y < B - 4:
+        cv.rect(W // 2 - 1, y, 3, 8, t['border'], 90)
+        y += 14
+    u.block(K['FIELD_X'] + K['PAD_INSET'], you, K['PAD_W'], K['PAD_H'], 3,
+            t['accent'])
+    u.block(K['FIELD_X'] + K['FIELD_W'] - K['PAD_INSET'] - K['PAD_W'], cpu,
+            K['PAD_W'], K['PAD_H'], 3, t['error'])
+    u.orb(ball[0], ball[1], K['BALL_R'], t['warning'])
+
+
+# ------------------------------------------------------------------- 2048
+G48 = defines(read('src/games/g2048/g2048.c'),
+              ['N', 'CELL', 'GAP', 'BOARD_W', 'BOARD_X', 'BOARD_Y', 'HUD_Y'])
+G48_HUE = [int(v, 16) for v in re.findall(
+    r'0x([0-9A-Fa-f]{6}), /\*',
+    read('src/games/g2048/g2048.c').split('hue[] = {')[1].split('};')[0])]
+
+
+def g2048(cv, t, board=((1, 2, 0, 0), (3, 4, 1, 0), (5, 7, 2, 1),
+                        (9, 8, 4, 3)), score='6440'):
+    u, K = UI(cv, t), G48
+    CELL, GAP = K['CELL'], K['GAP']
+    u.ground()
+    u.label(PAD, 6, '2048')
+    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 6, 'HOLD=EXIT')
+    cv.text(PAD, K['HUD_Y'] + 2, 'SCORE', CAPTION, t['caption'])
+    cv.text(PAD + 40, K['HUD_Y'], score, BODY, t['value'])
+
+    cv.round_rect(K['BOARD_X'] - GAP, K['BOARD_Y'] - GAP, K['BOARD_W'] + GAP,
+                  K['BOARD_W'] + GAP, 8, t['panel'], 90)
+    for r in range(K['N']):
+        for c in range(K['N']):
+            x = K['BOARD_X'] + c * (CELL + GAP)
+            y = K['BOARD_Y'] + r * (CELL + GAP)
+            e = board[r][c]
+            if e == 0:
+                cv.round_rect(x, y, CELL, CELL, 6, t['track'], 150)
+                cv.round_frame(x, y, CELL, CELL, 6, t['border'],
+                               t['border_alpha'])
+                continue
+            u.block(x, y, CELL, CELL, 6, C(G48_HUE[min(e, len(G48_HUE)) - 1]))
+            v = str(1 << e)
+            sc = BODY if (1 << e) >= 100 else VALUE
+            cv.text(x + (CELL - text_w(v, sc)) // 2,
+                    y + (CELL - text_h(sc)) // 2, v, sc,
+                    C(0xE8ECF8) if e <= 2 else C(0x11131C))
 
 
 # ------------------------------------------------------------------ main
@@ -1006,7 +1135,10 @@ def main():
         ('snake', lambda cv: snake(cv, nx)),
         ('breakout', lambda cv: breakout(cv, nx)),
         ('pacman', lambda cv: pacman(cv, nx)),
-        ('mario', lambda cv: mario(cv, nx)),
+        ('jumper', lambda cv: jumper(cv, nx)),
+        ('invaders', lambda cv: invaders(cv, nx)),
+        ('pong', lambda cv: pong(cv, nx)),
+        ('2048', lambda cv: g2048(cv, nx)),
         ('settings', lambda cv: menu(cv, nx, 'SETTINGS', SETTINGS_ROWS, 4)),
         ('diagnostics', lambda cv: menu(cv, nx, 'DIAGNOSTICS', DIAG_ROWS, 9)),
         ('about', lambda cv: about(cv, nx)),
