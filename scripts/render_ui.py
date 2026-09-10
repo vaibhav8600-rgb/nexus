@@ -648,13 +648,40 @@ def icon_breakout(cv, t, cx, cy):
     cv.round_rect(cx - 14, cy + 18, 30, 5, 2, t['value'])
 
 
+# The launcher's pager counts the REGISTRY, exactly as nexus_game_count()
+# does in the firmware - not the sample list below. A hand-kept total is how
+# the shot ended up reading "01/03" with seven games built, which is the one
+# thing the pager exists to tell you.
+def registry():
+    """Game names in launcher order, from game_manager.c and the games."""
+    order = re.findall(r'&nexus_game_(\w+),', read('src/games/game_manager.c'))
+    names = {}
+    for d in sorted(os.listdir('src/games')):
+        if not os.path.isdir('src/games/' + d):
+            continue
+        for f in sorted(os.listdir('src/games/' + d)):
+            if not f.endswith('.c'):
+                continue
+            src = read('src/games/%s/%s' % (d, f))
+            for var, body in re.findall(
+                    r'const struct nexus_game nexus_game_(\w+) = \{(.*?)\n\};',
+                    src, re.S):
+                m = re.search(r'\.name = "([^"]*)"', body)
+                if m:
+                    names[var] = m.group(1)
+    return [names[g] for g in order if g in names]
+
+
+GAMES = registry()
+
+
 def game_center(cv, t, sel=0, games=(('TETRIS', 12840, icon_tetris),
                                      ('SNAKE', 430, icon_snake),
                                      ('BREAKOUT', 1120, icon_breakout))):
     u, K = UI(cv, t), GC
     u.ground()
     u.label(PAD, K['TITLE_Y'], 'GAME CENTER')
-    pos = '%02d/%02d' % (sel + 1, len(games))
+    pos = '%02d/%02d' % (sel + 1, len(GAMES))
     cv.text(PAD + CONTENT_W - text_w(pos, LABEL), K['TITLE_Y'], pos, LABEL,
             t['caption'])
 
@@ -663,7 +690,7 @@ def game_center(cv, t, sel=0, games=(('TETRIS', 12840, icon_tetris),
     icon(cv, t, W // 2, K['ICON_CY'])
     cv.text_c(W // 2, K['NAME_Y'], name, VALUE, t['accent'])
 
-    if len(games) > 1:
+    if len(GAMES) > 1:
         cv.text(PAD + 2, K['ARROW_Y'], '<', BODY, t['caption'])
         cv.text(W - PAD - 2 - text_w('>', BODY), K['ARROW_Y'], '>', BODY,
                 t['caption'])
@@ -1081,7 +1108,8 @@ def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
 # ------------------------------------------------------------------ main
 SETTINGS_ROWS = [('SOUND', 'ON'), ('BRIGHT', '80%'), ('THEME', 'NEXUS'),
                  ('ANIM', 'ON'), ('SPEED', 'NORMAL'), ('SNAKE WALL', 'OFF'),
-                 ('SPLASH', 'IMAGE'), ('GAMES', '3'), ('DIAG', ''),
+                 ('SPLASH', 'IMAGE'), ('GAMES', str(len(GAMES))),
+                 ('DIAG', ''),
                  ('ABOUT', ''), ('SAVE', 'OK'), ('BACK', '')]
 DIAG_ROWS = [('FIRMWARE', 'V1.0.0'), ('BOARD', 'NICE_NANO'),
              ('DISPLAY', 'OK'), ('BACKLIGHT', 'OK'), ('BUZZER', 'OK'),

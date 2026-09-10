@@ -9,7 +9,7 @@ already have.
 </p>
 
 ```
-  POWER ON  →  SPLASH  →  HOME  ─tap─►  GAME CENTER  ─tap─►  EIGHT GAMES
+  POWER ON  →  SPLASH  →  HOME  ─tap─►  GAME CENTER  ─tap─►  SEVEN GAMES
                             │
                             └─hold─►  SETTINGS · DIAGNOSTICS · ABOUT
 ```
