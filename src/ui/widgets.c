@@ -130,6 +130,21 @@ int nexus_draw_level(int right, int y, uint8_t level)
 	return x;
 }
 
+void nexus_draw_field(int x, int y, int w, int h)
+{
+	/*
+	 * Opaque rather than a band-level skip of the glow.
+	 *
+	 * Skipping the blobs for bands inside the field is cheaper and was the
+	 * obvious approach, but the fields are not the full width of the
+	 * panel: the glow would then stop dead along the field's top edge and
+	 * carry on in the few pixels of margin either side of it, which is a
+	 * seam across the whole screen - trading one artifact for a worse one.
+	 * Covering the ground has no edge to see.
+	 */
+	gfx_rect(x, y, w, h, nexus_theme()->track, GFX_OPAQUE);
+}
+
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill)
 {
 	const struct nexus_theme *t = nexus_theme();

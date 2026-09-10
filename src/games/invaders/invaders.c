@@ -464,6 +464,7 @@ static void invaders_draw(void)
 		return;
 	}
 
+	nexus_draw_field(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
 	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4, 3,
 			t->border, t->border_alpha);
 

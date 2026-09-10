@@ -361,6 +361,10 @@ class UI:
         self.cv.text(x + lw, y, num, BODY, self.t['accent'])
         return x
 
+    def field(self, x, y, w, h):
+        """nexus_draw_field(): flat and opaque, so no glow edge crosses it."""
+        self.cv.rect(x, y, w, h, self.t['track'], OPAQUE)
+
     def meter(self, x, y, w, h, pct, fill):
         r = h // 2
         self.cv.round_rect(x, y, w, h, r, self.t['track'], 190)
@@ -743,8 +747,7 @@ def tetris(cv, t):
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
 
     u.card(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'])
-    cv.rect(K['WELL_X'], K['WELL_Y'], 10 * K['CELL'], 20 * K['CELL'],
-            t['track'], 220)
+    u.field(K['WELL_X'], K['WELL_Y'], 10 * K['CELL'], 20 * K['CELL'])
 
     # a plausible stack plus a falling T
     stack = [
@@ -804,7 +807,7 @@ def snake(cv, t, body=None, food=(3, 12), score='120'):
 
     cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
                    t['border'], t['border_alpha'])
-    cv.rect(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'], t['track'], 120)
+    u.field(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'])
 
     for r, c in body:
         x = K['WELL_X'] + c * K['CELL']
@@ -845,6 +848,7 @@ def breakout(cv, t, ball=None, paddle=None, gone=None, score='340', lives=3):
     for i in range(lives):
         cv.disc(lx - 12 - i * 12, 30, 4, t['accent'])
 
+    u.field(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'])
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
 
@@ -891,7 +895,7 @@ def pacman(cv, t, pac=(8, 6), pdir=1, ghosts=((4, 6), (3, 4), (6, 8)),
 
     cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
                    t['border'], t['border_alpha'])
-    cv.rect(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'], t['track'], 120)
+    u.field(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'])
 
     CELL = K['CELL']
     for r in range(K['ROWS']):
@@ -1003,7 +1007,7 @@ def jumper(cv, t, player=(7, 2), facing=1, taken=(), dead=(), score='700',
     for i in range(lives):
         cv.disc(lx - 12 - i * 12, 30, 4, t['error'])
 
-    cv.rect(0, VY, W, K['ROWS'] * TILE, t['track'], 130)
+    u.field(0, VY, W, K['ROWS'] * TILE)
     for r in range(K['ROWS']):
         y = VY + r * TILE
         for c in range(K['COLS']):
@@ -1054,6 +1058,7 @@ def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
     for i in range(lives):
         cv.disc(lx - 12 - i * 12, 30, 4, t['success'])
 
+    u.field(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'])
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
 
@@ -1102,8 +1107,7 @@ def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
-    cv.rect(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'],
-            t['track'], 120)
+    u.field(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'])
     y = K['FIELD_Y'] + 6
     while y < B - 4:
         cv.rect(W // 2 - 1, y, 3, 8, t['border'], 90)

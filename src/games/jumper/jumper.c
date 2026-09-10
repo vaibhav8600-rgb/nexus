@@ -572,7 +572,7 @@ static void jumper_draw(void)
 		return;
 	}
 
-	gfx_rect(VIEW_X, VIEW_Y, VIEW_W, VIEW_H, t->track, 130);
+	nexus_draw_field(VIEW_X, VIEW_Y, VIEW_W, VIEW_H);
 
 	for (int r = 0; r < ROWS; r++) {
 		int y = VIEW_Y + r * TILE;

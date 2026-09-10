@@ -353,7 +353,7 @@ static void snake_draw(void)
 	if (gfx_hits(FRAME_Y, FRAME_H)) {
 		gfx_round_frame(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, 3,
 				t->border, t->border_alpha);
-		gfx_rect(WELL_X, WELL_Y, WELL_W, WELL_H, t->track, 120);
+		nexus_draw_field(WELL_X, WELL_Y, WELL_W, WELL_H);
 
 		for (int r = 0; r < ROWS; r++) {
 			for (int c = 0; c < COLS; c++) {

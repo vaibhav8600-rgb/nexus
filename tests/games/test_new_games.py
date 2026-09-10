@@ -330,6 +330,38 @@ def main():
        'same for the paddle plane, which is also a point test')
     ok('TO_FIX(PAD_W + BALL_R - 1)' in p, 'and also derived')
 
+    print('\nEvery playfield is flat')
+    # The ground is a gradient with two soft colour blobs behind it, which is
+    # right for a dashboard and wrong behind a game: the blob edge is a
+    # smooth curve crossing the play area, and on a 240px panel that reads as
+    # a tear in the image. Breakout and Invaders had no fill at all, so the
+    # raw ground showed through the whole field.
+    ALL = (('tetris', 'src/games/tetris/tetris.c'),
+           ('snake', 'src/games/snake/snake.c'),
+           ('breakout', 'src/games/breakout/breakout.c'),
+           ('pacman', 'src/games/pacman/pacman.c'),
+           ('jumper', 'src/games/jumper/jumper.c'),
+           ('invaders', 'src/games/invaders/invaders.c'),
+           ('pong', 'src/games/pong/pong.c'))
+    for name, f in ALL:
+        g = src(f)
+        ok('nexus_draw_field(' in g,
+           '%-9s fills its field through the shared helper' % name)
+        # Not "no translucent track anywhere" - Tetris tints its
+        # next-piece box and Pac-Man cuts its mouth with the same colour.
+        # What must be gone is a translucent fill at the FIELD's own rect.
+        ok(not re.search(r'gfx_rect\((WELL|FIELD|VIEW)_X[^;]*, \d+\);', g),
+           '%-9s has no translucent fill left at its field rect' % name)
+
+    w = src('src/ui/widgets.c')
+    ok('gfx_rect(x, y, w, h, nexus_theme()->track, GFX_OPAQUE)' in w,
+       'and the helper is opaque, so no ground reaches through it')
+
+    ru = src('scripts/render_ui.py')
+    ok(ru.count('u.field(') == len(ALL),
+       'the renderer fills all %d, so the doc shots show what ships'
+       % len(ALL))
+
     print('\nThe shared 3D vocabulary is actually used')
     w = src('src/ui/widgets.c')
     ok('void nexus_draw_block' in w and 'void nexus_draw_orb' in w,

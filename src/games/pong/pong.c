@@ -340,7 +340,7 @@ static void pong_draw(void)
 
 	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4, 3,
 			t->border, t->border_alpha);
-	gfx_rect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H, t->track, 120);
+	nexus_draw_field(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
 
 	/* Dashed centre line, behind everything. */
 	for (int y = FIELD_Y + 6; y < FIELD_B - 4; y += 14) {

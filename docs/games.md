@@ -231,6 +231,31 @@ speed-step in milliseconds long before there was a level, so its badge is
 simply that step given a number. Two curves stacked on one game is how a
 difficulty setting stops meaning anything.
 
+### Playfields are flat
+
+The ground is a gradient with two soft colour blobs behind it. That is right
+for a dashboard and wrong behind a game: the blob edge is a smooth curve
+crossing the play area, which on a 240px panel reads as a tear in the image
+rather than as decoration, and everywhere it does not tear it lowers contrast
+on whatever you are trying to track.
+
+`nexus_draw_field()` paints the playfield opaque, so the decoration stops at
+the field border and keeps the header, the cards and the menus. Breakout and
+Invaders had no fill at all before this -- the raw ground showed through their
+entire field.
+
+Opaque rather than skipping the blobs for the bands inside the field, which is
+cheaper and was the obvious approach: the fields are not the full width of the
+panel, so the glow would stop dead along the field's top edge and carry on in
+the few pixels of margin either side of it. That is a seam across the whole
+screen -- one artifact traded for a worse one.
+
+It is not free. Covering the ground costs an opaque fill where skipping it
+would have saved a blended one: the five games that already had a translucent
+fill get slightly cheaper, and the two that had none pay about 40,000 opaque
+writes a frame against the 57,600 the gradient already costs. That is the
+price of not having a seam.
+
 ### They all look like one product
 
 Anything solid is drawn through `nexus_draw_block()`, anything round through

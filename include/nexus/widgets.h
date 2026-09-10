@@ -65,6 +65,21 @@ void nexus_draw_label(int x, int y, const char *text);
  */
 int nexus_draw_level(int right, int y, uint8_t level);
 
+/**
+ * A playfield's ground: flat and opaque, deliberately not frosted.
+ *
+ * Everything else on this device is a translucent pane over a gradient with
+ * two soft colour blobs behind it, and that is right for a dashboard - it is
+ * wrong behind a game. The blob edge is a smooth curve crossing the play
+ * area, which on a 240px panel reads as a tear in the image rather than as
+ * decoration, and everywhere it does not tear it just lowers contrast on the
+ * things you are trying to track.
+ *
+ * The decoration stays on the ground, the cards, the menus and the game
+ * headers. It stops at the field border.
+ */
+void nexus_draw_field(int x, int y, int w, int h);
+
 /** Horizontal capsule meter, 0-100, with a rounded cap at low values. */
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill);
 

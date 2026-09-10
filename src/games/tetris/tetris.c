@@ -117,10 +117,8 @@ static void draw_block(int x, int y, int size, uint8_t piece)
 
 static void draw_well(void)
 {
-	const struct nexus_theme *t = nexus_theme();
-
 	nexus_draw_card(FRAME_X, FRAME_Y, FRAME_W, FRAME_H);
-	gfx_rect(WELL_X, WELL_Y, WELL_W, WELL_H, t->track, 220);
+	nexus_draw_field(WELL_X, WELL_Y, WELL_W, WELL_H);
 
 	for (int row = 0; row < TETRIS_VISIBLE_ROWS; row++) {
 		int y = WELL_Y + row * CELL;
