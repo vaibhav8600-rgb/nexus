@@ -31,8 +31,8 @@
 
 #define COLS 8
 #define ROWS 4
-#define ALIEN_W 18
-#define ALIEN_H 14
+#define ALIEN_W 24
+#define ALIEN_H 18
 #define STEP_X 6
 #define STEP_Y 12
 
@@ -46,13 +46,13 @@
 #define HUD_Y 20
 #define HUD_H 22
 
-#define CANNON_W 22
-#define CANNON_H 12
+#define CANNON_W 28
+#define CANNON_H 14
 #define CANNON_Y (FIELD_B - CANNON_H - 2)
 #define CANNON_STEP 9
 
-#define SHOT_W 3
-#define SHOT_H 8
+#define SHOT_W 4
+#define SHOT_H 10
 #define MAX_BOMBS 3
 
 #define LIVES 3
@@ -354,17 +354,18 @@ static void draw_alien(int x, int y, int row)
 
 	/* Body, then two legs that swap on alternate steps - the whole
 	 * animation of the original, and it costs two rects. */
-	nexus_draw_block(x + 2, y, ALIEN_W - 4, ALIEN_H - 4, 3, body);
+	nexus_draw_block(x + 3, y, ALIEN_W - 6, ALIEN_H - 5, 4, body);
 
-	int lift = (g_f.anim & 8) ? 0 : 2;
+	int lift = (g_f.anim & 8) ? 0 : 3;
 
-	gfx_rect(x, y + ALIEN_H - 5 - lift, 4, 4, body, GFX_OPAQUE);
-	gfx_rect(x + ALIEN_W - 4, y + ALIEN_H - 5 - (2 - lift), 4, 4, body,
+	gfx_rect(x, y + ALIEN_H - 6 - lift, 5, 6, body, GFX_OPAQUE);
+	gfx_rect(x + ALIEN_W - 5, y + ALIEN_H - 6 - (3 - lift), 5, 6, body,
 		 GFX_OPAQUE);
 
-	/* Eyes. Two pixels is all it takes to make it face you. */
-	gfx_rect(x + 6, y + 4, 3, 3, NEXUS_C(0x0A0A12u), GFX_OPAQUE);
-	gfx_rect(x + ALIEN_W - 9, y + 4, 3, 3, NEXUS_C(0x0A0A12u), GFX_OPAQUE);
+	/* Eyes. Three pixels is what it takes to still read as a face from
+	 * the other side of a desk. */
+	gfx_rect(x + 7, y + 5, 4, 4, NEXUS_C(0x0A0A12u), GFX_OPAQUE);
+	gfx_rect(x + ALIEN_W - 11, y + 5, 4, 4, NEXUS_C(0x0A0A12u), GFX_OPAQUE);
 }
 
 static void invaders_draw(void)

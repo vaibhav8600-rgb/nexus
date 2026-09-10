@@ -83,7 +83,9 @@ typedef int32_t fix_t;
 #define HUD_Y 20
 #define HUD_H 22
 
-#define BALL_R 3
+/* 5, not 3. A 6px ball was the smallest moving thing in any game here and
+ * the first to disappear at any distance; 10px still clears the paddle. */
+#define BALL_R 5
 
 /*
  * Speed and tick rate come from Kconfig so they can be tuned from a config

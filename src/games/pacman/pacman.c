@@ -569,8 +569,11 @@ static void pacman_draw(void)
 				gfx_hline(x, y, CELL, t->edge_hi, 40);
 				break;
 			case DOT:
-				gfx_rect(x + CELL / 2 - 2, y + CELL / 2 - 2, 4,
-					 4, t->caption, GFX_OPAQUE);
+				/* 6px, not 4. A dot is the smallest thing on
+				 * the board and therefore the first thing to
+				 * disappear at any distance. */
+				gfx_rect(x + CELL / 2 - 3, y + CELL / 2 - 3, 6,
+					 6, t->caption, GFX_OPAQUE);
 				break;
 			case PELLET:
 				/* Blinks, so it reads as the thing worth

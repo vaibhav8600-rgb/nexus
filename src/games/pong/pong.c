@@ -43,10 +43,10 @@ typedef int32_t fix_t;
 #define HUD_Y 20
 #define HUD_H 22
 
-#define PAD_W 8
-#define PAD_H 40
+#define PAD_W 10
+#define PAD_H 44
 #define PAD_INSET 6
-#define BALL_R 6
+#define BALL_R 8
 
 #define WIN_SCORE 7
 

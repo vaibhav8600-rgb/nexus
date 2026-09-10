@@ -857,7 +857,7 @@ def pacman(cv, t, pac=(8, 6), pdir=1, ghosts=((4, 6), (3, 4), (6, 8)),
             elif (r, c) in eaten:
                 continue
             elif ch == '.':
-                cv.rect(x + CELL // 2 - 2, y + CELL // 2 - 2, 4, 4,
+                cv.rect(x + CELL // 2 - 3, y + CELL // 2 - 3, 6, 6,
                         t['caption'])
             elif ch == 'o' and not (anim & 2):
                 cv.disc(x + CELL // 2, y + CELL // 2, 5, t['value'])
@@ -941,7 +941,7 @@ JMP_LEVEL = re.findall(
     .split('\n};')[0])
 
 
-def jumper(cv, t, player=(9, 3), facing=1, taken=(), dead=(), score='700',
+def jumper(cv, t, player=(7, 2), facing=1, taken=(), dead=(), score='700',
            lives=3, anim=0):
     u, K = UI(cv, t), JMP
     TILE, VY = K['TILE'], K['VIEW_Y']
@@ -962,23 +962,24 @@ def jumper(cv, t, player=(9, 3), facing=1, taken=(), dead=(), score='700',
                 u.block(x, y, TILE, TILE, 0,
                         mix(t['accent'], t['accent_alt'], min(255, r * 20)))
             elif ch == 'o' and (r, c) not in taken:
-                u.orb(x + TILE // 2, y + TILE // 2, 5, t['warning'])
+                u.orb(x + TILE // 2, y + TILE // 2, 7, t['warning'])
             elif ch == 'F':
-                cv.rect(x + TILE // 2 - 1, y, 3, TILE, t['value'])
-                u.block(x + TILE // 2 + 2, y, 9, 7, 1, t['muted'])
+                cv.rect(x + TILE // 2 - 2, y, 4, TILE, t['value'])
+                u.block(x + TILE // 2 + 2, y, 12, 10, 2, t['muted'])
             elif ch == 'E' and (r, c) not in dead:
                 PW, PH = K['PLAYER_W'], K['PLAYER_H']
-                u.block(x, y + TILE - PH + 2, PW, PH - 2, 4, t['success'])
-                cv.rect(x + 2, y + TILE - PH + 5, 2, 2, C(0x0A0A12))
-                cv.rect(x + PW - 4, y + TILE - PH + 5, 2, 2, C(0x0A0A12))
+                ey = y + TILE - PH
+                u.block(x, ey + 3, PW, PH - 3, 5, t['success'])
+                cv.rect(x + 3, ey + 7, 3, 3, C(0x0A0A12))
+                cv.rect(x + PW - 6, ey + 7, 3, 3, C(0x0A0A12))
 
     PW, PH = K['PLAYER_W'], K['PLAYER_H']
     sx = player[1] * TILE
     sy = VY + player[0] * TILE + TILE - PH
-    u.block(sx, sy, PW, 5, 2, t['error'])
-    u.block(sx + 1, sy + 5, PW - 2, 5, 1, t['warning'])
-    u.block(sx, sy + 10, PW, 3, 1, t['accent_alt'])
-    cv.rect(sx + (PW - 4 if facing > 0 else 2), sy + 6, 2, 2, 0xFFFF)
+    u.block(sx, sy, PW, 7, 2, t['error'])
+    u.block(sx + 1, sy + 7, PW - 2, 6, 1, t['warning'])
+    u.block(sx, sy + 13, PW, 4, 1, t['accent_alt'])
+    cv.rect(sx + (PW - 5 if facing > 0 else 3), sy + 8, 3, 3, 0xFFFF)
 
 
 # --------------------------------------------------------------- invaders
@@ -1012,13 +1013,13 @@ def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
             x, y = fx + c * (AW + 4), fy + r * (AH + 6)
             body = mix(t['accent'], t['accent_alt'],
                        r * 255 // (K['ROWS'] - 1))
-            u.block(x + 2, y, AW - 4, AH - 4, 3, body)
-            cv.rect(x, y + AH - 5, 4, 4, body)
-            cv.rect(x + AW - 4, y + AH - 7, 4, 4, body)
-            cv.rect(x + 6, y + 4, 3, 3, C(0x0A0A12))
-            cv.rect(x + AW - 9, y + 4, 3, 3, C(0x0A0A12))
+            u.block(x + 3, y, AW - 6, AH - 5, 4, body)
+            cv.rect(x, y + AH - 6, 5, 6, body)
+            cv.rect(x + AW - 5, y + AH - 9, 5, 6, body)
+            cv.rect(x + 7, y + 5, 4, 4, C(0x0A0A12))
+            cv.rect(x + AW - 11, y + 5, 4, 4, C(0x0A0A12))
 
-    u.block(120, K['CANNON_Y'] - 40, 3, 8, 1, t['warning'])
+    u.block(120, K['CANNON_Y'] - 40, 4, 10, 1, t['warning'])
     u.block(cannon, K['CANNON_Y'] + 4, K['CANNON_W'], K['CANNON_H'] - 4, 2,
             t['success'])
     u.block(cannon + K['CANNON_W'] // 2 - 2, K['CANNON_Y'], 4, 6, 1,

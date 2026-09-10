@@ -33,9 +33,17 @@
 
 /* ---- geometry ----------------------------------------------------------- */
 
-#define TILE 15
-#define COLS 16
-#define ROWS 12
+/*
+ * 20px tiles over 12x9, not 15px over 16x12.
+ *
+ * A 240px panel read from across a desk is the constraint, not the level
+ * design: fewer, larger cells are the only lever there is. 12 columns of 20px
+ * is exactly 240 wide and nine rows is exactly the 180 the HUD leaves, so this
+ * is the largest tile the screen can hold without cropping.
+ */
+#define TILE 20
+#define COLS 12
+#define ROWS 9
 
 #define VIEW_X 0
 #define VIEW_Y 44
@@ -55,14 +63,14 @@ typedef int32_t fix_t;
  * no point running physics faster than anything can be shown. 2.26 tiles of
  * jump, 4.8 across, 12.5 tiles a second of running.
  */
-#define GRAVITY 132     /* 0.51 px/tick^2 */
-#define JUMP_V (-1580)  /* -6.2 px/tick   */
-#define RUN_V 768       /* 3.0 px/tick    */
+#define GRAVITY 133     /* 0.52 px/tick^2 */
+#define JUMP_V (-1733)  /* -6.8 px/tick   */
+#define RUN_V 896       /* 3.5 px/tick    */
 #define MAX_FALL 2048   /* 8.0 px/tick    */
 #define ENEMY_V 192     /* 0.75 px/tick   */
 
-#define PLAYER_W 11
-#define PLAYER_H 13
+#define PLAYER_W 15
+#define PLAYER_H 17
 #define MAX_ENEMIES 4
 #define LIVES 3
 
@@ -77,18 +85,15 @@ typedef int32_t fix_t;
  * top. Collect every coin and reach the flag.
  */
 static const char *const level[ROWS] = {
-	"                ",
-	"      F         ",
-	"   ========     ",
-	"  o          o  ",
-	" ====     ===== ",
-	"     o          ",
-	"        =====   ",
-	" =====     o    ",
-	"        E       ",
-	"   ======  =====",
-	"P      E     o  ",
-	"================",
+	"            ",
+	"     F      ",
+	"  =======   ",
+	" o        o ",
+	"====    ====",
+	"     o      ",
+	" ====   ====",
+	"P    E    o ",
+	"============",
 };
 
 struct mover {
@@ -159,8 +164,14 @@ static inline void take(int r, int c)
 
 static bool hits(int x, int y, int w, int h)
 {
-	if (x < 0 || x + w > COLS * TILE) {
-		return true; /* the screen edges are walls */
+	/*
+	 * y as well as x. Without the ceiling the jump from the top platform
+	 * carries the player seventeen pixels above the view, where it draws
+	 * over the HUD - the sprite leaves the playfield and nothing stops it,
+	 * because at() reports everything off the top as open air.
+	 */
+	if (x < 0 || x + w > COLS * TILE || y < 0) {
+		return true;
 	}
 
 	for (int r = y / TILE; r <= (y + h - 1) / TILE; r++) {
@@ -443,13 +454,13 @@ static void draw_player(int sx, int sy)
 {
 	const struct nexus_theme *t = nexus_theme();
 
-	nexus_draw_block(sx, sy, PLAYER_W, 5, 2, t->error);
-	nexus_draw_block(sx + 1, sy + 5, PLAYER_W - 2, 5, 1, t->warning);
-	nexus_draw_block(sx, sy + 10, PLAYER_W, 3, 1, t->accent_alt);
+	nexus_draw_block(sx, sy, PLAYER_W, 7, 2, t->error);
+	nexus_draw_block(sx + 1, sy + 7, PLAYER_W - 2, 6, 1, t->warning);
+	nexus_draw_block(sx, sy + 13, PLAYER_W, 4, 1, t->accent_alt);
 
-	/* A one-pixel eye on the side it faces: the cheapest thing that makes
-	 * a 11px sprite have a front. */
-	gfx_rect(sx + (g_j.facing > 0 ? PLAYER_W - 4 : 2), sy + 6, 2, 2,
+	/* An eye on the side it faces: the cheapest thing that gives a sprite
+	 * this small a front. */
+	gfx_rect(sx + (g_j.facing > 0 ? PLAYER_W - 5 : 3), sy + 8, 3, 3,
 		 NEXUS_C(0xFFFFFFu), GFX_OPAQUE);
 }
 
@@ -457,9 +468,9 @@ static void draw_enemy(int sx, int sy)
 {
 	const struct nexus_theme *t = nexus_theme();
 
-	nexus_draw_block(sx, sy + 2, PLAYER_W, PLAYER_H - 2, 4, t->success);
-	gfx_rect(sx + 2, sy + 5, 2, 2, NEXUS_C(0x0A0A12u), GFX_OPAQUE);
-	gfx_rect(sx + PLAYER_W - 4, sy + 5, 2, 2, NEXUS_C(0x0A0A12u),
+	nexus_draw_block(sx, sy + 3, PLAYER_W, PLAYER_H - 3, 5, t->success);
+	gfx_rect(sx + 3, sy + 7, 3, 3, NEXUS_C(0x0A0A12u), GFX_OPAQUE);
+	gfx_rect(sx + PLAYER_W - 6, sy + 7, 3, 3, NEXUS_C(0x0A0A12u),
 		 GFX_OPAQUE);
 }
 
@@ -515,14 +526,14 @@ static void jumper_draw(void)
 				if (!taken(r, c)) {
 					nexus_draw_orb(x + TILE / 2,
 						       y + TILE / 2,
-						       (g_j.anim & 8) ? 4 : 5,
+						       (g_j.anim & 8) ? 6 : 7,
 						       t->warning);
 				}
 				break;
 			case 'F':
-				gfx_rect(x + TILE / 2 - 1, y, 3, TILE,
+				gfx_rect(x + TILE / 2 - 2, y, 4, TILE,
 					 t->value, GFX_OPAQUE);
-				nexus_draw_block(x + TILE / 2 + 2, y, 9, 7, 1,
+				nexus_draw_block(x + TILE / 2 + 2, y, 12, 10, 2,
 						 g_j.coins_left ? t->muted
 								: t->success);
 				break;
