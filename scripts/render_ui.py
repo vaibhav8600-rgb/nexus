@@ -466,17 +466,6 @@ def home(cv, t, st):
 
     # brand plate
     u.card(K['COL_L'], K['BRAND_Y'], CONTENT_W, K['BRAND_H'])
-
-    # Corner dots: jiggler top right, Studio bottom left. Diagonally opposite
-    # so they cannot be confused at a glance.
-    def dot(x, y, c):
-        cv.disc(x, y, 7, c, 60)
-        cv.disc(x, y, 4, c)
-
-    if st.get('anti_idle'):
-        dot(K['COL_L'] + CONTENT_W - 10, K['BRAND_Y'] + 9, t['success'])
-    if st.get('studio'):
-        dot(K['COL_L'] + 10, K['BRAND_Y'] + K['BRAND_H'] - 9, t['accent'])
     u.wordmark(W // 2,
                K['BRAND_Y'] + (K['BRAND_H'] - wordmark_h(2)) // 2, 'NEXUS', 2)
 
@@ -1030,7 +1019,9 @@ def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
             cv.rect(x + 7, y + 5, 4, 4, C(0x0A0A12))
             cv.rect(x + AW - 11, y + 5, 4, 4, C(0x0A0A12))
 
-    u.block(120, K['CANNON_Y'] - 40, 4, 10, 1, t['warning'])
+    # three in the air, which is what holding the fire key looks like
+    for dy in (40, 96, 138):
+        u.block(120, K['CANNON_Y'] - dy, 4, 10, 1, t['warning'])
     u.block(cannon, K['CANNON_Y'] + 4, K['CANNON_W'], K['CANNON_H'] - 4, 2,
             t['success'])
     u.block(cannon + K['CANNON_W'] // 2 - 2, K['CANNON_Y'], 4, 6, 1,
@@ -1040,7 +1031,7 @@ def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
 # ------------------------------------------------------------------- pong
 PNG = defines(read('src/games/pong/pong.c'),
               ['FIELD_X', 'FIELD_Y', 'FIELD_W', 'FIELD_H', 'PAD_W', 'PAD_H',
-               'PAD_INSET', 'BALL_R'])
+               'PAD_INSET', 'BALL_R', 'HUD_Y'])
 
 
 def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
@@ -1052,8 +1043,9 @@ def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
     u.ground()
     u.label(PAD, 8, 'PONG')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(W // 2 - 30 - text_w('0', BIG), 22, str(sy), BIG, t['accent'])
-    cv.text(W // 2 + 30, 22, str(sc), BIG, t['error'])
+    cv.text(W // 2 - 30 - text_w('0', VALUE), K['HUD_Y'], str(sy), VALUE,
+            t['accent'])
+    cv.text(W // 2 + 30, K['HUD_Y'], str(sc), VALUE, t['error'])
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
@@ -1070,44 +1062,6 @@ def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
     u.orb(ball[0], ball[1], K['BALL_R'], t['warning'])
 
 
-# ------------------------------------------------------------------- 2048
-G48 = defines(read('src/games/g2048/g2048.c'),
-              ['N', 'CELL', 'GAP', 'BOARD_W', 'BOARD_X', 'BOARD_Y', 'HUD_Y'])
-G48_HUE = [int(v, 16) for v in re.findall(
-    r'0x([0-9A-Fa-f]{6}), /\*',
-    read('src/games/g2048/g2048.c').split('hue[] = {')[1].split('};')[0])]
-
-
-def g2048(cv, t, board=((1, 2, 0, 0), (3, 4, 1, 0), (5, 7, 2, 1),
-                        (9, 8, 4, 3)), score='6440'):
-    u, K = UI(cv, t), G48
-    CELL, GAP = K['CELL'], K['GAP']
-    u.ground()
-    u.label(PAD, 6, '2048')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 6, 'HOLD=EXIT')
-    cv.text(PAD, K['HUD_Y'] + 2, 'SCORE', CAPTION, t['caption'])
-    cv.text(PAD + 40, K['HUD_Y'], score, BODY, t['value'])
-
-    cv.round_rect(K['BOARD_X'] - GAP, K['BOARD_Y'] - GAP, K['BOARD_W'] + GAP,
-                  K['BOARD_W'] + GAP, 8, t['panel'], 90)
-    for r in range(K['N']):
-        for c in range(K['N']):
-            x = K['BOARD_X'] + c * (CELL + GAP)
-            y = K['BOARD_Y'] + r * (CELL + GAP)
-            e = board[r][c]
-            if e == 0:
-                cv.round_rect(x, y, CELL, CELL, 6, t['track'], 150)
-                cv.round_frame(x, y, CELL, CELL, 6, t['border'],
-                               t['border_alpha'])
-                continue
-            u.block(x, y, CELL, CELL, 6, C(G48_HUE[min(e, len(G48_HUE)) - 1]))
-            v = str(1 << e)
-            sc = BODY if (1 << e) >= 100 else VALUE
-            cv.text(x + (CELL - text_w(v, sc)) // 2,
-                    y + (CELL - text_h(sc)) // 2, v, sc,
-                    C(0xE8ECF8) if e <= 2 else C(0x11131C))
-
-
 # ------------------------------------------------------------------ main
 SETTINGS_ROWS = [('SOUND', 'ON'), ('BRIGHT', '80%'), ('THEME', 'NEXUS'),
                  ('ANIM', 'ON'), ('SPEED', 'NORMAL'), ('SNAKE WALL', 'OFF'),
@@ -1119,8 +1073,7 @@ DIAG_ROWS = [('FIRMWARE', 'V1.0.0'), ('BOARD', 'NICE_NANO'),
              ('L/R BATT', '78/64'), ('UI STATIC', '5984B'),
              ('UPTIME', '02:14'), ('BACK', '')]
 STATUS = dict(on_usb=False, usb=True, profile=0, bonded=True, connected=True,
-              layer='DEFAULT', mods=0b0010, wpm=42, batt=[78, 64],
-              anti_idle=True, studio=True)
+              layer='DEFAULT', mods=0b0010, wpm=42, batt=[78, 64])
 
 
 # Nearest-neighbour, integer, no smoothing.
@@ -1151,7 +1104,6 @@ def main():
         ('jumper', lambda cv: jumper(cv, nx)),
         ('invaders', lambda cv: invaders(cv, nx)),
         ('pong', lambda cv: pong(cv, nx)),
-        ('2048', lambda cv: g2048(cv, nx)),
         ('settings', lambda cv: menu(cv, nx, 'SETTINGS', SETTINGS_ROWS, 4)),
         ('diagnostics', lambda cv: menu(cv, nx, 'DIAGNOSTICS', DIAG_ROWS, 9)),
         ('about', lambda cv: about(cv, nx)),

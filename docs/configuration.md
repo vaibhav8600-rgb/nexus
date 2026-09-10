@@ -133,9 +133,8 @@ difference between a half that dozed and a half that dropped.
 | `CONFIG_NEXUS_INVADERS_TICK_MS` | `16` | |
 | `CONFIG_NEXUS_PONG` | `y` | |
 | `CONFIG_NEXUS_PONG_TICK_MS` | `16` | |
-| `CONFIG_NEXUS_PONG_BALL_SPEED` | `320` | Hundredths of a pixel per tick. Whole pixels would only offer sedate, brisk and unplayable. |
-| `CONFIG_NEXUS_PONG_PADDLE_STEP` | `14` | |
-| `CONFIG_NEXUS_2048` | `y` | Turn-based, so it has no tick to configure. |
+| `CONFIG_NEXUS_PONG_BALL_SPEED` | `640` | Hundredths of a pixel per tick. Whole pixels would only offer sedate, brisk and unplayable. |
+| `CONFIG_NEXUS_PONG_PADDLE_STEP` | `22` | Travel per key repeat, so this is the paddle's real top speed - it has to be worth roughly what the ball does in the same time. |
 | `CONFIG_NEXUS_GAME_HIGHSCORE_PERSIST` | `y` | Store high scores in Zephyr settings. Written only when a record actually improves. |
 
 Turning a game off removes it from the build entirely, not just from the
@@ -252,8 +251,7 @@ sensor-bindings = <&nexus_theme_enc NEXUS_ACT_THEME_NEXT NEXUS_ACT_THEME_PREV
 | --- | --- | --- |
 | `CONFIG_NEXUS_SPLIT_SWAP_SIDES` | `n` | ZMK numbers peripherals by pairing order, not by physical side. Set this if LEFT and RIGHT are the wrong way round. |
 | `CONFIG_NEXUS_STATUS_STALE_MS` | `0` | Blank a half's battery after N ms of silence. **Off by default**: a half with `CONFIG_ZMK_SLEEP` stops reporting when idle, so any timeout eventually blanks a good reading. An idle half has a battery level; we just heard it a while ago. |
-| `CONFIG_NEXUS_ANTI_IDLE_STATUS` | `n` | Green dot, top right of the brand plate, while the mouse jiggler is on. Needs the `&anti_idle` behavior, which comes from snake-module, not from NEXUS. |
-| `CONFIG_NEXUS_STUDIO_STATUS` | `y` | Accent dot, bottom left of the brand plate, while ZMK Studio is unlocked - the keymap can be rewritten from a host right now. Diagonally opposite the jiggler dot so the two can never be confused. Needs `CONFIG_ZMK_STUDIO`; nothing is drawn when locked. |
+| `CONFIG_NEXUS_ANTI_IDLE_STATUS` | `n` | Cursor icon showing whether the mouse jiggler is on. Needs the `&anti_idle` behavior, which comes from snake-module, not from NEXUS. |
 
 Battery levels require `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y`
 on the dongle and `CONFIG_ZMK_BATTERY_REPORTING=y` on the halves. Without them

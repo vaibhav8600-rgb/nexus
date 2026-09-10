@@ -55,6 +55,21 @@
 #define SHOT_H 10
 #define MAX_BOMBS 3
 
+/*
+ * Auto-fire. The original allowed one shot at a time, which is what made
+ * missing cost you something - but that rule was written for a cabinet with a
+ * dedicated fire button, and here the button repeats at
+ * CONFIG_NEXUS_ACTION_REPEAT_MS. Holding it under the old rule produced a
+ * shot, a long wait while it flew the length of the field, then another: the
+ * gun felt broken rather than deliberate.
+ *
+ * So: hold to fire, up to MAX_SHOTS in the air, one every SHOT_COOL ticks.
+ * The cap is what keeps it a game - three in flight is a stream you have to
+ * aim, not a wall that clears the screen on its own.
+ */
+#define MAX_SHOTS 3
+#define SHOT_COOL 4
+
 #define LIVES 3
 #define TICK_MS CONFIG_NEXUS_INVADERS_TICK_MS
 
@@ -75,8 +90,9 @@ struct fleet {
 	uint8_t left;       /* aliens remaining */
 
 	int16_t cannon;
-	struct shot shot;   /* yours - only ever one, as in the original */
+	struct shot shot[MAX_SHOTS]; /* yours */
 	struct shot bomb[MAX_BOMBS];
+	uint8_t cool;                /* ticks until the gun will fire again */
 
 	uint32_t score;
 	uint8_t lives;
@@ -161,7 +177,10 @@ static void lose_life(void)
 		end_round(false);
 		return;
 	}
-	g_f.shot.live = false;
+	for (int i = 0; i < MAX_SHOTS; i++) {
+		g_f.shot[i].live = false;
+	}
+	g_f.cool = 0;
 	for (int i = 0; i < MAX_BOMBS; i++) {
 		g_f.bomb[i].live = false;
 	}
@@ -257,39 +276,44 @@ static void step(void)
 
 	bool scored = false;
 
-	/* Your shot, upward. */
-	if (g_f.shot.live) {
-		g_f.shot.y -= 7;
-		if (g_f.shot.y < FIELD_Y) {
-			g_f.shot.live = false;
-		} else {
-			for (int r = 0; r < ROWS && g_f.shot.live; r++) {
-				for (int c = 0; c < COLS; c++) {
-					if (!alive(r, c)) {
-						continue;
-					}
-					int ax = alien_x(c);
-					int ay = alien_y(r);
+	if (g_f.cool) {
+		g_f.cool--;
+	}
 
-					if (g_f.shot.x < ax ||
-					    g_f.shot.x > ax + ALIEN_W ||
-					    g_f.shot.y < ay ||
-					    g_f.shot.y > ay + ALIEN_H) {
-						continue;
-					}
+	/* Your shots, upward. */
+	for (int i = 0; i < MAX_SHOTS; i++) {
+		struct shot *sh = &g_f.shot[i];
 
-					g_f.row[r] &= (uint16_t)~(1u << c);
-					g_f.left--;
-					/* Back rows are worth more, which is
-					 * the only reason to aim past the
-					 * front one. */
-					g_f.score += (uint32_t)(ROWS - r) * 10U;
-					g_f.shot.live = false;
-					scored = true;
-					nexus_sound_play(
-						NEXUS_SOUND_TETRIS_ROTATE);
-					break;
+		if (!sh->live) {
+			continue;
+		}
+		sh->y -= 7;
+		if (sh->y < FIELD_Y) {
+			sh->live = false;
+			continue;
+		}
+		for (int r = 0; r < ROWS && sh->live; r++) {
+			for (int c = 0; c < COLS; c++) {
+				if (!alive(r, c)) {
+					continue;
 				}
+				int ax = alien_x(c);
+				int ay = alien_y(r);
+
+				if (sh->x < ax || sh->x > ax + ALIEN_W ||
+				    sh->y < ay || sh->y > ay + ALIEN_H) {
+					continue;
+				}
+
+				g_f.row[r] &= (uint16_t)~(1u << c);
+				g_f.left--;
+				/* Back rows are worth more, which is the
+				 * only reason to aim past the front one. */
+				g_f.score += (uint32_t)(ROWS - r) * 10U;
+				sh->live = false;
+				scored = true;
+				nexus_sound_play(NEXUS_SOUND_TETRIS_ROTATE);
+				break;
 			}
 		}
 	}
@@ -408,9 +432,12 @@ static void invaders_draw(void)
 		}
 	}
 
-	if (g_f.shot.live) {
-		nexus_draw_block(g_f.shot.x - SHOT_W / 2, g_f.shot.y, SHOT_W,
-				 SHOT_H, 1, t->warning);
+	for (int i = 0; i < MAX_SHOTS; i++) {
+		if (!g_f.shot[i].live) {
+			continue;
+		}
+		nexus_draw_block(g_f.shot[i].x - SHOT_W / 2, g_f.shot[i].y,
+				 SHOT_W, SHOT_H, 1, t->warning);
 	}
 	for (int i = 0; i < MAX_BOMBS; i++) {
 		if (g_f.bomb[i].live) {
@@ -521,15 +548,20 @@ static void move_cannon(int delta)
 
 static void fire(void)
 {
-	if (g_state != NEXUS_GAME_RUNNING || g_f.shot.live) {
-		/* One shot at a time, as in the original: it is what makes
-		 * missing cost you something. */
+	if (g_state != NEXUS_GAME_RUNNING || g_f.cool) {
 		return;
 	}
-	g_f.shot.live = true;
-	g_f.shot.x = (int16_t)(g_f.cannon + CANNON_W / 2);
-	g_f.shot.y = CANNON_Y;
-	nexus_sound_play(NEXUS_SOUND_TETRIS_DROP);
+	for (int i = 0; i < MAX_SHOTS; i++) {
+		if (g_f.shot[i].live) {
+			continue;
+		}
+		g_f.shot[i].live = true;
+		g_f.shot[i].x = (int16_t)(g_f.cannon + CANNON_W / 2);
+		g_f.shot[i].y = CANNON_Y;
+		g_f.cool = SHOT_COOL;
+		nexus_sound_play(NEXUS_SOUND_TETRIS_DROP);
+		return;
+	}
 }
 
 static bool invaders_input(enum nexus_action action)

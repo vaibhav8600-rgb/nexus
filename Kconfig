@@ -345,7 +345,7 @@ config NEXUS_PONG_TICK_MS
 
 config NEXUS_PONG_BALL_SPEED
 	int "Pong ball speed, hundredths of a pixel per tick"
-	default 320
+	default 640
 	help
 	  Hundredths, not whole pixels: at 8.8 fixed point the useful range is
 	  well under one pixel of granularity, and an integer knob would only
@@ -353,16 +353,11 @@ config NEXUS_PONG_BALL_SPEED
 
 config NEXUS_PONG_PADDLE_STEP
 	int "Pong paddle travel per key repeat, px"
-	default 14
-
-config NEXUS_2048
-	bool "2048"
-	default y
-	depends on NEXUS_GAMES
+	default 22
 	help
-	  The only turn-based game here, so it has no tick and no work item:
-	  nothing moves between presses and it repaints once per move. 16 bytes
-	  of board plus a score.
+	  A key repeat is CONFIG_NEXUS_ACTION_REPEAT_MS apart, so this is the
+	  paddle's real top speed: it has to be worth roughly what the ball
+	  does in the same time, or the ball simply cannot be reached.
 
 config NEXUS_PACMAN_TICK_MS
 	int "Maze chase step interval, ms"
@@ -494,19 +489,6 @@ config NEXUS_GAME_HIGHSCORE_PERSIST
 # --------------------------------------------------------------------------
 # Status sources
 # --------------------------------------------------------------------------
-config NEXUS_STUDIO_STATUS
-	bool "Show a dot on the brand plate while ZMK Studio is unlocked"
-	default y
-	depends on NEXUS_DISPLAY && ZMK_STUDIO
-	help
-	  Unlocked means the keymap can be rewritten from a host right now,
-	  which is worth being able to see at a glance on a device that sits on
-	  your desk. Locked and unlocking both read as "not editable" and show
-	  nothing.
-
-	  Bottom left of the brand plate, diagonally opposite the jiggler dot so
-	  the two can never be confused.
-
 config NEXUS_ANTI_IDLE_STATUS
 	bool "Show a mouse-jiggler indicator on the dashboard"
 	default n

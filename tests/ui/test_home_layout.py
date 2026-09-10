@@ -310,41 +310,6 @@ def main():
         ok(face_w('NEXUS', asz) + 2 * GLOW_CELLS * asz
            <= C['NEXUS_CONTENT_W'], 'About wordmark fits the card width')
 
-    print('\nCorner dots - jiggler and Studio')
-    # Two flags on the one card that carries no data of its own. They have to
-    # stay inside the plate and off the letters: the wordmark is drawn after
-    # them, so a dot that strays under the name is hidden by it, and one that
-    # strays outside the plate is painted over by the next card.
-    RAD = 4 + 3   # solid disc plus its halo
-    calls = re.findall(r"\bdot\(([^;]+?), t->(\w+)\);", src)
-    ok(len(calls) == 2, 'the plate places exactly two dots (found %d)'
-       % len(calls))
-    seen = []
-    for args, colour in calls:
-        xs, ys = args.rsplit(', ', 1)
-        x, y = eval(xs, {}, C), eval(ys, {}, C)
-        seen.append((x, y))
-        ok(x - RAD >= C['NEXUS_PAD'] and x + RAD <= 240 - C['NEXUS_PAD'],
-           'dot at x=%d (%s) stays in the plate horizontally' % (x, colour))
-        fits('dot at y=%d (%s)' % (y, colour), y - RAD, y + RAD + 1,
-             C['BRAND_Y'], C['BRAND_H'])
-        # the wordmark is centred, so its ink runs either side of x=120
-        half = face_w('NEXUS', hs) // 2 + GLOW_CELLS * hs
-        ok(abs(x - 120) - RAD > half,
-           'dot at x=%d clears the wordmark ink (+/-%d of centre)'
-           % (x, half))
-    # A dot that is never repainted looks like a feature that does not work.
-    band = src.split('nexus_screen_invalidate_rows(BRAND_Y')[0]
-    band = band[band.rfind('if (changed'):]
-    for bit in ('NEXUS_STATUS_JIGGLE', 'NEXUS_STATUS_STUDIO'):
-        ok(bit in band, '%s repaints the brand plate' % bit)
-
-    if len(seen) == 2:
-        mid = C['BRAND_Y'] + C['BRAND_H'] // 2
-        (x1, y1), (x2, y2) = seen
-        ok((x1 - 120) * (x2 - 120) < 0 and (y1 - mid) * (y2 - mid) < 0,
-           'the two dots sit in opposite corners, not side by side')
-
     print('\nHierarchy')
     ok('nexus_draw_caption(' in src, 'card headings are captions again')
     ok(str(C['NEXUS_TXT_BIG']) in src or True, '')

@@ -40,8 +40,15 @@ typedef int32_t fix_t;
 #define FIELD_R (FIELD_X + FIELD_W)
 #define FIELD_B (FIELD_Y + FIELD_H)
 
-#define HUD_Y 20
-#define HUD_H 22
+#define HUD_Y 22
+#define HUD_H 20
+/*
+ * NEXUS_TXT_BIG is 20x28 and the court starts at FIELD_Y - 2 = 44. Drawn at
+ * HUD_Y + 2 it ran to y=50, so the scores sat inside the frame and the ball
+ * passed through them. VALUE is 15x21, ends at 41, and is still the largest
+ * numeral on the screen.
+ */
+#define HUD_TXT NEXUS_TXT_VALUE
 
 #define PAD_W 10
 #define PAD_H 44
@@ -54,8 +61,20 @@ typedef int32_t fix_t;
 #define BALL_SPEED ((fix_t)CONFIG_NEXUS_PONG_BALL_SPEED * 256 / 100)
 #define PAD_STEP CONFIG_NEXUS_PONG_PADDLE_STEP
 
-/* How much slower than the ball the opponent tracks. Higher is easier. */
-#define CPU_LAG 3
+/*
+ * The opponent, as a fraction of the ball's own vertical speed.
+ *
+ * This used to be PAD_STEP / CPU_LAG - a constant 4 px per tick, which was
+ * FASTER than the ball's steepest vy. It could not be beaten by aiming, only
+ * outlasted, so every rally ran until someone got bored: the real reason the
+ * game felt slow was not the ball, it was that the point never ended.
+ *
+ * Two thirds of the ball's speed means a steep return crosses faster than the
+ * paddle can follow, which is what makes an angle worth playing. It is a
+ * fraction rather than a constant so it keeps tracking the ball if the speed
+ * knob moves.
+ */
+#define CPU_STEP (TO_PX(speed()) * 2 / 3 + 1)
 
 struct pong {
 	fix_t bx, by;
@@ -107,7 +126,7 @@ static void serve(int towards)
 	if (g_g.vy == 0) {
 		g_g.vy = speed() / 3;
 	}
-	g_g.serve = 20;
+	g_g.serve = 10;
 }
 
 static void arm_tick(void)
@@ -181,12 +200,13 @@ static void step(void)
 
 	if (g_g.vx > 0) {
 		int d = want - cpu;
+		int step = CPU_STEP;
 
-		if (d > PAD_STEP / CPU_LAG) {
-			d = PAD_STEP / CPU_LAG;
+		if (d > step) {
+			d = step;
 		}
-		if (d < -PAD_STEP / CPU_LAG) {
-			d = -PAD_STEP / CPU_LAG;
+		if (d < -step) {
+			d = -step;
 		}
 		g_g.cpu += TO_FIX(d);
 		clamp_pad(&g_g.cpu);
@@ -282,12 +302,12 @@ static void pong_draw(void)
 	if (gfx_hits(HUD_Y, HUD_H)) {
 		/* Two scores either side of centre, so which is yours is
 		 * obvious from which paddle you are moving. */
-		gfx_text(GFX_W / 2 - 30 - gfx_text_w("0", NEXUS_TXT_BIG), 22,
+		gfx_text(GFX_W / 2 - 30 - gfx_text_w("0", HUD_TXT), HUD_Y,
 			 gfx_utoa(g_g.score_you, buf, sizeof(buf), 0),
-			 NEXUS_TXT_BIG, t->accent, GFX_OPAQUE);
-		gfx_text(GFX_W / 2 + 30, 22,
+			 HUD_TXT, t->accent, GFX_OPAQUE);
+		gfx_text(GFX_W / 2 + 30, HUD_Y,
 			 gfx_utoa(g_g.score_cpu, buf, sizeof(buf), 0),
-			 NEXUS_TXT_BIG, t->error, GFX_OPAQUE);
+			 HUD_TXT, t->error, GFX_OPAQUE);
 	}
 
 	if (!gfx_hits(FIELD_Y - 2, FIELD_H + 4)) {

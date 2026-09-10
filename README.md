@@ -25,8 +25,8 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 
 - **Live dashboard** -- layer, WPM, both halves' batteries, modifiers, caps
   lock, USB/BLE endpoint and profile.
-- **Game Center** with eight playable games -- Tetris, Snake, Breakout,
-  Pac-Man, Jumper, Space Invaders, Pong and 2048. All drawn through one
+- **Game Center** with seven playable games -- Tetris, Snake, Breakout,
+  Pac-Man, Jumper, Space Invaders and Pong. All drawn through one
   lit-from-the-top-left vocabulary, so they look like one product.
   Real rules, real scoring, persistent high scores, and a difficulty knob in
   Settings so you never reflash to change how a game feels.
@@ -115,7 +115,7 @@ buzzer and two tactile switches.
 | [ui.md](docs/ui.md) | Every screen and symbol, the themes, what the button does |
 | [splash.md](docs/splash.md) | Custom artwork from your own repo |
 | [themes.md](docs/themes.md) | The seven palettes, and how the glass is faked |
-| [games.md](docs/games.md) | The eight games, difficulty, and adding your own |
+| [games.md](docs/games.md) | The seven games, difficulty, and adding your own |
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |

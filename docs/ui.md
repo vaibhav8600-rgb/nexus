@@ -66,14 +66,6 @@ The title is drawn as glass -- a near-white face over a soft accent halo, with
 a one-pixel bevel -- in the active theme's colours. `CONFIG_NEXUS_PRODUCT` sets
 the word; nothing sits under it, deliberately.
 
-The plate's two corners carry the only flags on the dashboard, diagonally
-opposite so they can never be read as each other: **top right, green**, the
-mouse jiggler is running (`CONFIG_NEXUS_ANTI_IDLE_STATUS`); **bottom left, in
-the theme accent**, ZMK Studio is unlocked and the keymap is editable from a
-host right now (`CONFIG_NEXUS_STUDIO_STATUS`). Each is a solid disc inside a
-soft halo, and neither draws anything at all when it is off -- an indicator
-that is always there and usually grey is one more thing to learn to ignore.
-
 Gutters are 5px rather than the usual 7, which is what buys the link row the
 height for a readable transport cluster.
 
@@ -251,13 +243,10 @@ See [themes.md](themes.md) for what every field means and how to add a palette.
 </p>
 <p align="center">
   <img src="images/screens/invaders.png" width="170" alt="Invaders">
-  <img src="images/screens/2048.png" width="170" alt="2048">
-</p>
-<p align="center">
   <img src="images/screens/pong.png" width="170" alt="Pong">
 </p>
 
-Three, all reached from the Game Center. `J`/`L` page between them, the button
+Seven, all reached from the Game Center. `J`/`L` page between them, the button
 plays, double-tap skips to the next one.
 
 | | board | RAM | |
@@ -267,9 +256,8 @@ plays, double-tap skips to the next one.
 | **Breakout** | free | ~24 B | 8.8 fixed point, 5x8 bricks, three lives, paddle position steers the ball. |
 | **Pac-Man** | 13x10 | ~170 B | 61 dots, four power pellets, three chasers that never reverse, and a wrapping tunnel. |
 | **Jumper** | 16x12 | ~90 B | Single-screen platformer. No camera, so only the actors are ever dirty. |
-| **Invaders** | 8x4 | ~70 B | A fleet as a bitmask per row, turning on its live extent and speeding up as it thins. |
-| **Pong** | free | ~30 B | Two paddles and a ball. The opponent is deliberately beatable. |
-| **2048** | 4x4 | ~24 B | Turn-based, so no clock at all - it repaints once per move. |
+| **Invaders** | 8x4 | ~70 B | A fleet as a bitmask per row, turning on its live extent and speeding up as it thins. Hold to fire, three shots in the air. |
+| **Pong** | free | ~30 B | Two paddles and a ball, crossing the court in half a second. The opponent tracks two thirds of the ball's speed, so it is beatable by aiming. |
 
 High scores persist per game and are written only when a record actually
 improves. Difficulty is a **runtime** setting, not a build option.

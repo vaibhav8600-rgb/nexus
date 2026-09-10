@@ -67,7 +67,6 @@ zephyr_library_sources_ifdef(CONFIG_NEXUS_PACMAN src/games/pacman/pacman.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_JUMPER src/games/jumper/jumper.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_INVADERS src/games/invaders/invaders.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_PONG   src/games/pong/pong.c)
-zephyr_library_sources_ifdef(CONFIG_NEXUS_2048   src/games/g2048/g2048.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_BREAKOUT
   src/games/breakout/breakout.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_TETRIS

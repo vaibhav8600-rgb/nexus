@@ -163,7 +163,7 @@ pattern all carry the identity, so the board reads correctly in monochrome or
 to a colourblind player -- colour is never the only signal (Section 106).
 Worth copying.
 
-## The eight games
+## The seven games
 
 | | board | RAM | how it moves |
 | --- | --- | --- | --- |
@@ -174,7 +174,6 @@ Worth copying.
 | Jumper | 16x12 | ~90 B | 8.8 fixed point, single screen |
 | Invaders | 8x4 | ~70 B | one formation position, bitmask per row |
 | Pong | free | ~30 B | 8.8 fixed point |
-| 2048 | 4x4 | ~24 B | turn-based; no clock at all |
 
 Snake's board is 16x16 of 12px cells, not 24x24 of 8px. At 8px the snake was
 four faint slivers and the apple a speck -- on a panel you look at from across
@@ -182,7 +181,7 @@ a desk that is not detail, it is just small. The grid and the ring are both
 O(cells), so the larger cells also cost a third of the RAM: 768 bytes rather
 than 1,728.
 
-All eight go through `struct nexus_game`, so the Game Center pages between
+All seven go through `struct nexus_game`, so the Game Center pages between
 them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
 off with its `CONFIG_NEXUS_*` removes it from the build entirely.
 
@@ -239,31 +238,34 @@ the arc of the original - nothing ramps a difficulty variable.
 main button pauses is unplayable on the dongle's own button, and pause is still
 a hold away.
 
+**Hold to fire.** The original allowed one shot at a time, which is what made a
+miss cost you something - but that rule was written for a cabinet with its own
+fire button. Here the key repeats every `CONFIG_NEXUS_ACTION_REPEAT_MS`, and
+under the old rule holding it gave you a shot, a long wait while it flew the
+length of the field, then another: the gun felt broken rather than strict. Now
+it fires every four ticks with up to three in the air. The cap is what keeps it
+a game - three in flight is a stream you still have to aim.
+
 ### Pong
 
 The cheapest game here: two paddles, a ball, no board. Where the ball lands on
 the paddle steers it, exactly as in Breakout - without that one line the angle
 never changes and a rally is a metronome neither player can influence.
 
-The opponent is deliberately beatable. It moves at a fraction of the ball's
-speed and only reacts once the ball is coming at it; a paddle that tracks
+The opponent is deliberately beatable. It moves at **two thirds of the ball's
+own speed** and only reacts once the ball is coming at it; a paddle that tracks
 exactly never loses, and a game you cannot win is a screensaver.
 
-### 2048
+That fraction is the whole difficulty curve, and it used to be a constant 4 px
+per tick - which was *faster* than the ball's steepest return. The opponent
+could not be beaten by aiming, only outlasted, so points ran until someone got
+bored. The game read as slow because the rally never ended, not because the
+ball was gentle. It is a fraction of `speed()` now, so it keeps tracking the
+ball if you move the knob.
 
-The only turn-based game, and that changes its cost completely: nothing moves
-between presses, so it has no tick and no work item and repaints once per move.
-
-Tiles hold the **exponent**, not the value - 1 means 2, 11 means 2048 - so the
-board is sixteen bytes.
-
-The rule everyone gets wrong: a tile that has just merged cannot merge again in
-the same move. `2 2 4` slides to `4 4`, not `8`. A `merged` flag per output
-cell is what enforces it, and the test pins the case because the greedy version
-looks right and just scores too fast.
-
-A move that changes nothing must not spawn a tile, or pressing into a wall
-fills the board and ends the game for you.
+The ball crosses the court in a little over half a second, and the paddle's
+travel per key repeat is sized against that - a ball you cannot reach is not
+difficulty, it is a bug.
 
 ### Snake
 
