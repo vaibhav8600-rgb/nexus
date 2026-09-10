@@ -65,6 +65,55 @@ void nexus_draw_label(int x, int y, const char *text);
  */
 int nexus_draw_level(int right, int y, uint8_t level);
 
+/*
+ * The header block every game draws, and the rect it owns.
+ *
+ * Seven games had seven headers. Snake and Pac-Man labelled the score,
+ * Breakout and Invaders showed a bare number, Tetris put it in a side panel
+ * entirely - so paging between them moved the furniture and the set read as
+ * seven programs rather than one product with seven games.
+ *
+ * The rect is fixed. NEXUS_HUD_END is where it stops and the earliest a
+ * playfield may begin, which is what Tetris's well had to move down to clear.
+ * NEXUS_HUD_ROW is the part that changes while you are playing, so a score
+ * that ticks over invalidates fourteen rows rather than the whole header.
+ */
+/*
+ * 34, and the two rows inside it are tight against each other, because Tetris
+ * decides this number rather than taste: its well is 20 rows of 10px plus a
+ * 2px frame either side, which is 204 of the panel's 240 and leaves exactly
+ * 36. At 36 the score sat flush on the well's top edge with no air at all, so
+ * the header gives back two pixels and takes them out of its own margins.
+ */
+#define NEXUS_HUD_END 34
+#define NEXUS_HUD_TITLE_Y 6
+#define NEXUS_HUD_ROW_Y 20
+#define NEXUS_HUD_ROW_H 14
+
+struct nexus_hud {
+	const char *title;
+	uint32_t score;
+	/* An opponent's score beside yours - Pong, and nothing else so far.
+	 * Negative for none, so 0-0 is still a scoreline. */
+	int32_t rival;
+	/* One word of game-specific state: Snake's WRAP/WALLS. Right-aligned
+	 * before the lives, because it is read once at a glance and then
+	 * ignored for the rest of the round. */
+	const char *note;
+	uint8_t level; /* 0 draws no badge */
+	uint8_t lives; /* 0 draws no pips */
+	gfx_color life;
+};
+
+/**
+ * Title, HOLD=EXIT, score, level and lives, in the same place in every game.
+ *
+ * Everything but the title and the score is optional and simply absent when
+ * it does not apply - a game with no lives does not get an empty row where
+ * the pips would be.
+ */
+void nexus_draw_game_header(const struct nexus_hud *h);
+
 /**
  * A playfield's ground: flat and opaque, deliberately not frosted.
  *

@@ -40,15 +40,6 @@ typedef int32_t fix_t;
 #define FIELD_R (FIELD_X + FIELD_W)
 #define FIELD_B (FIELD_Y + FIELD_H)
 
-#define HUD_Y 22
-#define HUD_H 20
-/*
- * NEXUS_TXT_BIG is 20x28 and the court starts at FIELD_Y - 2 = 44. Drawn at
- * HUD_Y + 2 it ran to y=50, so the scores sat inside the frame and the ball
- * passed through them. VALUE is 15x21, ends at 41, and is still the largest
- * numeral on the screen.
- */
-#define HUD_TXT NEXUS_TXT_VALUE
 
 #define PAD_W 10
 #define PAD_H 44
@@ -290,7 +281,9 @@ static void step(void)
 	}
 
 	if (scored) {
-		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
+		nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y,
+				     NEXUS_HUD_ROW_Y +
+					     NEXUS_HUD_ROW_H);
 	}
 	nexus_screen_invalidate_rows(FIELD_Y, FIELD_B);
 }
@@ -313,33 +306,26 @@ static void tick_fn(struct k_work *work)
 static void pong_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
-	char buf[8];
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
-		nexus_draw_label(NEXUS_PAD, 8, "PONG");
-		nexus_draw_label(GFX_W - NEXUS_PAD -
-					 gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
-				 8, "HOLD=EXIT");
-	}
+	/* Your score where every other game puts it and in the same colour,
+	 * with the opponent's beside it in the red of the paddle it belongs
+	 * to - which is the job the old two-numerals-either-side-of-centre
+	 * layout was doing, in a third of the width. */
+	const struct nexus_hud hud = {
+		.title = "PONG",
+		.score = g_g.score_you,
+		.rival = g_g.score_cpu,
+		.level = g_g.level,
+	};
 
-	if (gfx_hits(HUD_Y, HUD_H)) {
-		/* Two scores either side of centre, so which is yours is
-		 * obvious from which paddle you are moving. */
-		gfx_text(GFX_W / 2 - 30 - gfx_text_w("0", HUD_TXT), HUD_Y,
-			 gfx_utoa(g_g.score_you, buf, sizeof(buf), 0),
-			 HUD_TXT, t->accent, GFX_OPAQUE);
-		gfx_text(GFX_W / 2 + 30, HUD_Y,
-			 gfx_utoa(g_g.score_cpu, buf, sizeof(buf), 0),
-			 HUD_TXT, t->error, GFX_OPAQUE);
-		nexus_draw_level(GFX_W - NEXUS_PAD, HUD_Y + 4, g_g.level);
-	}
+	nexus_draw_game_header(&hud);
 
 	if (!gfx_hits(FIELD_Y - 2, FIELD_H + 4)) {
 		return;
 	}
 
-	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4, 3,
-			t->border, t->border_alpha);
+	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4,
+			t->radius, t->border, t->border_alpha);
 	nexus_draw_field(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
 
 	/* Dashed centre line, behind everything. */

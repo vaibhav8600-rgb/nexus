@@ -57,8 +57,6 @@
 #define FRAME_W (WELL_W + 4)
 #define FRAME_H (WELL_H + 4)
 
-#define HUD_Y 20
-#define HUD_H 22
 
 #define GHOSTS 3
 #define LIVES 3
@@ -448,7 +446,9 @@ static void step(void)
 	}
 
 	if (scored) {
-		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
+		nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y,
+				     NEXUS_HUD_ROW_Y +
+					     NEXUS_HUD_ROW_H);
 	}
 	nexus_screen_invalidate_rows(FRAME_Y, FRAME_Y + FRAME_H);
 }
@@ -539,36 +539,23 @@ static void draw_ghost(int x, int y, int idx)
 static void pacman_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
-	char buf[12];
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
-		nexus_draw_label(NEXUS_PAD, 8, "PAC-MAN");
-		nexus_draw_label(GFX_W - NEXUS_PAD -
-					 gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
-				 8, "HOLD=EXIT");
-	}
+	const struct nexus_hud hud = {
+		.title = "PAC-MAN",
+		.score = g_p.score,
+		.rival = -1,
+		.level = g_p.level,
+		.lives = g_p.lives,
+		.life = t->warning,
+	};
 
-	if (gfx_hits(HUD_Y, HUD_H)) {
-		gfx_text(NEXUS_PAD, 26, "SCORE", NEXUS_TXT_CAPTION, t->caption,
-			 GFX_OPAQUE);
-		gfx_text(NEXUS_PAD + 40, 24,
-			 gfx_utoa(g_p.score, buf, sizeof(buf), 0),
-			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
-
-		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_p.level);
-
-		/* Lives as pips, as Breakout does - you glance at them. */
-		for (int i = 0; i < g_p.lives; i++) {
-			gfx_disc(lx - 12 - i * 12, 30, 4, t->warning,
-				 GFX_OPAQUE);
-		}
-	}
+	nexus_draw_game_header(&hud);
 
 	if (!gfx_hits(FRAME_Y, FRAME_H)) {
 		return;
 	}
 
-	gfx_round_frame(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, 3, t->border,
+	gfx_round_frame(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, t->radius, t->border,
 			t->border_alpha);
 	nexus_draw_field(WELL_X, WELL_Y, WELL_W, WELL_H);
 

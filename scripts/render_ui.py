@@ -121,6 +121,14 @@ def themes():
     return out
 
 
+HUD = defines(read('include/nexus/widgets.h'),
+              ['NEXUS_HUD_END', 'NEXUS_HUD_TITLE_Y', 'NEXUS_HUD_ROW_Y',
+               'NEXUS_HUD_ROW_H'])
+HUD_END = HUD['NEXUS_HUD_END']
+HUD_TITLE_Y = HUD['NEXUS_HUD_TITLE_Y']
+HUD_ROW_Y = HUD['NEXUS_HUD_ROW_Y']
+
+
 # ------------------------------------------------------- the compositor
 F5, F10 = font5x7(), font10x14()
 FONT_W, FONT_H = 5, 7
@@ -360,6 +368,33 @@ class UI:
         self.cv.text(x, y, 'L', BODY, self.t['caption'])
         self.cv.text(x + lw, y, num, BODY, self.t['accent'])
         return x
+
+    def header(self, title, score, rival=None, note=None, level=0,
+               lives=0, life=None):
+        """nexus_draw_game_header(): the same rect in every game."""
+        cv, t = self.cv, self.t
+        self.label(PAD, HUD_TITLE_Y, title)
+        self.label(W - PAD - text_w('HOLD=EXIT', LABEL), HUD_TITLE_Y,
+                   'HOLD=EXIT')
+
+        x = PAD
+        cv.text(x, HUD_ROW_Y, str(score), BODY, t['value'])
+        if rival is not None:
+            x += text_w(str(score), BODY)
+            cv.text(x, HUD_ROW_Y, '-', BODY, t['caption'])
+            x += text_w('-', BODY)
+            cv.text(x, HUD_ROW_Y, str(rival), BODY, t['error'])
+
+        right = W - PAD
+        if level:
+            right = self.level(right, HUD_ROW_Y, level)
+        for i in range(lives):
+            cv.disc(right - 12 - i * 12, HUD_ROW_Y + 8, 4, life)
+        if lives:
+            right -= 12 * lives
+        if note:
+            cv.text(right - 8 - text_w(note, CAPTION), HUD_ROW_Y + 4, note,
+                    CAPTION, t['caption'])
 
     def field(self, x, y, w, h):
         """nexus_draw_field(): flat and opaque, so no glow edge crosses it."""
@@ -717,11 +752,15 @@ def game_center(cv, t, sel=0, games=(('TETRIS', 12840, icon_tetris),
 # ---------------------------------------------------------------- tetris
 # The well's size comes from tetris_core.h - the rules own the board, the
 # renderer only lays it out - so both files have to be in scope here.
+# widgets.h too: the well's position is expressed against NEXUS_HUD_END, so
+# the shared header is what decides where Tetris starts.
 TET = defines(read('src/games/tetris/tetris_core.h')
+              + read('include/nexus/widgets.h')
               + read('src/games/tetris/tetris.c'),
               ['CELL', 'WELL_X', 'WELL_Y', 'FRAME_X', 'FRAME_Y', 'FRAME_W',
-               'FRAME_H', 'SIDE_X', 'SIDE_W', 'SIDE_IN', 'SCORE_Y', 'SCORE_H',
-               'LEVEL_Y', 'LEVEL_H', 'LINES_Y', 'LINES_H', 'NEXT_Y', 'NEXT_H'])
+               'FRAME_H', 'SIDE_X', 'SIDE_W', 'SIDE_IN', 'LEVEL_Y',
+               'LEVEL_H', 'LINES_Y', 'LINES_H', 'NEXT_Y', 'NEXT_H',
+               'NEXT_CELL'])
 HUE = [0, C(0x36E0E0), C(0xF5D442), C(0xB44DE0), C(0x4DE07A), C(0xE04D6A),
        C(0x4D7AE0), C(0xE0904D)]
 
@@ -743,8 +782,7 @@ def block(cv, x, y, size, piece):
 def tetris(cv, t):
     u, K = UI(cv, t), TET
     u.ground()
-    u.label(PAD, 8, 'TETRIS')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
+    u.header('TETRIS', '12840')
 
     u.card(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'])
     u.field(K['WELL_X'], K['WELL_Y'], 10 * K['CELL'], 20 * K['CELL'])
@@ -765,10 +803,11 @@ def tetris(cv, t):
         block(cv, K['WELL_X'] + c * K['CELL'], K['WELL_Y'] + r * K['CELL'],
               K['CELL'], 3)
 
+    # No SCORE card: it is in the shared header now, where every other
+    # game's is. What is left is the Tetris-only half.
     for y, h, cap, val, sc, col in (
-            (K['SCORE_Y'], K['SCORE_H'], 'SCORE', '12840', VALUE, t['value']),
-            (K['LEVEL_Y'], K['LEVEL_H'], 'LEVEL', '4', BODY, t['accent']),
-            (K['LINES_Y'], K['LINES_H'], 'LINES', '37', BODY, t['value'])):
+            (K['LEVEL_Y'], K['LEVEL_H'], 'LEVEL', '4', VALUE, t['accent']),
+            (K['LINES_Y'], K['LINES_H'], 'LINES', '37', VALUE, t['value'])):
         u.card(K['SIDE_X'], y, K['SIDE_W'], h)
         u.label(K['SIDE_X'] + K['SIDE_IN'], y + 4, cap)
         cv.text(K['SIDE_X'] + K['SIDE_W'] - K['SIDE_IN'] - text_w(val, sc),
@@ -776,8 +815,13 @@ def tetris(cv, t):
 
     u.card(K['SIDE_X'], K['NEXT_Y'], K['SIDE_W'], K['NEXT_H'])
     u.label(K['SIDE_X'] + K['SIDE_IN'], K['NEXT_Y'] + 4, 'NEXT')
+    NC = K['NEXT_CELL']
+    box = 4 * NC
+    ox = K['SIDE_X'] + (K['SIDE_W'] - box) // 2
+    oy = K['NEXT_Y'] + K['NEXT_H'] - 8 - box
+    cv.round_rect(ox - 3, oy - 3, box + 6, box + 6, 4, t['track'], 200)
     for c, r in ((0, 0), (1, 0), (1, 1), (2, 1)):
-        block(cv, K['SIDE_X'] + 30 + c * 9, K['NEXT_Y'] + 30 + r * 9, 9, 4)
+        block(cv, ox + c * NC, oy + r * NC, NC, 4)
 
 
 # ----------------------------------------------------------------- snake
@@ -797,16 +841,10 @@ def snake(cv, t, body=None, food=(3, 12), score='120'):
     u, K = UI(cv, t), SNK
     body = SNAKE_BODY if body is None else body
     u.ground()
-    u.label(PAD, 8, 'SNAKE')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
-    cv.text(PAD + 40, 24, score, BODY, t['value'])
-    lx = u.level(W - PAD, 24, 4)
-    cv.text(lx - 8 - text_w('WRAP', CAPTION), 26, 'WRAP', CAPTION,
-            t['caption'])
+    u.header('SNAKE', score, note='WRAP', level=4)
 
-    cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
-                   t['border'], t['border_alpha'])
+    cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'],
+                   t['radius'], t['border'], t['border_alpha'])
     u.field(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'])
 
     for r, c in body:
@@ -841,16 +879,11 @@ def breakout(cv, t, ball=None, paddle=None, gone=None, score='340', lives=3):
     gone = BRK_GONE if gone is None else gone
     paddle_y = K['FIELD_Y'] + K['FIELD_H'] - 10
     u.ground()
-    u.label(PAD, 8, 'BREAKOUT')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(PAD, 24, score, BODY, t['value'])
-    lx = u.level(W - PAD, 24, 3)
-    for i in range(lives):
-        cv.disc(lx - 12 - i * 12, 30, 4, t['accent'])
+    u.header('BREAKOUT', score, level=3, lives=lives, life=t['accent'])
 
     u.field(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'])
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
-                   K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
+                   K['FIELD_H'] + 4, t['radius'], t['border'], t['border_alpha'])
 
     for r in range(K['BRICK_ROWS']):
         for c in range(K['BRICK_COLS']):
@@ -885,16 +918,10 @@ def pacman(cv, t, pac=(8, 6), pdir=1, ghosts=((4, 6), (3, 4), (6, 8)),
            eaten=(), score='340', lives=3, fright=False, anim=0):
     u, K = UI(cv, t), PAC
     u.ground()
-    u.label(PAD, 8, 'PAC-MAN')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
-    cv.text(PAD + 40, 24, score, BODY, t['value'])
-    lx = u.level(W - PAD, 24, 2)
-    for i in range(lives):
-        cv.disc(lx - 12 - i * 12, 30, 4, t['warning'])
+    u.header('PAC-MAN', score, level=2, lives=lives, life=t['warning'])
 
-    cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
-                   t['border'], t['border_alpha'])
+    cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'],
+                   t['radius'], t['border'], t['border_alpha'])
     u.field(K['WELL_X'], K['WELL_Y'], K['WELL_W'], K['WELL_H'])
 
     CELL = K['CELL']
@@ -1000,12 +1027,7 @@ def jumper(cv, t, player=(7, 2), facing=1, taken=(), dead=(), score='700',
     u, K = UI(cv, t), JMP
     TILE, VY = K['TILE'], K['VIEW_Y']
     u.ground()
-    u.label(PAD, 8, 'JUMPER')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(PAD, 24, score, BODY, t['value'])
-    lx = u.level(W - PAD, 24, 2)
-    for i in range(lives):
-        cv.disc(lx - 12 - i * 12, 30, 4, t['error'])
+    u.header('JUMPER', score, level=2, lives=lives, life=t['error'])
 
     u.field(0, VY, W, K['ROWS'] * TILE)
     for r in range(K['ROWS']):
@@ -1051,16 +1073,11 @@ def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
     cannon = (K['FIELD_X'] + (K['FIELD_W'] - K['CANNON_W']) // 2
               if cannon is None else cannon)
     u.ground()
-    u.label(PAD, 8, 'INVADERS')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(PAD, 24, score, BODY, t['value'])
-    lx = u.level(W - PAD, 24, 2)
-    for i in range(lives):
-        cv.disc(lx - 12 - i * 12, 30, 4, t['success'])
+    u.header('INVADERS', score, level=2, lives=lives, life=t['success'])
 
     u.field(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'])
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
-                   K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
+                   K['FIELD_H'] + 4, t['radius'], t['border'], t['border_alpha'])
 
     AW, AH = K['ALIEN_W'], K['ALIEN_H']
     for r in range(K['ROWS']):
@@ -1098,15 +1115,10 @@ def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
     cpu = K['FIELD_Y'] + 40 if cpu is None else cpu
     ball = (150, K['FIELD_Y'] + 66) if ball is None else ball
     u.ground()
-    u.label(PAD, 8, 'PONG')
-    u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
-    cv.text(W // 2 - 30 - text_w('0', VALUE), K['HUD_Y'], str(sy), VALUE,
-            t['accent'])
-    cv.text(W // 2 + 30, K['HUD_Y'], str(sc), VALUE, t['error'])
-    u.level(W - PAD, K['HUD_Y'] + 4, 3)
+    u.header('PONG', sy, rival=sc, level=3)
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
-                   K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
+                   K['FIELD_H'] + 4, t['radius'], t['border'], t['border_alpha'])
     u.field(K['FIELD_X'], K['FIELD_Y'], K['FIELD_W'], K['FIELD_H'])
     y = K['FIELD_Y'] + 6
     while y < B - 4:

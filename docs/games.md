@@ -231,6 +231,38 @@ speed-step in milliseconds long before there was a level, so its badge is
 simply that step given a number. Two curves stacked on one game is how a
 difficulty setting stops meaning anything.
 
+### One header
+
+Seven games used to draw seven headers. Snake and Pac-Man labelled the score,
+Breakout and Invaders showed a bare number, Tetris put it in a side panel
+entirely -- so paging between them moved the furniture, and the set read as
+seven programs rather than one product with seven games.
+
+`nexus_draw_game_header()` draws all of them: title, `HOLD=EXIT`, score, and
+whichever of level, lives and one note the game has. The block it owns is
+fixed at `y 0..NEXUS_HUD_END`, so nothing shifts when you page.
+
+That constant is **34**, and Tetris decides it rather than taste: its well is
+20 rows of 10px plus a 2px frame either side, which is 204 of the panel's 240
+and leaves exactly 36. At 36 the score sat flush on the well's top edge with
+no air at all, so the header gives two pixels back out of its own margins and
+Tetris starts four below it.
+
+Tetris keeps the side panel for `LEVEL`, `LINES` and `NEXT` -- those are
+genuinely game-specific -- and having lost the score card, each of the three
+gets more room: the next-piece preview is 10px a cell rather than 8. It is
+also the one game with no `L` badge, because its panel already says LEVEL in
+words and two of them would be a duplicate.
+
+Pong is the other game whose HUD had to bend. It used to put two big numerals
+either side of centre, which at `NEXUS_TXT_BIG` ran into the court and the
+ball passed through them. Its score is now where every other game's is and in the
+same colour, with the opponent's beside it in the red of the paddle it
+belongs to.
+
+Playfield borders take `t->radius` in every game, the same corner the
+dashboard panels use -- five of them had a hardcoded 3.
+
 ### Playfields are flat
 
 The ground is a gradient with two soft colour blobs behind it. That is right

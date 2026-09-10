@@ -32,7 +32,13 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define WELL_W (TETRIS_COLS * CELL)          /* 100 */
 #define WELL_H (TETRIS_VISIBLE_ROWS * CELL)  /* 200 */
 #define WELL_X NEXUS_PAD                     /*   9 */
-#define WELL_Y 30
+/*
+ * Four below NEXUS_HUD_END, which puts the frame's own edge two clear of the
+ * header. 20 rows of 10px then run to 238 and the frame closes at exactly
+ * 240 - the well is as tall as the panel allows, which is why the header was
+ * tightened to make this fit rather than the well being pushed down.
+ */
+#define WELL_Y (NEXUS_HUD_END + 4)
 #define FRAME_X (WELL_X - 2)
 #define FRAME_Y (WELL_Y - 2)
 #define FRAME_W (WELL_W + 4)
@@ -42,15 +48,23 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define SIDE_W (GFX_W - NEXUS_PAD - SIDE_X) /* 114 */
 #define SIDE_IN 8
 
-#define SCORE_Y 28
-#define SCORE_H 44
-#define LEVEL_Y 78
-#define LEVEL_H 38
-#define LINES_Y 122
-#define LINES_H 38
-#define NEXT_Y 166
-#define NEXT_H 64
-#define NEXT_CELL 8
+/*
+ * The side panel, which no longer carries the score - that is in the shared
+ * header now, in the same place as every other game's. What is left is
+ * genuinely Tetris-only: level, lines, and the piece you are about to get.
+ *
+ * They start where the well's frame does and fill the column, so the panel is
+ * not a stack of cards with a hole at the top where something was removed.
+ * Each gets the height the score used to take, and NEXT gets what is left -
+ * which is enough to draw the preview two pixels larger per cell.
+ */
+#define LEVEL_Y FRAME_Y
+#define LEVEL_H 52
+#define LINES_Y (LEVEL_Y + LEVEL_H + 7)
+#define LINES_H 52
+#define NEXT_Y (LINES_Y + LINES_H + 7)
+#define NEXT_H (GFX_H - NEXUS_PAD - NEXT_Y)
+#define NEXT_CELL 10
 
 
 
@@ -200,24 +214,20 @@ static void tetris_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
-		nexus_draw_label(NEXUS_PAD, 8, "TETRIS");
+	/*
+	 * No level badge: the side panel says LEVEL in words, and it is the
+	 * one game with the room to. Two of them would be a duplicate, and
+	 * the card is the older and the more legible of the pair.
+	 */
+	const struct nexus_hud hud = {
+		.title = "TETRIS",
+		.score = g_t.score,
+		.rival = -1,
+	};
 
-		/*
-		 * One physical button has to mean two things, so the screen has
-		 * to say which is which. Without this the only way out of a
-		 * game is to already know that a long press exits - a short
-		 * press just toggles pause, so it looks like the dongle is
-		 * stuck (Section 12).
-		 */
-		nexus_draw_label(GFX_W - NEXUS_PAD -
-					   gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
-				   8, "HOLD=EXIT");
-	}
+	nexus_draw_game_header(&hud);
 
 	draw_well();
-	stat_card(SCORE_Y, SCORE_H, "SCORE", g_t.score, NEXUS_TXT_VALUE,
-		  t->value);
 	stat_card(LEVEL_Y, LEVEL_H, "LEVEL", g_t.level, NEXUS_TXT_BODY,
 		  t->accent);
 	stat_card(LINES_Y, LINES_H, "LINES", g_t.lines, NEXUS_TXT_BODY,

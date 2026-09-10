@@ -50,17 +50,6 @@
 #define FRAME_W (WELL_W + 4)
 #define FRAME_H (WELL_H + 4)
 
-/*
- * The HUD band, and why it is named.
- *
- * The score is drawn at y=24 but every repaint after a move invalidated only
- * the playfield below it, so the number was painted once at start and never
- * again - it read as a permanently stuck 0. Tetris never showed this because
- * its score lives in the side panel, inside the band the well already dirties.
- */
-#define HUD_Y 20
-#define HUD_H 22
-
 #define START_LEN 4
 
 /* All from Kconfig, so a config repo can tune the feel without touching the
@@ -287,7 +276,9 @@ static void step(void)
 		place_food();
 		/* Only when it changed: the HUD is cheap but it is not free,
 		 * and it changes once every few seconds at most. */
-		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
+		nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y,
+				     NEXUS_HUD_ROW_Y +
+					     NEXUS_HUD_ROW_H);
 	}
 
 	nexus_screen_invalidate_rows(FRAME_Y, FRAME_Y + FRAME_H);
@@ -325,34 +316,22 @@ static void draw_cell(int r, int c, gfx_color fill, bool bevel)
 static void snake_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
-	char buf[12];
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
-		nexus_draw_label(NEXUS_PAD, 8, "SNAKE");
-		nexus_draw_label(GFX_W - NEXUS_PAD -
-					 gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
-				 8, "HOLD=EXIT");
-	}
+	/* Wrap on or off is a setting now, and which one you are playing
+	 * changes the whole game, so the header says. */
+	const struct nexus_hud hud = {
+		.title = "SNAKE",
+		.score = g_s.score,
+		.rival = -1,
+		.note = nexus_snake_wrap() ? "WRAP" : "WALLS",
+		.level = level(),
+	};
 
-	if (gfx_hits(HUD_Y, HUD_H)) {
-		gfx_text(NEXUS_PAD, 26, "SCORE", NEXUS_TXT_CAPTION, t->caption,
-			 GFX_OPAQUE);
-		gfx_text(NEXUS_PAD + 40, 24,
-			 gfx_utoa(g_s.score, buf, sizeof(buf), 0),
-			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
-
-		/* Wrap on or off is a setting now, and which one you are
-		 * playing changes the whole game, so the board says. */
-		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, level());
-
-		gfx_text(lx - 8 - gfx_text_w("WALLS", NEXUS_TXT_CAPTION), 26,
-			 nexus_snake_wrap() ? "WRAP" : "WALLS",
-			 NEXUS_TXT_CAPTION, t->caption, GFX_OPAQUE);
-	}
+	nexus_draw_game_header(&hud);
 
 	if (gfx_hits(FRAME_Y, FRAME_H)) {
-		gfx_round_frame(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, 3,
-				t->border, t->border_alpha);
+		gfx_round_frame(FRAME_X, FRAME_Y, FRAME_W, FRAME_H,
+				t->radius, t->border, t->border_alpha);
 		nexus_draw_field(WELL_X, WELL_Y, WELL_W, WELL_H);
 
 		for (int r = 0; r < ROWS; r++) {
