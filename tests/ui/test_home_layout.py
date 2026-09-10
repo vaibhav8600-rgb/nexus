@@ -310,6 +310,31 @@ def main():
         ok(face_w('NEXUS', asz) + 2 * GLOW_CELLS * asz
            <= C['NEXUS_CONTENT_W'], 'About wordmark fits the card width')
 
+    print('\nUI static RAM')
+    # The ceiling, and the only number in Diagnostics that is a promise
+    # rather than a reading. Every buffer NEXUS owns is static, so this is
+    # the whole of it: the compositor band plus the menu value cache. A
+    # ticket that grows it is a ticket that got the wrong answer.
+    CEILING = 5984
+    gfx_h = open(os.path.join(root, 'include', 'nexus', 'gfx.h'),
+                 encoding='utf-8').read()
+    menus = open(os.path.join(root, 'src', 'ui', 'menus.c'),
+                 encoding='utf-8').read()
+
+    def define(text, name):
+        return int(re.search(r'#define %s\s+(\d+)' % name, text).group(1))
+
+    band = define(gfx_h, 'GFX_W') * define(gfx_h, 'GFX_STRIP_H') * 2
+    cache = define(menus, 'MAX_ROWS') * define(menus, 'VAL_MAX')
+    ok(band + cache == CEILING,
+       'band %d + value cache %d = %d, the documented ceiling'
+       % (band, cache, band + cache))
+    ok('sizeof(g_val) + GFX_W * GFX_STRIP_H * 2U' in menus,
+       'and Diagnostics computes it rather than printing a literal')
+    ok(str(CEILING) in open(os.path.join(root, 'docs', 'configuration.md'),
+                            encoding='utf-8').read().replace(',', ''),
+       'the docs quote the same number')
+
     print('\nHierarchy')
     ok('nexus_draw_caption(' in src, 'card headings are captions again')
     ok(str(C['NEXUS_TXT_BIG']) in src or True, '')

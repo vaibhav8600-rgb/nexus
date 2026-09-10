@@ -71,6 +71,19 @@ struct nexus_theme {
 	 */
 	gfx_color wordmark[5];
 
+	/*
+	 * Halo opacity behind the wordmark, and 0 means something specific:
+	 * draw a one-pixel outline in wordmark[2] instead.
+	 *
+	 * Glow is a dark-background device. It works because a bright letter
+	 * on a dark ground plausibly spills light into it; on a light ground
+	 * there is nothing for it to spill into, and the same halo reads as
+	 * the screen being out of focus - a rendering failure rather than a
+	 * style. The outline does the job the halo was actually doing, which
+	 * is keeping the letterform's edge defined against the panel.
+	 */
+	uint8_t wordmark_glow_alpha;
+
 	uint8_t radius; /* card corner radius */
 };
 

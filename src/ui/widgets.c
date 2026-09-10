@@ -259,7 +259,6 @@ void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
  * itself; the home screen does not.
  */
 #define WORDMARK_GLOW_CELLS 2
-#define WORDMARK_GLOW_ALPHA 70
 
 /*
  * The wordmark, made of the same glass as the cards under it.
@@ -310,13 +309,17 @@ static void wordmark_letters(int cx, int y, const char *text, int scale,
 	for (const char *p = text; p && *p; p++) {
 		gfx_color top = t->wordmark[0];
 		gfx_color bot = t->wordmark[1];
-		uint8_t glow = WORDMARK_GLOW_ALPHA;
+		uint8_t glow = t->wordmark_glow_alpha;
 
 		if (lit >= 0 && (p - text) == lit) {
 			/* The splash walks this along the word: the lit letter
-			 * goes flat white and its halo comes up. */
+			 * goes flat and its halo comes up. On a theme with no
+			 * halo the colour change carries it alone, which on a
+			 * light ground is the stronger signal anyway. */
 			top = bot = t->value;
-			glow = 255;
+			if (glow) {
+				glow = 255;
+			}
 		}
 
 		one[0] = *p;

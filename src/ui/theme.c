@@ -31,6 +31,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFFFFFu), NEXUS_C(0xFFC2DCu),
 			      NEXUS_C(0xFF5FA2u), NEXUS_C(0x8E2A63u),
 			      NEXUS_C(0x3A0F2Au) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -52,6 +53,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFFFFFu), NEXUS_C(0xFFC2DCu),
 			      NEXUS_C(0xFF5FA2u), NEXUS_C(0x8E2A63u),
 			      NEXUS_C(0x3A0F2Au) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -73,6 +75,10 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0x8FA0F0u), NEXUS_C(0x5A6BE0u),
 			      NEXUS_C(0x3B4BC8u), NEXUS_C(0x26308Au),
 			      NEXUS_C(0x161C52u) },
+		/* No halo on a light ground: it reads as blur rather
+		 * than as light, and wordmark[2] outlines the letter
+		 * instead so the edges stay defined. */
+		.wordmark_glow_alpha = 0,
 		.radius = 7,
 	},
 	{
@@ -94,6 +100,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xF7C2D8u), NEXUS_C(0xE86A9Au),
 			      NEXUS_C(0xA83C6Cu), NEXUS_C(0x6B2244u),
 			      NEXUS_C(0x3A1226u) },
+		.wordmark_glow_alpha = 70,
 		.radius = 9,
 	},
 	{
@@ -113,6 +120,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFF0D8u), NEXUS_C(0xFFD9A0u),
 			      NEXUS_C(0xE9A23Bu), NEXUS_C(0x8A5414u),
 			      NEXUS_C(0x4A2C0Au) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -132,6 +140,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xE8FFF4u), NEXUS_C(0xB8FFDCu),
 			      NEXUS_C(0x5CFFB0u), NEXUS_C(0x2FBE80u),
 			      NEXUS_C(0x0E4A32u) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -155,6 +164,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFF6DCu), NEXUS_C(0xFFE9A8u),
 			      NEXUS_C(0xFFB347u), NEXUS_C(0xC4506Bu),
 			      NEXUS_C(0x5A1430u) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 };

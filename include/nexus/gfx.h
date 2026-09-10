@@ -160,6 +160,13 @@ void gfx_glyph_grad(int x, int y, const uint16_t *rows, int w, int h,
  * letters - but the glow reaches two letter-pixels past them on every side,
  * which the caller must leave room for.
  */
+/**
+ * The display face as glass: graded fill, a one-pixel bevel, halo behind.
+ *
+ * @p glow_a of 0 does not mean "no glow" - it means outline: @p glow is drawn
+ * opaque one pixel around the letterform instead of as a halo. A light theme
+ * needs that edge definition without the blur a halo becomes on it.
+ */
 void gfx_face_text_glass(int x, int y, const char *s, int scale, gfx_color top,
 			 gfx_color bot, gfx_color hi, gfx_color lo_near,
 			 gfx_color lo_far, gfx_color glow, uint8_t glow_a);

@@ -756,6 +756,20 @@ void gfx_face_text_glass(int x, int y, const char *s, int scale, gfx_color top,
 				  (uint8_t)(glow_a / 2));
 			gfx_glyph(x - scale, y - scale, halo, FACE_W + 2,
 				  FACE_H + 2, scale, glow, glow_a);
+		} else {
+			/*
+			 * No halo asked for: an outline instead, one dilation
+			 * out and opaque. The face is drawn over it below, so
+			 * what survives is a single pixel around the
+			 * letterform.
+			 *
+			 * Not "nothing", deliberately. A halo on a light
+			 * ground reads as blur, but the edge definition it
+			 * was providing is still needed - drop both and the
+			 * letters go soft against the panel.
+			 */
+			gfx_glyph(x - scale, y - scale, halo, FACE_W + 2,
+				  FACE_H + 2, scale, glow, GFX_OPAQUE);
 		}
 
 		/*

@@ -62,8 +62,9 @@ Four rows in a 240x240 square:
 - **modifiers and WPM**
 - **both halves' batteries**
 
-The title is drawn as glass -- a near-white face over a soft accent halo, with
-a one-pixel bevel -- in the active theme's colours. `CONFIG_NEXUS_PRODUCT` sets
+The title is drawn as glass -- a near-white face over a soft accent halo (a
+one-pixel outline instead, on a light theme), with a one-pixel bevel -- in the
+active theme's colours. `CONFIG_NEXUS_PRODUCT` sets
 the word; nothing sits under it, deliberately.
 
 Gutters are 5px rather than the usual 7, which is what buys the link row the
@@ -214,6 +215,14 @@ Swatch order: `bg_bot`, `panel`, `value`, `accent`, `accent_alt`, `warning`,
 Each theme also carries a five-stop ramp for the title, brightest to darkest:
 `[0]`/`[1]` shade the face, `[2]` is the halo behind it, `[3]`/`[4]` the two
 graded pixels of shade under every edge.
+
+`wordmark_glow_alpha` sets how strongly `[2]` sits behind the letters, and
+**zero means outline, not off**: `[2]` is drawn one opaque pixel around the
+letterform instead. A halo works because a bright letter plausibly spills
+light into a dark ground -- on a light one there is nothing to spill into, and
+the same halo reads as the screen being out of focus. Daylight is the theme
+that takes the outline; the edge definition is still needed, only the blur is
+not.
 
 | | ramp |
 | --- | --- |

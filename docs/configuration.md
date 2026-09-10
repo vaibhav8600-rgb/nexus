@@ -8,7 +8,7 @@ Everything is Kconfig or devicetree. If you find yourself editing a file under
 | Option | Default | |
 | --- | --- | --- |
 | `CONFIG_NEXUS_BRAND` | `"VAIBHAV TECH"` | Small line above the wordmark on the splash and About screens. Empty hides it. |
-| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Drawn as glass -- a near-white face with a soft accent halo behind it and a one-pixel bevel -- as large as it fits; a longer name steps down a size rather than overflowing. |
+| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Drawn as glass -- a near-white face with a soft accent halo behind it (an outline instead, on a light theme) and a one-pixel bevel -- as large as it fits; a longer name steps down a size rather than overflowing. |
 | `CONFIG_NEXUS_AUTHOR` | `"VAIBHAV RAJPUT"` | Creator credit on the About screen. Empty hides the card. |
 | `CONFIG_NEXUS_SUBTITLE` | `"SMART ZMK DONGLE"` | Strapline on the splash badge, and a line on About. Empty hides it. Deliberately **not** on Home: the brand plate carries the name and nothing else. |
 

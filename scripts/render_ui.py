@@ -401,10 +401,12 @@ class UI:
             self.cv.text(x, y, ch, scale, c)
             x += text_w(ch, scale) + scale + track
 
-    def wordmark(self, cx, y, s, scale, glow_a=70, lit=-1):
+    def wordmark(self, cx, y, s, scale, glow_a=None, lit=-1):
         """gfx_face_text_glass(), per letter, as wordmark_letters() does."""
         t, cv = self.t, self.cv
         wm = t['wordmark']
+        if glow_a is None:
+            glow_a = t['wordmark_glow_alpha']
         pen = cx - face_w(s, scale) // 2
         fy = y + 2 * scale
         for i, ch in enumerate(s):
@@ -413,15 +415,22 @@ class UI:
             top, bot, glow = wm[0], wm[1], glow_a
             if lit >= 0 and i == lit:
                 # The splash walks this along the word: the lit letter goes
-                # flat white and its halo comes up to full.
+                # flat and its halo comes up to full - on a theme with no
+                # halo the colour change carries it alone.
                 top = bot = t['value']
-                glow = 255
+                glow = 255 if glow else 0
             h1 = dilate(g, FACE_H)
-            h2 = dilate(h1, FACE_H + 2)
-            cv.glyph(pen - 2 * scale, fy - 2 * scale, h2, FACE_W + 4,
-                     FACE_H + 4, scale, wm[2], glow // 2)
-            cv.glyph(pen - scale, fy - scale, h1, FACE_W + 2, FACE_H + 2,
-                     scale, wm[2], glow)
+            if glow:
+                h2 = dilate(h1, FACE_H + 2)
+                cv.glyph(pen - 2 * scale, fy - 2 * scale, h2, FACE_W + 4,
+                         FACE_H + 4, scale, wm[2], glow // 2)
+                cv.glyph(pen - scale, fy - scale, h1, FACE_W + 2, FACE_H + 2,
+                         scale, wm[2], glow)
+            else:
+                # No halo: a one-pixel outline instead, which the face
+                # overdraws down to a single lit edge.
+                cv.glyph(pen - scale, fy - scale, h1, FACE_W + 2, FACE_H + 2,
+                         scale, wm[2], OPAQUE)
             cv.glyph(pen, fy + 2, g, FACE_W, FACE_H, scale, wm[4], 90)
             cv.glyph(pen, fy + 1, g, FACE_W, FACE_H, scale, wm[3], 200)
             cv.glyph(pen, fy - 1, g, FACE_W, FACE_H, scale, t['edge_hi'], 220)
