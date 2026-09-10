@@ -244,9 +244,14 @@ fixed at `y 0..NEXUS_HUD_END`, so nothing shifts when you page.
 
 That constant is **34**, and Tetris decides it rather than taste: its well is
 20 rows of 10px plus a 2px frame either side, which is 204 of the panel's 240
-and leaves exactly 36. At 36 the score sat flush on the well's top edge with
-no air at all, so the header gives two pixels back out of its own margins and
-Tetris starts four below it.
+and leaves exactly 36. Two rows of 14px text take 28 of that, and the eight
+left over are not margin to spend -- they are three gaps that all have to
+exist: four above the title, two between the title and the score, and two
+below the score so it does not sit flush on the playfield.
+
+The score is therefore `NEXUS_TXT_BODY` in all seven games. A `NEXUS_TXT_VALUE`
+score would need 41px of header and Tetris has 36, so the only way to a bigger
+score everywhere is a smaller Tetris well.
 
 Tetris keeps the side panel for `LEVEL`, `LINES` and `NEXT` -- those are
 genuinely game-specific -- and having lost the score card, each of the three

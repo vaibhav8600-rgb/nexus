@@ -228,9 +228,11 @@ static void tetris_draw(void)
 	nexus_draw_game_header(&hud);
 
 	draw_well();
-	stat_card(LEVEL_Y, LEVEL_H, "LEVEL", g_t.level, NEXUS_TXT_BODY,
+	/* VALUE, not BODY: losing the score card made these two taller, and a
+	 * body numeral in a 52px card is a small number in a big empty box. */
+	stat_card(LEVEL_Y, LEVEL_H, "LEVEL", g_t.level, NEXUS_TXT_VALUE,
 		  t->accent);
-	stat_card(LINES_Y, LINES_H, "LINES", g_t.lines, NEXUS_TXT_BODY,
+	stat_card(LINES_Y, LINES_H, "LINES", g_t.lines, NEXUS_TXT_VALUE,
 		  t->value);
 	draw_next();
 	draw_overlay();

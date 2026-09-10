@@ -79,14 +79,24 @@ int nexus_draw_level(int right, int y, uint8_t level);
  * that ticks over invalidates fourteen rows rather than the whole header.
  */
 /*
- * 34, and the two rows inside it are tight against each other, because Tetris
- * decides this number rather than taste: its well is 20 rows of 10px plus a
- * 2px frame either side, which is 204 of the panel's 240 and leaves exactly
- * 36. At 36 the score sat flush on the well's top edge with no air at all, so
- * the header gives back two pixels and takes them out of its own margins.
+ * 34 tall, and every pixel of it is spoken for, because Tetris decides the
+ * number rather than taste: its well is 20 rows of 10px plus a 2px frame
+ * either side, which is 204 of the panel's 240 and leaves exactly 36.
+ *
+ * Two rows of 14px need 28 of that, and the remaining 8 are not margin to
+ * spend - they are three gaps that all have to exist:
+ *
+ *   4  above the title
+ *   2  between the title and the score, or the two lines merge into one
+ *      block of text and the score stops looking like a number
+ *   2  below the score, or it sits flush on the playfield's top edge
+ *
+ * The first version of this took the 2 between the rows and gave it to the
+ * top margin, which is what a header looks like when the constraint is met
+ * arithmetically and not looked at.
  */
 #define NEXUS_HUD_END 34
-#define NEXUS_HUD_TITLE_Y 6
+#define NEXUS_HUD_TITLE_Y 4
 #define NEXUS_HUD_ROW_Y 20
 #define NEXUS_HUD_ROW_H 14
 

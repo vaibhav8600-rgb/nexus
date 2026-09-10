@@ -339,8 +339,21 @@ def main():
        % (HDR['NEXUS_HUD_ROW_Y'],
           HDR['NEXUS_HUD_ROW_Y'] + HDR['NEXUS_HUD_ROW_H'],
           HDR['NEXUS_HUD_END']))
-    ok(HDR['NEXUS_HUD_TITLE_Y'] + 14 <= HDR['NEXUS_HUD_ROW_Y'],
-       'and the title row above it does not run into it')
+    # Not "does not overlap" - adjacent is the bug. The first version had
+    # the title end exactly where the score began and the two read as one
+    # block of text, which is how a 14px numeral stops looking like a score.
+    gap = HDR['NEXUS_HUD_ROW_Y'] - (HDR['NEXUS_HUD_TITLE_Y'] + 14)
+    ok(gap >= 2, 'the title clears the score row by %dpx' % gap)
+    ok(HDR['NEXUS_HUD_TITLE_Y'] >= 4,
+       'and the title clears the top of the panel by %d'
+       % HDR['NEXUS_HUD_TITLE_Y'])
+
+    # Same on the other side: the score must not sit flush on a playfield.
+    tet = src('src/games/tetris/tetris.c') + src('include/nexus/widgets.h') \
+        + src('src/games/tetris/tetris_core.h')
+    below = consts(tet, ['FRAME_Y'])['FRAME_Y'] - HDR['NEXUS_HUD_END']
+    ok(below >= 2,
+       'and the tightest field below it (Tetris) clears it by %dpx' % below)
 
     ALL7 = (('tetris', 'src/games/tetris/tetris.c'),
             ('snake', 'src/games/snake/snake.c'),
