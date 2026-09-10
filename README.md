@@ -28,8 +28,9 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 - **Game Center** with seven playable games -- Tetris, Snake, Breakout,
   Pac-Man, Jumper, Space Invaders and Pong. All drawn through one
   lit-from-the-top-left vocabulary, so they look like one product.
-  Real rules, real scoring, persistent high scores, and a difficulty knob in
-  Settings so you never reflash to change how a game feels.
+  Real rules, real scoring, levels that actually change the board, persistent
+  high scores, and a difficulty knob in Settings so you never reflash to
+  change how a game feels.
   ([watch them play](docs/ui.md#games))
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
   nRF52840 to blur a framebuffer.

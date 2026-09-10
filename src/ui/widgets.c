@@ -102,6 +102,34 @@ void nexus_draw_label(int x, int y, const char *text)
 		 GFX_OPAQUE);
 }
 
+/*
+ * The level badge.
+ *
+ * A caption "L" and the number at body size, on the accent, right-aligned.
+ * Small on purpose: it is a thing you glance at between rounds, not something
+ * you track while playing, and the games it sits in have already spent their
+ * HUD on the score.
+ */
+int nexus_draw_level(int right, int y, uint8_t level)
+{
+	const struct nexus_theme *t = nexus_theme();
+	char buf[8];
+	const char *num = gfx_utoa(level, buf, sizeof(buf), 0);
+	int lw = gfx_text_w("L", NEXUS_TXT_BODY);
+	int x = right - lw - gfx_text_w(num, NEXUS_TXT_BODY);
+
+	/*
+	 * One size, two colours. A caption-sized L beside a body numeral has
+	 * to be baseline-aligned to not look dropped, and at 7px against 14px
+	 * it still reads as a smudge; the same size in the caption colour says
+	 * "label" just as clearly and takes one less measurement to place.
+	 */
+	gfx_text(x, y, "L", NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
+	gfx_text(x + lw, y, num, NEXUS_TXT_BODY, t->accent, GFX_OPAQUE);
+
+	return x;
+}
+
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill)
 {
 	const struct nexus_theme *t = nexus_theme();

@@ -62,7 +62,9 @@ def main():
     print('Jumper - the platformer that replaced the scrolling one')
     j = src('src/games/jumper/jumper.c')
     JK = consts(j, ['TILE', 'COLS', 'ROWS', 'VIEW_Y', 'PLAYER_W', 'PLAYER_H',
-                    'GRAVITY', 'RUN_V', 'MAX_FALL', 'RUN_HOLD_TICKS'])
+                    'GRAVITY', 'RUN_V', 'MAX_FALL', 'RUN_HOLD_TICKS',
+                    'STAGES'])
+    j_src = j
     jv = int(re.search(r'#define JUMP_V \((-\d+)\)', j).group(1))
 
     v, y, peak, ticks = jv, 0, 0, 0
@@ -91,25 +93,81 @@ def main():
     ok('VIEW_Y + lo' in j and 'VIEW_Y + hi' in j,
        'and only the band the actors occupy is invalidated')
 
-    lit = re.findall(r'"([^"]*)"',
-                     re.search(r'level\[ROWS\] = \{(.*?)\n\};', j,
-                               re.S).group(1))
-    ok(len(lit) == JK['ROWS'] and {len(r) for r in lit} == {JK['COLS']},
-       'the level is exactly ROWS x COLS')
-    flat = ''.join(lit)
-    ok(flat.count('P') == 1 and flat.count('F') == 1,
-       'one spawn and one flag')
-    ok(flat.count('o') > 0, '%d coins to collect' % flat.count('o'))
+    # Every board, not just the first: they are hand-drawn text, and an
+    # unreachable platform looks exactly like a reachable one until someone
+    # plays it. The reach model comes from the physics constants above - a
+    # jump peaks a little over two tiles up, having moved about 1.6 tiles
+    # sideways by then, and covers about four tiles flat out.
+    boards = re.findall(r'\t\{\n((?:\t\t"[^"]*",\n)+)\t\},',
+                        j_src.split('stage_map[STAGES][ROWS] = {')[1])
+    ok(len(boards) == JK['STAGES'],
+       'all %d boards parse' % JK.get('STAGES', 0))
 
-    solid = set('=')
-    floats = [(r, c) for r in range(JK['ROWS'] - 1)
-              for c in range(JK['COLS'])
-              if lit[r][c] == 'E' and lit[r + 1][c] not in solid]
-    ok(not floats, 'no enemy stands over a gap%s'
-       % ('' if not floats else ' - %s' % floats))
-    pr, pc = next((r, c) for r in range(JK['ROWS'])
-                  for c in range(JK['COLS']) if lit[r][c] == 'P')
-    ok(lit[pr + 1][pc] in solid, 'the spawn has ground under it')
+    RISE = 2          # tiles a jump can climb
+    RISE_DX = 1       # ... and how far sideways, at that height
+    DX = 4            # tiles covered on the flat, or falling
+
+    for n, raw in enumerate(boards, 1):
+        lit = re.findall(r'"([^"]*)"', raw)
+        tag = 'board %d' % n
+        ok(len(lit) == JK['ROWS'] and {len(r) for r in lit} == {JK['COLS']},
+           '%s is exactly ROWS x COLS' % tag)
+        flat = ''.join(lit)
+        ok(flat.count('P') == 1 and flat.count('F') == 1,
+           '%s has one spawn and one flag' % tag)
+        ok(flat.count('o') > 0,
+           '%s has %d coins' % (tag, flat.count('o')))
+
+        R, C = JK['ROWS'], JK['COLS']
+
+        def solid(r, c):
+            return 0 <= r < R and 0 <= c < C and lit[r][c] == '='
+
+        def stand(r, c):
+            return (0 <= r < R and 0 <= c < C and lit[r][c] != '='
+                    and solid(r + 1, c))
+
+        floats = [(r, c) for r in range(R) for c in range(C)
+                  if lit[r][c] == 'E' and not solid(r + 1, c)]
+        ok(not floats, '%s: no enemy stands over a gap %s' % (tag, floats))
+
+        pr, pc = next((r, c) for r in range(R) for c in range(C)
+                      if lit[r][c] == 'P')
+        ok(stand(pr, pc), '%s: the spawn has ground under it' % tag)
+
+        # Flood fill the standing surfaces you can actually get to.
+        seen, queue = {(pr, pc)}, [(pr, pc)]
+        while queue:
+            r, c = queue.pop()
+            for r2 in range(R):
+                for c2 in range(C):
+                    if (r2, c2) in seen or not stand(r2, c2):
+                        continue
+                    dx, rise = abs(c2 - c), r - r2
+                    if rise > RISE:
+                        continue
+                    if rise == RISE and dx > RISE_DX:
+                        continue
+                    if dx > DX:
+                        continue
+                    seen.add((r2, c2))
+                    queue.append((r2, c2))
+
+        # A coin or the flag counts as reached if you can stand on it, or
+        # stand within a jump of it - the sprite is taller than a tile, so a
+        # coin two rows up is swept on the way past.
+        def within_jump(r, c):
+            return any(abs(c - sc) <= RISE_DX and 0 <= sr - r <= RISE
+                       for sr, sc in seen)
+
+        for r in range(R):
+            for c in range(C):
+                if lit[r][c] not in 'oF':
+                    continue
+                what = ('the flag' if lit[r][c] == 'F'
+                        else 'coin (%d,%d)' % (r, c))
+                ok((r, c) in seen or within_jump(r, c),
+                   '%s: %s is reachable' % (tag, what))
 
     print('\nInvaders')
     inv = src('src/games/invaders/invaders.c')
@@ -198,6 +256,80 @@ def main():
                     ('pong', 'src/games/pong/pong.c')):
         ok('nexus_screen_invalidate_rows' in src(f),
            '%-9s uses a partial repaint' % name)
+    print('\nLevels')
+    gm = src('src/games/game_manager.c')
+    m = re.search(r'uint16_t nexus_game_level_pct\(uint8_t level\)\n\{'
+                  r'(.*?)\n\}', gm, re.S)
+    ok(m is not None, 'the shared curve exists')
+
+    def pct(level):
+        """Mirrors nexus_game_level_pct()."""
+        if level < 1:
+            level = 1
+        return min(100 + (level - 1) * 12, 200)
+
+    ok(pct(1) == 100, 'level 1 is the tuned value exactly, unscaled')
+    ok(pct(0) == 100, 'and level 0 cannot make a game slower than level 1')
+    ok(pct(50) == 200, 'the curve caps - a level nobody can survive is an '
+       'ending with extra steps')
+    ok('100U + (uint16_t)(level - 1U) * 12U' in m.group(1)
+       and '200U' in m.group(1), 'and the C says the same thing')
+
+    # Every game that can be played to a second board has to have one, and
+    # has to show which one you are on.
+    for name, f in (('breakout', 'src/games/breakout/breakout.c'),
+                    ('pacman', 'src/games/pacman/pacman.c'),
+                    ('jumper', 'src/games/jumper/jumper.c'),
+                    ('invaders', 'src/games/invaders/invaders.c'),
+                    ('pong', 'src/games/pong/pong.c'),
+                    ('snake', 'src/games/snake/snake.c')):
+        g = src(f)
+        ok('nexus_draw_level(' in g, '%-9s shows the level' % name)
+        ok('level' in g, '%-9s tracks one' % name)
+
+    # Clearing the board must not be an ending any more, or the level never
+    # gets past 1 and the badge is decoration.
+    for name, f in (('breakout', 'src/games/breakout/breakout.c'),
+                    ('pacman', 'src/games/pacman/pacman.c'),
+                    ('jumper', 'src/games/jumper/jumper.c'),
+                    ('invaders', 'src/games/invaders/invaders.c')):
+        g = src(f)
+        ok('end_round(true)' not in g and '"CLEARED"' not in g,
+           '%-9s advances instead of ending when you clear it' % name)
+
+    # State that survives a board it has no business surviving.
+    pm = src('src/games/pacman/pacman.c')
+    ok('g_p.fright = 0' in pm.split('static void next_maze')[1]
+       .split('\n}')[0],
+       'pacman    clears the fright timer with the maze - eating the last '
+       'dot while the ghosts are blue must not start the next one blue')
+    bo_reset = src('src/games/breakout/breakout.c')
+    ok('reset_ball();' in bo_reset.split('static void next_board')[1]
+       .split('\n}')[0],
+       'breakout  re-serves rather than leaving the ball mid-flight')
+
+    print('\n    a tick at the level cap, against what it has to collide with')
+    bo = src('src/games/breakout/breakout.c')
+    BK = consts(bo, ['BRICK_H', 'PADDLE_H', 'BALL_R'])
+    base = int(re.search(r'config NEXUS_BREAKOUT_BALL_SPEED\s*\n\s*int'
+                         r'[^\n]*\n\s*default (\d+)', kc).group(1))
+    top = base / 100.0 * (2 + 5) / 5 * pct(99) / 100.0
+    cap = BK['BRICK_H'] - 1
+    print('      breakout %.1f px/tick, clamped to %d, brick row %d'
+          % (top, cap, BK['BRICK_H']))
+    ok(cap < BK['BRICK_H'],
+       'the clamp keeps a tick inside a brick row - hit_bricks() tests the '
+       'centre, so a longer tick steps straight through one')
+    ok('TO_FIX(BRICK_H - 1)' in bo, 'and it is derived, not a magic number')
+
+    ptop = bs / 100.0 * (2 + 5) / 5 * pct(99) / 100.0
+    pcap = PK['PAD_W'] + PK['BALL_R'] - 1
+    print('      pong     %.1f px/tick, clamped to %d, paddle window %d'
+          % (ptop, pcap, PK['PAD_W'] + PK['BALL_R']))
+    ok(pcap < PK['PAD_W'] + PK['BALL_R'],
+       'same for the paddle plane, which is also a point test')
+    ok('TO_FIX(PAD_W + BALL_R - 1)' in p, 'and also derived')
+
     print('\nThe shared 3D vocabulary is actually used')
     w = src('src/ui/widgets.c')
     ok('void nexus_draw_block' in w and 'void nexus_draw_orb' in w,

@@ -95,6 +95,7 @@ struct fleet {
 	uint8_t cool;                /* ticks until the gun will fire again */
 
 	uint32_t score;
+	uint8_t level;
 	uint8_t lives;
 	uint8_t anim;
 	uint32_t rng;
@@ -146,6 +147,10 @@ static uint8_t march_period(void)
 	/* The live difficulty setting scales the interval: 3 is neutral. */
 	int scaled = (int)p * (8 - nexus_game_speed()) / 5;
 
+	/* And the wave on top of it. A percentage divides an interval, so a
+	 * higher level is a shorter one. */
+	scaled = scaled * 100 / (int)nexus_game_level_pct(g_f.level);
+
 	if (scaled < 1) {
 		scaled = 1;
 	}
@@ -157,16 +162,55 @@ static void arm_tick(void)
 	k_work_reschedule_for_queue(nexus_workq(), &g_tick, K_MSEC(TICK_MS));
 }
 
-static void end_round(bool won)
+/*
+ * There is no winning state any more: the waves keep coming, so the only way
+ * out is losing your last life. That is the arcade's own answer to "what
+ * happens when you clear it", and it is what makes the level number worth
+ * printing.
+ */
+static void end_round(void)
 {
 	g_state = NEXUS_GAME_OVER;
 	k_work_cancel_delayable(&g_tick);
 	nexus_game_submit_score(&nexus_game_invaders, g_f.score);
 
-	g_over_title = won ? "CLEARED" : "GAME OVER";
+	g_over_title = "GAME OVER";
 	g_over_hint = "ACTION=RESTART";
 	g_over_hint2 = "HOLD=EXIT";
-	nexus_sound_play(won ? NEXUS_SOUND_TETRIS_TETRIS : NEXUS_SOUND_GAME_OVER);
+	nexus_sound_play(NEXUS_SOUND_GAME_OVER);
+	nexus_screen_invalidate();
+}
+
+/*
+ * The next wave.
+ *
+ * Clearing the fleet used to end the round, which made a win the same event
+ * as a loss: the board stopped and the score froze. A wave keeps the score,
+ * the lives and the shots you have left, refills the formation, and starts it
+ * one row further down - so the thing that gets harder is the space you have
+ * to work in as well as the clock.
+ *
+ * The drop is capped: past six waves the fleet would start already level with
+ * the cannon, which is not difficulty, it is an instant loss.
+ */
+static void next_wave(void)
+{
+	if (g_f.level < 255) {
+		g_f.level++;
+	}
+	for (int r = 0; r < ROWS; r++) {
+		g_f.row[r] = (uint16_t)((1u << COLS) - 1u);
+	}
+	g_f.left = ROWS * COLS;
+	g_f.fx = FIELD_X + 8;
+	g_f.fy = (int16_t)(FIELD_Y + 6 +
+			   (g_f.level - 1 > 6 ? 6 : g_f.level - 1) * 6);
+	g_f.dir = 1;
+	g_f.march = march_period();
+	for (int i = 0; i < MAX_BOMBS; i++) {
+		g_f.bomb[i].live = false;
+	}
+	nexus_sound_play(NEXUS_SOUND_TETRIS_LEVEL);
 	nexus_screen_invalidate();
 }
 
@@ -174,7 +218,7 @@ static void lose_life(void)
 {
 	nexus_sound_play(NEXUS_SOUND_BACK);
 	if (--g_f.lives == 0) {
-		end_round(false);
+		end_round();
 		return;
 	}
 	for (int i = 0; i < MAX_SHOTS; i++) {
@@ -231,7 +275,7 @@ static void march(void)
 			continue;
 		}
 		if (alien_y(r) + ALIEN_H >= CANNON_Y) {
-			end_round(false);
+			end_round();
 		}
 		break;
 	}
@@ -319,7 +363,7 @@ static void step(void)
 	}
 
 	if (g_f.left == 0) {
-		end_round(true);
+		next_wave();
 		return;
 	}
 
@@ -408,9 +452,11 @@ static void invaders_draw(void)
 		gfx_text(NEXUS_PAD, 24,
 			 gfx_utoa(g_f.score, buf, sizeof(buf), 0),
 			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
+		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_f.level);
+
 		for (int i = 0; i < g_f.lives; i++) {
-			gfx_disc(GFX_W - NEXUS_PAD - 6 - i * 12, 30, 4,
-				 t->success, GFX_OPAQUE);
+			gfx_disc(lx - 12 - i * 12, 30, 4, t->success,
+				 GFX_OPAQUE);
 		}
 	}
 
@@ -478,6 +524,7 @@ static void new_round(void)
 	g_f.march = MARCH_SLOW;
 	g_f.cannon = FIELD_X + (FIELD_W - CANNON_W) / 2;
 	g_f.lives = LIVES;
+	g_f.level = 1;
 
 	g_state = NEXUS_GAME_RUNNING;
 	g_over_title = NULL;

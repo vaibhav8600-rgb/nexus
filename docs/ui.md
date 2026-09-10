@@ -252,10 +252,11 @@ plays, double-tap skips to the next one.
 | | board | RAM | |
 | --- | --- | --- | --- |
 | **Tetris** | 10x20 | ~245 B | Seven-bag randomiser, symmetric wall kicks, 100/300/500/800 per 1-4 lines times level. |
+| | | | *Every game carries an `L` badge; what advances it is per game - see [games.md](games.md#they-all-have-levels-now).* |
 | **Snake** | 16x16 | ~768 B | Walls or wrap, toggled in Settings. Moving into your own vacated tail is legal. |
 | **Breakout** | free | ~24 B | 8.8 fixed point, 5x8 bricks, three lives, paddle position steers the ball. |
 | **Pac-Man** | 13x10 | ~170 B | 61 dots, four power pellets, three chasers that never reverse, and a wrapping tunnel. |
-| **Jumper** | 16x12 | ~90 B | Single-screen platformer. No camera, so only the actors are ever dirty. |
+| **Jumper** | 16x12 | ~90 B | Single-screen platformer, three boards that then wrap. No camera, so only the actors are ever dirty. |
 | **Invaders** | 8x4 | ~70 B | A fleet as a bitmask per row, turning on its live extent and speeding up as it thins. Hold to fire, three shots in the air. |
 | **Pong** | free | ~30 B | Two paddles and a ball, crossing the court in half a second. The opponent tracks two thirds of the ball's speed, so it is beatable by aiming. |
 

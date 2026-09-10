@@ -352,6 +352,15 @@ class UI:
     def label(self, x, y, s):
         self.cv.text(x, y, s, LABEL, self.t['caption'])
 
+    def level(self, right, y, n):
+        """Mirrors nexus_draw_level(): L in caption, number in accent."""
+        num = str(n)
+        lw = text_w('L', BODY)
+        x = right - lw - text_w(num, BODY)
+        self.cv.text(x, y, 'L', BODY, self.t['caption'])
+        self.cv.text(x + lw, y, num, BODY, self.t['accent'])
+        return x
+
     def meter(self, x, y, w, h, pct, fill):
         r = h // 2
         self.cv.round_rect(x, y, w, h, r, self.t['track'], 190)
@@ -753,7 +762,8 @@ def snake(cv, t, body=None, food=(3, 12), score='120'):
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
     cv.text(PAD + 40, 24, score, BODY, t['value'])
-    cv.text(W - PAD - text_w('WRAP', CAPTION), 26, 'WRAP', CAPTION,
+    lx = u.level(W - PAD, 24, 4)
+    cv.text(lx - 8 - text_w('WRAP', CAPTION), 26, 'WRAP', CAPTION,
             t['caption'])
 
     cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
@@ -795,8 +805,9 @@ def breakout(cv, t, ball=None, paddle=None, gone=None, score='340', lives=3):
     u.label(PAD, 8, 'BREAKOUT')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 3)
     for i in range(lives):
-        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['accent'])
+        cv.disc(lx - 12 - i * 12, 30, 4, t['accent'])
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
@@ -838,8 +849,9 @@ def pacman(cv, t, pac=(8, 6), pdir=1, ghosts=((4, 6), (3, 4), (6, 8)),
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 26, 'SCORE', CAPTION, t['caption'])
     cv.text(PAD + 40, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 2)
     for i in range(lives):
-        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['warning'])
+        cv.disc(lx - 12 - i * 12, 30, 4, t['warning'])
 
     cv.round_frame(K['FRAME_X'], K['FRAME_Y'], K['FRAME_W'], K['FRAME_H'], 3,
                    t['border'], t['border_alpha'])
@@ -935,10 +947,11 @@ def splash(cv, t, lit=-1):
 # ----------------------------------------------------------------- jumper
 JMP = defines(read('src/games/jumper/jumper.c'),
               ['TILE', 'COLS', 'ROWS', 'VIEW_Y', 'PLAYER_W', 'PLAYER_H'])
+# The first of the three boards; the doc shot is always level 1.
 JMP_LEVEL = re.findall(
     r'"([^"]*)"',
-    read('src/games/jumper/jumper.c').split('level[ROWS] = {')[1]
-    .split('\n};')[0])
+    read('src/games/jumper/jumper.c')
+    .split('stage_map[STAGES][ROWS] = {')[1].split('\n\t},')[0])
 
 
 def jumper(cv, t, player=(7, 2), facing=1, taken=(), dead=(), score='700',
@@ -949,8 +962,9 @@ def jumper(cv, t, player=(7, 2), facing=1, taken=(), dead=(), score='700',
     u.label(PAD, 8, 'JUMPER')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 2)
     for i in range(lives):
-        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['error'])
+        cv.disc(lx - 12 - i * 12, 30, 4, t['error'])
 
     cv.rect(0, VY, W, K['ROWS'] * TILE, t['track'], 130)
     for r in range(K['ROWS']):
@@ -999,8 +1013,9 @@ def invaders(cv, t, dead=((0, 0), (0, 7), (1, 3)), fx=None, fy=None,
     u.label(PAD, 8, 'INVADERS')
     u.label(W - PAD - text_w('HOLD=EXIT', LABEL), 8, 'HOLD=EXIT')
     cv.text(PAD, 24, score, BODY, t['value'])
+    lx = u.level(W - PAD, 24, 2)
     for i in range(lives):
-        cv.disc(W - PAD - 6 - i * 12, 30, 4, t['success'])
+        cv.disc(lx - 12 - i * 12, 30, 4, t['success'])
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])
@@ -1046,6 +1061,7 @@ def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
     cv.text(W // 2 - 30 - text_w('0', VALUE), K['HUD_Y'], str(sy), VALUE,
             t['accent'])
     cv.text(W // 2 + 30, K['HUD_Y'], str(sc), VALUE, t['error'])
+    u.level(W - PAD, K['HUD_Y'] + 4, 3)
 
     cv.round_frame(K['FIELD_X'] - 2, K['FIELD_Y'] - 2, K['FIELD_W'] + 4,
                    K['FIELD_H'] + 4, 3, t['border'], t['border_alpha'])

@@ -185,6 +185,52 @@ All seven go through `struct nexus_game`, so the Game Center pages between
 them with no per-game UI code, and each is one `#if` in `games[]`. Turning any
 off with its `CONFIG_NEXUS_*` removes it from the build entirely.
 
+### They all have levels now
+
+Every game shows an **`L`** badge in its HUD, and every game can reach `L2`.
+What advances it differs, because a level has to mean something in the game it
+is in:
+
+| | a level is | what changes |
+| --- | --- | --- |
+| Tetris | ten lines | its own gravity table, unchanged - it had levels first |
+| Snake | five apples | the step interval it was already dropping |
+| Breakout | the wall cleared | the wall comes back, the ball is faster |
+| Pac-Man | the maze cleared | the maze refills, the chasers step sooner |
+| Jumper | the flag reached | the **next of three boards**, then it wraps |
+| Invaders | the fleet cleared | a new fleet, one row lower, marching sooner |
+| Pong | every point played | the ball, whoever won the point |
+
+Clearing the board is no longer an ending. Breakout, Pac-Man, Jumper and
+Invaders used to stop and say `CLEARED`, which made winning and losing the
+same event - the board froze and the score stopped. Now the only ending is
+running out of lives, which is what makes the level worth printing: it is how
+far you got.
+
+`nexus_game_level_pct()` is the shared curve: **100% at level 1, +12% a level,
+capped at 200%**. One helper for both kinds of clock, because a percentage
+divides an interval and multiplies a velocity - and that is the whole reason
+these games do not share a "speed" number.
+
+The cap is not politeness. The tick can never go below
+`CONFIG_NEXUS_UI_REFRESH_FAST_MS` because the panel will not repaint faster,
+and two of the games collide by testing a point rather than a swept segment:
+
+- Breakout's `hit_bricks()` tests the ball's **centre** against one cell, so a
+  tick longer than the 9px brick row steps straight through a brick without
+  ever being inside it. Unclamped, LUDICROUS on a late board is 11.2px.
+- Pong's paddle test is the same shape against an 18px window, and unclamped
+  reaches 20.5px.
+
+Both clamp to their own geometry -- `TO_FIX(BRICK_H - 1)` and
+`TO_FIX(PAD_W + BALL_R - 1)` -- rather than to a number that happens to work,
+and the test derives the same bound from the Kconfig defaults.
+
+Snake is the one game that does not use the shared curve: it had its own
+speed-step in milliseconds long before there was a level, so its badge is
+simply that step given a number. Two curves stacked on one game is how a
+difficulty setting stops meaning anything.
+
 ### They all look like one product
 
 Anything solid is drawn through `nexus_draw_block()`, anything round through
@@ -238,6 +284,11 @@ the arc of the original - nothing ramps a difficulty variable.
 main button pauses is unplayable on the dongle's own button, and pause is still
 a hold away.
 
+Clearing the fleet starts the next wave rather than ending the round: same
+formation, one row lower, marching sooner. The drop caps at six waves, because
+past that the fleet starts level with the cannon, which is not difficulty but
+an instant loss.
+
 **Hold to fire.** The original allowed one shot at a time, which is what made a
 miss cost you something - but that rule was written for a cabinet with its own
 fire button. Here the key repeats every `CONFIG_NEXUS_ACTION_REPEAT_MS`, and
@@ -266,6 +317,10 @@ ball if you move the knob.
 The ball crosses the court in a little over half a second, and the paddle's
 travel per key repeat is sized against that - a ball you cannot reach is not
 difficulty, it is a bug.
+
+Pong has no board to clear, so its level is the point you are on: every point
+played speeds up the next ball, whoever won it. A match to seven is therefore a
+short difficulty curve rather than seven identical rallies.
 
 ### Snake
 

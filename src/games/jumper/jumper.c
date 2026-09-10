@@ -82,18 +82,55 @@ typedef int32_t fix_t;
 
 /*
  * ' ' air, '=' platform, 'o' coin, 'E' enemy, 'P' spawn, 'F' the flag at the
- * top. Collect every coin and reach the flag.
+ * top. Collect every coin and reach the flag, and the next board loads.
+ *
+ * They are laid out to one rule, which is arithmetic rather than taste: a
+ * jump leaves at 6.8 px/tick against 0.52 px/tick of gravity, so it peaks 44px
+ * up - a little over two 20px tiles - and has moved only about 32px sideways
+ * by the time it gets there. So every climb is at most two rows, and a two-row
+ * climb has to be onto a platform that overlaps the one you left. Anything
+ * further apart is not a hard jump, it is an impossible one, and the player
+ * cannot tell the difference from the ground.
+ *
+ * Three boards, then it wraps - with the clock still rising, so board four is
+ * board one played faster. Flash cost is 9 lines of text each.
  */
-static const char *const level[ROWS] = {
-	"            ",
-	"     F      ",
-	"  =======   ",
-	" o        o ",
-	"====    ====",
-	"     o      ",
-	" ====   ====",
-	"P    E    o ",
-	"============",
+#define STAGES 3
+
+static const char *const stage_map[STAGES][ROWS] = {
+	{
+		"            ",
+		"     F      ",
+		"  =======   ",
+		" o        o ",
+		"====    ====",
+		"     o      ",
+		" ====   ====",
+		"P    E    o ",
+		"============",
+	},
+	{
+		"            ",
+		"  F         ",
+		" =====      ",
+		"  o     o   ",
+		"=====  =====",
+		"   o        ",
+		" ====  =====",
+		"P    E    o ",
+		"============",
+	},
+	{
+		"          F ",
+		"      ======",
+		"       o    ",
+		"    =====   ",
+		"   o E      ",
+		"  =====     ",
+		" o          ",
+		"P===        ",
+		"============",
+	},
 };
 
 struct mover {
@@ -118,6 +155,7 @@ struct jumper {
 	uint8_t coins_left;
 
 	uint32_t score;
+	uint8_t level;
 	uint8_t lives;
 	uint8_t anim;
 };
@@ -135,12 +173,21 @@ extern const struct nexus_game nexus_game_jumper;
 
 /* ---- level -------------------------------------------------------------- */
 
+/* Level 1 is stage 0. The guard is for the one tick between memset() and
+ * new_round() setting the level, where 0 - 1 would index backwards. */
+static inline const char *const *stage(void)
+{
+	uint8_t n = g_j.level ? (uint8_t)(g_j.level - 1U) : 0U;
+
+	return stage_map[n % STAGES];
+}
+
 static inline char at(int r, int c)
 {
 	if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
 		return ' ';
 	}
-	return level[r][c];
+	return stage()[r][c];
 }
 
 static inline bool solid(int r, int c)
@@ -191,7 +238,7 @@ static void spawn(void)
 
 	for (int r = 0; r < ROWS; r++) {
 		for (int c = 0; c < COLS; c++) {
-			char ch = level[r][c];
+			char ch = stage()[r][c];
 
 			if (ch == 'P') {
 				g_j.x = TO_FIX(c * TILE);
@@ -222,22 +269,45 @@ static void arm_tick(void)
 {
 	uint32_t ms = (uint32_t)TICK_MS * (uint32_t)(8 - nexus_game_speed()) / 5U;
 
+	/* And the board on top of it. The floor below is not decoration: the
+	 * physics constants are px per TICK, so a shorter tick is a longer
+	 * jump, and past a point the player clears the ceiling test. */
+	ms = ms * 100U / nexus_game_level_pct(g_j.level);
+
 	if (ms < 12U) {
 		ms = 12U;
 	}
 	k_work_reschedule_for_queue(nexus_workq(), &g_tick, K_MSEC(ms));
 }
 
-static void end_round(bool won)
+static void end_round(void)
 {
 	g_state = NEXUS_GAME_OVER;
 	k_work_cancel_delayable(&g_tick);
 	nexus_game_submit_score(&nexus_game_jumper, g_j.score);
 
-	g_over_title = won ? "CLEARED" : "GAME OVER";
+	g_over_title = "GAME OVER";
 	g_over_hint = "ACTION=RESTART";
 	g_over_hint2 = "HOLD=EXIT";
-	nexus_sound_play(won ? NEXUS_SOUND_TETRIS_TETRIS : NEXUS_SOUND_GAME_OVER);
+	nexus_sound_play(NEXUS_SOUND_GAME_OVER);
+	nexus_screen_invalidate();
+}
+
+/*
+ * The flag. Score and lives carry to the next board; the coin record does
+ * not, because it is per-board and spawn() counts what it finds.
+ */
+static void next_stage(void)
+{
+	if (g_j.level < 255) {
+		g_j.level++;
+	}
+	memset(g_j.taken, 0, sizeof(g_j.taken));
+	spawn();
+	g_j.vx = g_j.vy = 0;
+	g_j.on_ground = false;
+	g_j.run_left = g_j.run_right = g_j.jump_want = 0;
+	nexus_sound_play(NEXUS_SOUND_TETRIS_LEVEL);
 	nexus_screen_invalidate();
 }
 
@@ -245,7 +315,7 @@ static void lose_life(void)
 {
 	nexus_sound_play(NEXUS_SOUND_BACK);
 	if (--g_j.lives == 0) {
-		end_round(false);
+		end_round();
 		return;
 	}
 	spawn();
@@ -371,7 +441,7 @@ static void step(void)
 				/* The flag only opens once the board is clear,
 				 * so the climb is the game rather than a
 				 * sprint to the top. */
-				end_round(true);
+				next_stage();
 				return;
 			}
 		}
@@ -490,9 +560,11 @@ static void jumper_draw(void)
 		gfx_text(NEXUS_PAD, 24,
 			 gfx_utoa(g_j.score, buf, sizeof(buf), 0),
 			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
+		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_j.level);
+
 		for (int i = 0; i < g_j.lives; i++) {
-			gfx_disc(GFX_W - NEXUS_PAD - 6 - i * 12, 30, 4,
-				 t->error, GFX_OPAQUE);
+			gfx_disc(lx - 12 - i * 12, 30, 4, t->error,
+				 GFX_OPAQUE);
 		}
 	}
 
@@ -512,7 +584,7 @@ static void jumper_draw(void)
 		for (int c = 0; c < COLS; c++) {
 			int x = VIEW_X + c * TILE;
 
-			switch (level[r][c]) {
+			switch (stage()[r][c]) {
 			case '=':
 				/* Square corners so neighbours tile into one
 				 * continuous ledge rather than a row of
@@ -561,6 +633,7 @@ static void jumper_draw(void)
 static void new_round(void)
 {
 	memset(&g_j, 0, sizeof(g_j));
+	g_j.level = 1;
 	spawn();
 	g_j.lives = LIVES;
 

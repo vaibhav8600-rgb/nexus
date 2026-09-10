@@ -91,6 +91,18 @@ void nexus_game_speed_set(uint8_t speed)
 	g_speed = speed;
 }
 
+uint16_t nexus_game_level_pct(uint8_t level)
+{
+	uint16_t pct;
+
+	if (level < 1) {
+		level = 1;
+	}
+	pct = (uint16_t)(100U + (uint16_t)(level - 1U) * 12U);
+
+	return pct > 200U ? 200U : pct;
+}
+
 const char *nexus_game_speed_name(void)
 {
 	static const char *const names[] = { "SLOW",   "EASY",   "NORMAL",

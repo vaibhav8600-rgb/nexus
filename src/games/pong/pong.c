@@ -83,6 +83,7 @@ struct pong {
 	fix_t cpu;  /* paddle top edge, right side */
 	uint8_t score_you;
 	uint8_t score_cpu;
+	uint8_t level;    /* points played, +1 - the ball rises with it */
 	uint8_t serve;   /* ticks before the ball is released */
 	uint32_t rng;
 };
@@ -108,11 +109,30 @@ static uint32_t rnd(void)
 	return g_g.rng;
 }
 
+/*
+ * Pong has no board to clear, so its level is the point you are on: every
+ * point played makes the next ball faster, and the match to WIN_SCORE is
+ * therefore a short difficulty curve rather than seven identical rallies.
+ *
+ * It reads the level rather than the score so that losing a point advances it
+ * too - the game gets harder as it goes on, whoever is winning.
+ */
 static fix_t speed(void)
 {
 	/* Same live-difficulty curve Breakout uses: 3 is neutral, each step
 	 * either side is 20%, and it scales a VELOCITY so faster is bigger. */
-	return BALL_SPEED * (2 + nexus_game_speed()) / 5;
+	fix_t v = BALL_SPEED * (2 + nexus_game_speed()) / 5 *
+		  (fix_t)nexus_game_level_pct(g_g.level) / 100;
+	/*
+	 * Clamped to under the paddle's own width plus the ball: the hit test
+	 * is a point test at the ball's centre against the paddle plane, and a
+	 * tick longer than that crosses the plane and the goal line in the
+	 * same step. At LUDICROUS on a late point the unclamped value is
+	 * 20.5 px against an 18 px window.
+	 */
+	const fix_t cap = TO_FIX(PAD_W + BALL_R - 1);
+
+	return v > cap ? cap : v;
 }
 
 static void serve(int towards)
@@ -127,6 +147,9 @@ static void serve(int towards)
 		g_g.vy = speed() / 3;
 	}
 	g_g.serve = 10;
+	if (g_g.level < 255) {
+		g_g.level++;
+	}
 }
 
 static void arm_tick(void)
@@ -308,6 +331,7 @@ static void pong_draw(void)
 		gfx_text(GFX_W / 2 + 30, HUD_Y,
 			 gfx_utoa(g_g.score_cpu, buf, sizeof(buf), 0),
 			 HUD_TXT, t->error, GFX_OPAQUE);
+		nexus_draw_level(GFX_W - NEXUS_PAD, HUD_Y + 4, g_g.level);
 	}
 
 	if (!gfx_hits(FIELD_Y - 2, FIELD_H + 4)) {
@@ -351,6 +375,8 @@ static void new_round(void)
 	}
 	g_g.you = TO_FIX(FIELD_Y + (FIELD_H - PAD_H) / 2);
 	g_g.cpu = g_g.you;
+	/* serve() bumps it, so the first ball of a match is level 1. */
+	g_g.level = 0;
 	serve(+1);
 
 	g_state = NEXUS_GAME_RUNNING;

@@ -114,6 +114,7 @@ struct chase {
 	struct actor ghost[GHOSTS];
 
 	uint16_t dots_left;
+	uint8_t level;
 	uint16_t fright; /* ticks of frightened time remaining */
 	uint32_t score;
 	uint8_t lives;
@@ -249,22 +250,47 @@ static void arm_tick(void)
 	 */
 	uint32_t ms = (uint32_t)TICK_MS * (uint32_t)(8 - nexus_game_speed()) / 5U;
 
+	/* And the board on top of it: a percentage divides an interval. */
+	ms = ms * 100U / nexus_game_level_pct(g_p.level);
+
 	if (ms < 30U) {
 		ms = 30U;
 	}
 	k_work_reschedule_for_queue(nexus_workq(), &g_tick, K_MSEC(ms));
 }
 
-static void end_round(bool won)
+static void end_round(void)
 {
 	g_state = NEXUS_GAME_OVER;
 	k_work_cancel_delayable(&g_tick);
 	nexus_game_submit_score(&nexus_game_pacman, g_p.score);
 
-	g_over_title = won ? "CLEARED" : "GAME OVER";
+	g_over_title = "GAME OVER";
 	g_over_hint = "ACTION=RESTART";
 	g_over_hint2 = "HOLD=EXIT";
-	nexus_sound_play(won ? NEXUS_SOUND_TETRIS_TETRIS : NEXUS_SOUND_GAME_OVER);
+	nexus_sound_play(NEXUS_SOUND_GAME_OVER);
+	nexus_screen_invalidate();
+}
+
+/*
+ * Eating the last dot refills the maze instead of ending the game. The
+ * chasers keep the same maze and the same rules; what changes is the clock,
+ * because arm_tick() divides the interval by the level. Lives and score
+ * carry, so the level is a record of how far you got rather than a fresh
+ * start with the same number on it.
+ */
+static void next_maze(void)
+{
+	if (g_p.level < 255) {
+		g_p.level++;
+	}
+	load_maze();
+	place_actors();
+	/* Clearing the last dot while the ghosts are still blue would have
+	 * carried the timer into the new maze - edible ghosts, free points,
+	 * from the first tick of a level you have not started playing. */
+	g_p.fright = 0;
+	nexus_sound_play(NEXUS_SOUND_TETRIS_LEVEL);
 	nexus_screen_invalidate();
 }
 
@@ -331,7 +357,7 @@ static void lose_life(void)
 {
 	nexus_sound_play(NEXUS_SOUND_BACK);
 	if (--g_p.lives == 0) {
-		end_round(false);
+		end_round();
 		return;
 	}
 	place_actors();
@@ -373,7 +399,7 @@ static void step(void)
 	}
 
 	if (g_p.dots_left == 0) {
-		end_round(true);
+		next_maze();
 		return;
 	}
 
@@ -529,10 +555,12 @@ static void pacman_draw(void)
 			 gfx_utoa(g_p.score, buf, sizeof(buf), 0),
 			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
 
+		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_p.level);
+
 		/* Lives as pips, as Breakout does - you glance at them. */
 		for (int i = 0; i < g_p.lives; i++) {
-			gfx_disc(GFX_W - NEXUS_PAD - 6 - i * 12, 30, 4,
-				 t->warning, GFX_OPAQUE);
+			gfx_disc(lx - 12 - i * 12, 30, 4, t->warning,
+				 GFX_OPAQUE);
 		}
 	}
 
@@ -613,6 +641,7 @@ static void new_round(uint32_t salt)
 	load_maze();
 	place_actors();
 	g_p.lives = LIVES;
+	g_p.level = 1;
 
 	g_state = NEXUS_GAME_RUNNING;
 	g_over_title = NULL;
