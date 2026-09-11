@@ -80,6 +80,32 @@ def main():
         ok(not missing, '%-9s declares them all%s'
            % (t['name'], '' if not missing else ' - missing %s' % missing))
 
+    print('\nEvery card reads as a card, top to bottom')
+    # A pane has to differ from the ground it sits on, and the ground is a
+    # gradient - so it has to differ at BOTH ends, in the same direction.
+    # Clay's pane was 5 luma darker than the top of its ground, which left
+    # the upper cards as a hairline above and a hairline below with nothing
+    # between. Sunset's ran from -2 at the top to -38 at the bottom: the
+    # header pane vanished while the battery panes shouted.
+    #
+    # 8 is the floor because it is what the five themes nobody complained
+    # about already clear - the rule is measured from them, not invented.
+    FLOOR = 8
+    # Sunset is N-07, its own ticket. Listed here rather than skipped
+    # silently so the rule is visibly incomplete until it is not.
+    KNOWN = {'SUNSET'}
+    for t in ts:
+        if t['name'] in KNOWN:
+            print('  todo  %-9s is ticket N-07' % t['name'])
+            continue
+        top = lum(over(t['panel'], t['bg_top'], t['panel_alpha'])) \
+            - lum(t['bg_top'])
+        bot = lum(over(t['panel'], t['bg_bot'], t['panel_alpha'])) \
+            - lum(t['bg_bot'])
+        ok(min(abs(top), abs(bot)) >= FLOOR and (top > 0) == (bot > 0),
+           '%-9s pane is %+d luma against the top, %+d against the bottom'
+           % (t['name'], top, bot))
+
     print('\nThe wordmark halo is a dark-ground device')
     # A halo works because a bright letter plausibly spills light into a dark
     # ground. On a light one there is nothing to spill into and the same

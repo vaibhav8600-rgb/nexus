@@ -88,7 +88,16 @@ static const struct nexus_theme themes[] = {
 		.bg_top = NEXUS_C(0x2B3143u), .bg_bot = NEXUS_C(0x232835u),
 		.glow_a = NEXUS_C(0x000000u), .glow_b = NEXUS_C(0x000000u),
 		.glow_alpha = 0,
-		.panel = NEXUS_C(0x272C3Bu), .panel_alpha = 255,
+		/*
+		 * One shade above the ground, not equal to it. Pure
+		 * neumorphism reads a pane through a soft shadow on both
+		 * sides, and a 1px hairline cannot do that: with the pane the
+		 * ground's own colour, the top two cards were nothing but a
+		 * line above and a line below with no body between them,
+		 * which reads as a rendering artifact rather than an edge.
+		 * It was 5 luma DARKER than the top of the gradient.
+		 */
+		.panel = NEXUS_C(0x343B51u), .panel_alpha = 255,
 		.edge_hi = NEXUS_C(0x4A5271u), .edge_hi_alpha = 255,
 		.edge_lo = NEXUS_C(0x151824u), .edge_lo_alpha = 255,
 		.border = NEXUS_C(0x353B4Eu), .border_alpha = 200,
