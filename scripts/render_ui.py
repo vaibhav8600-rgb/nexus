@@ -652,17 +652,17 @@ def about(cv, t):
     u.caption_c(W // 2, 21, 'VAIBHAV TECH')
     u.wordmark(W // 2, 31, 'NEXUS', 2)
 
-    u.card(PAD, 84, CONTENT_W, 38)
+    u.card(PAD, 84, CONTENT_W, 85)
     u.caption_c(W // 2, 91, 'FIRMWARE')
-    cv.text_c(W // 2, 102, 'V1.0.0', BODY, t['accent'])
+    cv.text_c(W // 2, 102, 'V1.0.0', VALUE, t['accent'])
 
     for i, line in enumerate(('SMART ZMK DONGLE', 'NRF52840  ST7789',
                               'POWERED BY ZMK')):
-        u.caption_c(W // 2, 130 + i * 14, line)
+        u.caption_c(W // 2, 131 + i * 12, line)
 
-    u.card(PAD, 180, CONTENT_W, 46)
-    u.caption_c(W // 2, 188, 'CREATED BY')
-    cv.text_c(W // 2, 202, 'VAIBHAV RAJPUT', BODY, t['value'])
+    u.card(PAD, 177, CONTENT_W, 46)
+    u.caption_c(W // 2, 185, 'CREATED BY')
+    cv.text_c(W // 2, 199, 'VAIBHAV RAJPUT', BODY, t['value'])
 
 
 # ------------------------------------------------------------ game center

@@ -298,9 +298,15 @@ entirely, text included. See [splash.md](splash.md).
 
 <br clear="right">
 
-Brand, wordmark, firmware version, the hardware it runs on, and the creator
-credit. `CONFIG_NEXUS_BRAND`, `_PRODUCT`, `_SUBTITLE` and `_AUTHOR` set the
-strings; an empty one hides its line.
+Three panes: brand and wordmark; the firmware version with the hardware it
+runs on; and the creator credit. `CONFIG_NEXUS_BRAND`, `_PRODUCT`, `_SUBTITLE`
+and `_AUTHOR` set the strings; an empty one hides its line.
+
+The version is the largest text below the wordmark, because it is what people
+open this screen to read. It used to be the same size as the creator's name,
+which at fourteen white characters against six mint ones outweighed it -- and
+the three hardware lines floated between the panes, the only unpanelled text on
+the screen.
 
 ## Regenerating these images
 
