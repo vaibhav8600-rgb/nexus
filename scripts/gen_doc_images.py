@@ -86,8 +86,8 @@ def themes():
         name = re.match(r'"([^"]+)"', blob).group(1)
         f = {}
         for key in ('bg_top', 'bg_bot', 'panel', 'edge_hi', 'value', 'accent',
-                    'accent_alt', 'caption', 'muted', 'success', 'warning',
-                    'error'):
+                    'accent_alt', 'caption', 'muted', 'track', 'success',
+                    'warning', 'error'):
             m = re.search(r'\.%s = NEXUS_C\(0x([0-9A-Fa-f]+)u\)' % key, blob)
             if m:
                 f[key] = int(m.group(1), 16)
@@ -161,8 +161,12 @@ def main():
     for sym, label in (('mod_ctrl', 'ctrl'), ('mod_shift', 'shift'),
                        ('mod_alt', 'alt'), ('mod_gui', 'gui')):
         for on, suffix, col in ((True, '-on', 'value'), (False, '', 'muted')):
-            slot = mix(card, rgb565(T['accent_alt'] if on else T['bg_bot']),
-                       110 if on else 150)
+            # Must match draw_mods() in home.c exactly: these swatches are
+            # what the docs show a held key looking like. They drifted once
+            # already - accent_alt/bg_bot here while the firmware drew
+            # accent/track - and the docs showed a colour the device did not.
+            slot = mix(card, rgb565(T['accent'] if on else T['track']),
+                       170 if on else 150)
             pw, ph, buf = render(g[sym], C['MOD_GLYPH_W'], C['MOD_GLYPH_H'],
                                  C['MOD_SCALE'], rgb565(T[col]), slot, pad=5)
             write_png(os.path.join(OUT, 'mod-%s%s.png' % (label, suffix)),

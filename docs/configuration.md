@@ -183,7 +183,13 @@ everywhere else is how a menu stops being predictable. The screens say so --
 Four 22 px pills, lit while the modifier is held, drawn with the symbol the key
 itself is printed with rather than an initial:
 
-caret = Ctrl · up arrow = Shift · option stroke = Alt · four panes = GUI
+caret = Ctrl · up arrow = Shift · option `⌥` = Alt · command `⌘` = GUI
+
+GUI used to be the Windows four-pane logo. On an 11x11 grid that is
+indistinguishable from a 2x2 grid of anything and did not read as a key at
+all, so it is the command loop now -- the one GUI symbol that survives being
+drawn that small. On a Windows keyboard that means the glyph is not what is
+printed on the key; it is still the one that reads as a key at 22px.
 
 Left and right variants are merged -- there is no room for eight pills and no
 value in telling them apart at a glance.

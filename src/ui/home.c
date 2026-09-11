@@ -121,12 +121,26 @@ static const uint16_t mod_glyphs[4][MOD_GLYPH_H] = {
 	/* SHIFT: filled up arrow, head over a stem. */
 	{ 0x020, 0x070, 0x0F8, 0x1FC, 0x3FE, 0x7FF, 0x070, 0x070, 0x070,
 	  0x070, 0x000 },
-	/* ALT: the option stroke - bar over a stepped diagonal. */
-	{ 0x7CF, 0x7DF, 0x018, 0x038, 0x030, 0x070, 0x060, 0x0E0, 0x0C0,
-	  0x7C0, 0x780 },
-	/* GUI: four panes. The Windows key is what is printed on the key. */
-	{ 0x7DF, 0x7DF, 0x7DF, 0x7DF, 0x7DF, 0x000, 0x7DF, 0x7DF, 0x7DF,
-	  0x7DF, 0x7DF },
+	/*
+	 * ALT, as the option symbol: a short bar top left that drops down a
+	 * diagonal to a bar bottom right, and a separate bar top right.
+	 *
+	 * The shape was always meant to be this, but its two top bars were
+	 * one column apart in the second row - at scale 2 that is a two-pixel
+	 * gap, which closes up, so the top read as one long bar and the whole
+	 * glyph read as a Z. Three columns apart now, and the diagonal is an
+	 * even two-wide staircase instead of alternating two and three.
+	 */
+	{ 0x78F, 0x78F, 0x018, 0x030, 0x030, 0x060, 0x060, 0x0C0, 0x0C0,
+	  0x7C0, 0x7C0 },
+	/*
+	 * GUI, as the command symbol: a square whose four sides run past the
+	 * corners and curl into loops. It was the Windows four-pane logo,
+	 * which on an 11x11 grid is indistinguishable from a 2x2 grid of
+	 * anything - it did not read as a key at all.
+	 */
+	{ 0x306, 0x489, 0x489, 0x3FE, 0x088, 0x088, 0x088, 0x3FE, 0x489,
+	  0x489, 0x306 },
 };
 
 static const uint8_t mod_bits[4] = {
