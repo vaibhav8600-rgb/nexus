@@ -104,10 +104,33 @@ def main():
        % (n_h, C['INNER_D']))
     ok(face_w('N', C['N_SCALE']) <= C['INNER_D'], 'and fits it across')
 
+    # The two lines' size and tracking, read from the calls that draw them.
+    # This used to be written in here as numbers, which went on "passing"
+    # after N-11 swapped the sizes - measuring a layout that no longer
+    # existed and reporting the product line at its old 125px.
+    SCALE = {'CAPTION': 1, 'LABEL': 2, 'BODY': 2, 'VALUE': 3, 'BIG': 4}
+
+    def drawn(y_name, text_name):
+        m = re.search(r'%s, %s,\s*NEXUS_TXT_(\w+), (\d+)'
+                      % (y_name, text_name), src)
+        return SCALE[m.group(1)], int(m.group(2))
+
+    # The subtitle picks its size at run time - body if the string fits,
+    # caption if not - so mirror that choice rather than parse a literal.
+    ok('int s = NEXUS_TXT_BODY;' in src and 's = NEXUS_TXT_CAPTION;' in src,
+       'a long subtitle steps down a size rather than overflowing')
+    sub_s, sub_t = ((2, 0) if tracked_w(subtitle, 2, 0) <= PANEL - 16
+                    else (1, 2))
+    brand_s, brand_t = drawn('BRAND_Y', 'NEXUS_BRAND')
+    longest = 'X' * 28
+    ok(tracked_w(longest, 1, 2) <= PANEL - 16,
+       'and after stepping down, 28 characters still fit (%d)'
+       % tracked_w(longest, 1, 2))
+
     disc_bot = C['DISC_CY'] + C['HALO_D'] // 2
     word_bot = C['WORD_Y'] + ink_h(C['WORD_SCALE'])
-    sub_bot = C['SUB_Y'] + FONT_H
-    brand_bot = C['BRAND_Y'] + FONT_H * 2
+    sub_bot = C['SUB_Y'] + FONT_H * sub_s
+    brand_bot = C['BRAND_Y'] + FONT_H * brand_s
 
     ok(C['WORD_Y'] >= disc_bot, 'the wordmark clears the halo (%d >= %d)'
        % (C['WORD_Y'], disc_bot))
@@ -122,10 +145,29 @@ def main():
     ok(face_w(product, C['WORD_SCALE']) + 3 * C['WORD_SCALE'] <= PANEL,
        '"%s" and its outline fit across (%d)'
        % (product, face_w(product, C['WORD_SCALE']) + 3 * C['WORD_SCALE']))
-    ok(tracked_w(subtitle, 1, 2) <= PANEL,
-       '"%s" fits tracked (%d)' % (subtitle, tracked_w(subtitle, 1, 2)))
-    ok(tracked_w(brand, 2, 2) <= PANEL,
-       '"%s" fits tracked (%d)' % (brand, tracked_w(brand, 2, 2)))
+    ok(tracked_w(subtitle, sub_s, sub_t) <= PANEL - 16,
+       '"%s" fits with a margin (%d)'
+       % (subtitle, tracked_w(subtitle, sub_s, sub_t)))
+    ok(tracked_w(brand, brand_s, brand_t) <= PANEL - 16,
+       '"%s" fits with a margin (%d)'
+       % (brand, tracked_w(brand, brand_s, brand_t)))
+
+    print('\nHierarchy: what it is, then who made it')
+    # The maker line was twice the product line's size and the brightest
+    # text on the screen - the second thing you read, arguing with the first.
+    word_h = FACE_H * C['WORD_SCALE']
+    ok(word_h > FONT_H * sub_s > FONT_H * brand_s,
+       'wordmark %dpx > product %dpx > maker %dpx'
+       % (word_h, FONT_H * sub_s, FONT_H * brand_s))
+
+    def rgb(name):
+        v = int(re.search(r'#define %s NEXUS_C\(0x([0-9A-Fa-f]+)u\)' % name,
+                          src).group(1), 16)
+        r, g, b = v >> 16 & 255, v >> 8 & 255, v & 255
+        return (299 * r + 587 * g + 114 * b) // 1000
+    ok(rgb('COL_PRODUCT') > rgb('COL_BRAND'),
+       'and the maker is the quieter of the two in tone as well '
+       '(luma %d vs %d)' % (rgb('COL_BRAND'), rgb('COL_PRODUCT')))
     ok(C['RULE_W'] <= PANEL, 'the divider fits across')
 
     print('\nThe badge still draws its own type')

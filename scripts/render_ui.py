@@ -981,7 +981,13 @@ def splash(cv, t, lit=-1):
     K = SPL
     BG, PURPLE, WINE = C(0x0A0912), C(0x3B2079), C(0x59203E)
     ACCENT, D_OUT, D_IN, WHITE = C(0xFF4D9E), C(0x100E18), C(0x1A1822), 0xFFFF
-    BRAND_C, PROD_C = C(0xE6E9F5), C(0x7C87C4)
+    # Read from the asset rather than restated: the two swapped for
+    # N-11, and a copy here would have gone on drawing the old order.
+    art = read('assets/splash_default.c')
+    BRAND_C, PROD_C = (
+        C(int(re.search(r'#define %s NEXUS_C\(0x([0-9A-Fa-f]+)u\)'
+                        % n, art).group(1), 16))
+        for n in ('COL_BRAND', 'COL_PRODUCT'))
     u = UI(cv, t)
 
     cv.rect(0, 0, W, H, BG)
@@ -1007,9 +1013,9 @@ def splash(cv, t, lit=-1):
     cv.glyph(nx, ny, g, FACE_W, FACE_H, ns, ACCENT if lit == 0 else WHITE)
 
     u.wordmark(W // 2, K['WORD_Y'], 'NEXUS', K['WORD_SCALE'], lit=lit)
-    u.tracked(W // 2, K['SUB_Y'], 'SMART ZMK DONGLE', CAPTION, 2, PROD_C)
+    u.tracked(W // 2, K['SUB_Y'], 'SMART ZMK DONGLE', BODY, 0, PROD_C)
     cv.rect(W // 2 - K['RULE_W'] // 2, K['RULE_Y'], K['RULE_W'], 1, ACCENT, 110)
-    u.tracked(W // 2, K['BRAND_Y'], 'VAIBHAV TECH', BODY, 2, BRAND_C)
+    u.tracked(W // 2, K['BRAND_Y'], 'VAIBHAV TECH', CAPTION, 2, BRAND_C)
 
 
 # ----------------------------------------------------------------- jumper

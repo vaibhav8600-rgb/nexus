@@ -64,12 +64,19 @@
 #define WORD_Y 138
 #define WORD_SCALE 2
 #define SUB_Y 180
-#define RULE_Y 196
+#define RULE_Y 200
 #define RULE_W 132
-#define BRAND_Y 204
+#define BRAND_Y 206
 
-#define COL_BRAND NEXUS_C(0xE6E9F5u)
-#define COL_PRODUCT NEXUS_C(0x7C87C4u)
+/*
+ * Swapped with each other, along with their sizes. The maker line was the
+ * brightest text on the screen at twice the product line's size and 164px
+ * wide under a 108px wordmark - it was not the third thing you read, it was
+ * the second, and it argued with the first. What the device IS comes before
+ * who made it, in size and in tone.
+ */
+#define COL_PRODUCT NEXUS_C(0xE6E9F5u)
+#define COL_BRAND NEXUS_C(0x7C87C4u)
 
 #define N_SCALE 3 /* 10x14 face -> 30x42, the original's 38px cap */
 
@@ -160,8 +167,23 @@ static void draw_default_mark(int x, int y)
 				  lit);
 
 	if (sizeof(NEXUS_SUBTITLE) > 1) {
-		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE,
-				   NEXUS_TXT_CAPTION, 2, COL_PRODUCT);
+		/*
+		 * Body size, untracked - at 16 characters a tracked body line
+		 * is 220px, the full width of the panel. The subtitle is the
+		 * user's own string, though, and at body size only 18
+		 * characters fit where caption size fits 28, so a longer one
+		 * steps down rather than running off both edges. The same
+		 * rule the wordmark follows.
+		 */
+		int s = NEXUS_TXT_BODY;
+		int tr = 0;
+
+		if (nexus_tracked_w(NEXUS_SUBTITLE, s, tr) > GFX_W - 16) {
+			s = NEXUS_TXT_CAPTION;
+			tr = 2;
+		}
+		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE, s, tr,
+				   COL_PRODUCT);
 	}
 
 	if (sizeof(NEXUS_BRAND) > 1) {
@@ -171,7 +193,7 @@ static void draw_default_mark(int x, int y)
 		gfx_rect(GFX_W / 2 - RULE_W / 2, RULE_Y, RULE_W, 1, COL_ACCENT,
 			 110);
 		nexus_draw_tracked(GFX_W / 2, BRAND_Y, NEXUS_BRAND,
-				   NEXUS_TXT_BODY, 2, COL_BRAND);
+				   NEXUS_TXT_CAPTION, 2, COL_BRAND);
 	}
 }
 
