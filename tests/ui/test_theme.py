@@ -91,13 +91,7 @@ def main():
     # 8 is the floor because it is what the five themes nobody complained
     # about already clear - the rule is measured from them, not invented.
     FLOOR = 8
-    # Sunset is N-07, its own ticket. Listed here rather than skipped
-    # silently so the rule is visibly incomplete until it is not.
-    KNOWN = {'SUNSET'}
     for t in ts:
-        if t['name'] in KNOWN:
-            print('  todo  %-9s is ticket N-07' % t['name'])
-            continue
         top = lum(over(t['panel'], t['bg_top'], t['panel_alpha'])) \
             - lum(t['bg_top'])
         bot = lum(over(t['panel'], t['bg_bot'], t['panel_alpha'])) \

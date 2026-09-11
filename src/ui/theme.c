@@ -158,7 +158,20 @@ static const struct nexus_theme themes[] = {
 		 * the same panel colour reads violet at the top of the screen
 		 * and amber at the bottom, because it actually is. */
 		.name = "SUNSET",
-		.bg_top = NEXUS_C(0x170B2Cu), .bg_bot = NEXUS_C(0xD95A32u),
+		/*
+		 * The sky was near-black at the top and bright orange at the
+		 * bottom, under one uniform dark glass. So the header pane
+		 * vanished (2 luma off the ground) while the battery panes
+		 * shouted (38 off it) - the same card reading as two
+		 * different materials depending on where it sat.
+		 *
+		 * No opacity fixes the top, because the tint and the top of
+		 * the sky are both dark and there is nothing to contrast. The
+		 * ground has to meet the glass instead: a lighter violet up
+		 * top and a calmer orange below, which is still a sunset and
+		 * puts every pane between 10 and 34 luma off its ground.
+		 */
+		.bg_top = NEXUS_C(0x351C5Cu), .bg_bot = NEXUS_C(0xC4532Fu),
 		.glow_a = NEXUS_C(0xFFB450u), .glow_b = NEXUS_C(0xFF783Cu),
 		.glow_alpha = 16,
 		.panel = NEXUS_C(0x140622u), .panel_alpha = 88,
