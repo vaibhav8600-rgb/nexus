@@ -64,12 +64,19 @@
 #define WORD_Y 138
 #define WORD_SCALE 2
 #define SUB_Y 180
-#define RULE_Y 196
+#define RULE_Y 200
 #define RULE_W 132
-#define BRAND_Y 204
+#define BRAND_Y 206
 
-#define COL_BRAND NEXUS_C(0xE6E9F5u)
-#define COL_PRODUCT NEXUS_C(0x7C87C4u)
+/*
+ * Swapped with each other, along with their sizes. The maker line was the
+ * brightest text on the screen at twice the product line's size and 164px
+ * wide under a 108px wordmark - it was not the third thing you read, it was
+ * the second, and it argued with the first. What the device IS comes before
+ * who made it, in size and in tone.
+ */
+#define COL_PRODUCT NEXUS_C(0xE6E9F5u)
+#define COL_BRAND NEXUS_C(0x7C87C4u)
 
 #define N_SCALE 3 /* 10x14 face -> 30x42, the original's 38px cap */
 
@@ -125,17 +132,24 @@ static void draw_default_mark(int x, int y)
 		HAIRLINE_OPA);
 
 	/*
-	 * The N: accent copy 1px right of a white one, as in the original. The
-	 * splash highlight lands on it when the sweep reaches the wordmark's
-	 * first letter, so the badge pulses with the name rather than beside
-	 * it.
+	 * The N, in one colour.
+	 *
+	 * It used to be an accent copy offset one pixel from a white one. At a
+	 * one-pixel offset that does not read as a deliberate split - it reads
+	 * as channel misconvergence, a display fault, on the first frame the
+	 * device ever shows. An offset large enough to be read as intentional
+	 * is a different decision and a different design.
+	 *
+	 * The splash highlight still lands on it when the sweep reaches the
+	 * wordmark's first letter, so the badge pulses with the name rather
+	 * than beside it - the colour change carries that on its own, which is
+	 * what the second copy was obscuring.
 	 */
 	int nw = gfx_face_w("N", N_SCALE);
 	int nh = gfx_face_h(N_SCALE);
 	int nx = 120 - nw / 2;
 	int ny = DISC_CY - nh / 2;
 
-	gfx_face_text(nx + 1, ny, "N", N_SCALE, COL_ACCENT, GFX_OPAQUE);
 	gfx_face_text(nx, ny, "N", N_SCALE, lit == 0 ? COL_ACCENT : COL_WHITE,
 		      GFX_OPAQUE);
 
@@ -153,8 +167,23 @@ static void draw_default_mark(int x, int y)
 				  lit);
 
 	if (sizeof(NEXUS_SUBTITLE) > 1) {
-		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE,
-				   NEXUS_TXT_CAPTION, 2, COL_PRODUCT);
+		/*
+		 * Body size, untracked - at 16 characters a tracked body line
+		 * is 220px, the full width of the panel. The subtitle is the
+		 * user's own string, though, and at body size only 18
+		 * characters fit where caption size fits 28, so a longer one
+		 * steps down rather than running off both edges. The same
+		 * rule the wordmark follows.
+		 */
+		int s = NEXUS_TXT_BODY;
+		int tr = 0;
+
+		if (nexus_tracked_w(NEXUS_SUBTITLE, s, tr) > GFX_W - 16) {
+			s = NEXUS_TXT_CAPTION;
+			tr = 2;
+		}
+		nexus_draw_tracked(GFX_W / 2, SUB_Y, NEXUS_SUBTITLE, s, tr,
+				   COL_PRODUCT);
 	}
 
 	if (sizeof(NEXUS_BRAND) > 1) {
@@ -164,7 +193,7 @@ static void draw_default_mark(int x, int y)
 		gfx_rect(GFX_W / 2 - RULE_W / 2, RULE_Y, RULE_W, 1, COL_ACCENT,
 			 110);
 		nexus_draw_tracked(GFX_W / 2, BRAND_Y, NEXUS_BRAND,
-				   NEXUS_TXT_BODY, 2, COL_BRAND);
+				   NEXUS_TXT_CAPTION, 2, COL_BRAND);
 	}
 }
 

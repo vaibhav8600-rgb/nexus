@@ -310,6 +310,67 @@ def main():
         ok(face_w('NEXUS', asz) + 2 * GLOW_CELLS * asz
            <= C['NEXUS_CONTENT_W'], 'About wordmark fits the card width')
 
+    # Every block in a pane, or none - three detail lines used to float
+    # between the cards, the only unpanelled text on the screen.
+    about = menus.split('static void about_draw')[1].split('\n}\n')[0]
+    cards = [(int(y), int(h)) for y, h in re.findall(
+        r'nexus_draw_card\(NEXUS_PAD, (\d+), NEXUS_CONTENT_W, (\d+)\)',
+        about)]
+    texts = [int(y) for y in re.findall(
+        r'(?:caption_c|gfx_text_c)\(GFX_W / 2, (\d+)', about)]
+    texts += [131 + i * 12 for i in range(3)]      # the detail lines
+    loose = [y for y in texts
+             if not any(cy <= y and y + 7 <= cy + ch for cy, ch in cards)]
+    ok(not loose, 'every line of About sits inside a pane%s'
+       % ('' if not loose else ' - loose at %s' % loose))
+    for (a, ah), (b, _) in zip(cards, cards[1:]):
+        ok(a + ah <= b, 'pane at %d ends (%d) before the next starts (%d)'
+           % (a, a + ah, b))
+
+    # The version is what people open this screen to read, and it was the
+    # same size as the creator's name - which outweighed it.
+    ok('NEXUS_VERSION_STR, NEXUS_TXT_VALUE' in about,
+       'the version is VALUE size, the headline of the screen')
+    ok('NEXUS_AUTHOR, scale' in about and 'NEXUS_TXT_BODY' in about,
+       'and the creator stays below it, at body size at most')
+
+    print('\nProfile tile: the state is in the shape, not the colour')
+    # A tick read as "task complete", and its success green was the one
+    # colour that did not belong in half the palettes.
+    ok('st_ok[ST_H] = {   /* filled' in src,
+       'bonded and connected is a filled mark, not a tick')
+    link = src.split('static void draw_link')[1].split('\n}\n')[0]
+    ok('t->success' not in link and 't->error' not in link
+       and 't->warning' not in link,
+       'the tile borrows no traffic-light colour')
+    ok('ST_SCALE, t->accent, GFX_OPAQUE' in link,
+       'and draws all three states in the theme accent')
+
+    print('\nUI static RAM')
+    # The ceiling, and the only number in Diagnostics that is a promise
+    # rather than a reading. Every buffer NEXUS owns is static, so this is
+    # the whole of it: the compositor band plus the menu value cache. A
+    # ticket that grows it is a ticket that got the wrong answer.
+    CEILING = 5984
+    gfx_h = open(os.path.join(root, 'include', 'nexus', 'gfx.h'),
+                 encoding='utf-8').read()
+    menus = open(os.path.join(root, 'src', 'ui', 'menus.c'),
+                 encoding='utf-8').read()
+
+    def define(text, name):
+        return int(re.search(r'#define %s\s+(\d+)' % name, text).group(1))
+
+    band = define(gfx_h, 'GFX_W') * define(gfx_h, 'GFX_STRIP_H') * 2
+    cache = define(menus, 'MAX_ROWS') * define(menus, 'VAL_MAX')
+    ok(band + cache == CEILING,
+       'band %d + value cache %d = %d, the documented ceiling'
+       % (band, cache, band + cache))
+    ok('sizeof(g_val) + GFX_W * GFX_STRIP_H * 2U' in menus,
+       'and Diagnostics computes it rather than printing a literal')
+    ok(str(CEILING) in open(os.path.join(root, 'docs', 'configuration.md'),
+                            encoding='utf-8').read().replace(',', ''),
+       'the docs quote the same number')
+
     print('\nHierarchy')
     ok('nexus_draw_caption(' in src, 'card headings are captions again')
     ok(str(C['NEXUS_TXT_BIG']) in src or True, '')

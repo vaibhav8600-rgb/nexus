@@ -72,17 +72,6 @@ typedef int32_t fix_t;
  */
 #define PADDLE_STEP CONFIG_NEXUS_BREAKOUT_PADDLE_STEP
 
-/*
- * The HUD band, and why it is named.
- *
- * The score is drawn at y=24 but every repaint invalidated only the playfield
- * below it, so the number was painted once at start and never again - it read
- * as a permanently stuck 0. Tetris never showed this because its score lives
- * in the side panel, inside the band the well already dirties.
- */
-#define HUD_Y 20
-#define HUD_H 22
-
 /* 5, not 3. A 6px ball was the smallest moving thing in any game here and
  * the first to disappear at any distance; 10px still clears the paddle. */
 #define BALL_R 5
@@ -249,7 +238,9 @@ static bool hit_bricks(int px, int py)
 	g_b.score += (uint32_t)(BRICK_ROWS - row) * 10U;
 	g_b.vy = -g_b.vy;
 	nexus_sound_play(NEXUS_SOUND_TETRIS_MOVE);
-	nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
+	nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y,
+				     NEXUS_HUD_ROW_Y +
+					     NEXUS_HUD_ROW_H);
 	return true;
 }
 
@@ -330,7 +321,9 @@ static void step(void)
 		nexus_sound_play(NEXUS_SOUND_BACK);
 		reset_ball();
 		/* A life just went, so the pips have to redraw too. */
-		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
+		nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y,
+				     NEXUS_HUD_ROW_Y +
+					     NEXUS_HUD_ROW_H);
 	}
 
 	nexus_screen_invalidate_rows(FIELD_Y, FIELD_B + 2);
@@ -354,35 +347,26 @@ static void tick_fn(struct k_work *work)
 static void breakout_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
-	char buf[12];
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
-		nexus_draw_label(NEXUS_PAD, 8, "BREAKOUT");
-		nexus_draw_label(GFX_W - NEXUS_PAD -
-					 gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
-				 8, "HOLD=EXIT");
-	}
+	/* Lives as pips, not a number: you glance at them mid-rally. */
+	const struct nexus_hud hud = {
+		.title = "BREAKOUT",
+		.score = g_b.score,
+		.rival = -1,
+		.level = g_b.level,
+		.lives = g_b.lives,
+		.life = t->accent,
+	};
 
-	if (gfx_hits(HUD_Y, HUD_H)) {
-		gfx_text(NEXUS_PAD, 24,
-			 gfx_utoa(g_b.score, buf, sizeof(buf), 0),
-			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
-
-		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_b.level);
-
-		/* Lives as pips, not a number: you glance at them mid-rally. */
-		for (int i = 0; i < g_b.lives; i++) {
-			gfx_disc(lx - 12 - i * 12, 30, 4, t->accent,
-				 GFX_OPAQUE);
-		}
-	}
+	nexus_draw_game_header(&hud);
 
 	if (!gfx_hits(FIELD_Y - 2, FIELD_H + 6)) {
 		return;
 	}
 
-	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4, 3,
-			t->border, t->border_alpha);
+	nexus_draw_field(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
+	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4,
+			t->radius, t->border, t->border_alpha);
 
 	for (int r = 0; r < BRICK_ROWS; r++) {
 		if (g_b.bricks[r] == 0) {

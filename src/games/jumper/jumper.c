@@ -50,8 +50,6 @@
 #define VIEW_W (COLS * TILE) /* 240 */
 #define VIEW_H (ROWS * TILE) /* 180 */
 
-#define HUD_Y 20
-#define HUD_H 22
 
 typedef int32_t fix_t;
 #define FIX 8
@@ -480,7 +478,9 @@ static void step(void)
 	}
 
 	if (scored) {
-		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
+		nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y,
+				     NEXUS_HUD_ROW_Y +
+					     NEXUS_HUD_ROW_H);
 	}
 
 	/*
@@ -547,32 +547,23 @@ static void draw_enemy(int sx, int sy)
 static void jumper_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
-	char buf[12];
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
-		nexus_draw_label(NEXUS_PAD, 8, "JUMPER");
-		nexus_draw_label(GFX_W - NEXUS_PAD -
-					 gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
-				 8, "HOLD=EXIT");
-	}
+	const struct nexus_hud hud = {
+		.title = "JUMPER",
+		.score = g_j.score,
+		.rival = -1,
+		.level = g_j.level,
+		.lives = g_j.lives,
+		.life = t->error,
+	};
 
-	if (gfx_hits(HUD_Y, HUD_H)) {
-		gfx_text(NEXUS_PAD, 24,
-			 gfx_utoa(g_j.score, buf, sizeof(buf), 0),
-			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
-		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_j.level);
-
-		for (int i = 0; i < g_j.lives; i++) {
-			gfx_disc(lx - 12 - i * 12, 30, 4, t->error,
-				 GFX_OPAQUE);
-		}
-	}
+	nexus_draw_game_header(&hud);
 
 	if (!gfx_hits(VIEW_Y, VIEW_H)) {
 		return;
 	}
 
-	gfx_rect(VIEW_X, VIEW_Y, VIEW_W, VIEW_H, t->track, 130);
+	nexus_draw_field(VIEW_X, VIEW_Y, VIEW_W, VIEW_H);
 
 	for (int r = 0; r < ROWS; r++) {
 		int y = VIEW_Y + r * TILE;

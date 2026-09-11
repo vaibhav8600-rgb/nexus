@@ -65,6 +65,80 @@ void nexus_draw_label(int x, int y, const char *text);
  */
 int nexus_draw_level(int right, int y, uint8_t level);
 
+/*
+ * The header block every game draws, and the rect it owns.
+ *
+ * Seven games had seven headers. Snake and Pac-Man labelled the score,
+ * Breakout and Invaders showed a bare number, Tetris put it in a side panel
+ * entirely - so paging between them moved the furniture and the set read as
+ * seven programs rather than one product with seven games.
+ *
+ * The rect is fixed. NEXUS_HUD_END is where it stops and the earliest a
+ * playfield may begin, which is what Tetris's well had to move down to clear.
+ * NEXUS_HUD_ROW is the part that changes while you are playing, so a score
+ * that ticks over invalidates fourteen rows rather than the whole header.
+ */
+/*
+ * 34 tall, and every pixel of it is spoken for, because Tetris decides the
+ * number rather than taste: its well is 20 rows of 10px plus a 2px frame
+ * either side, which is 204 of the panel's 240 and leaves exactly 36.
+ *
+ * Two rows of 14px need 28 of that, and the remaining 8 are not margin to
+ * spend - they are three gaps that all have to exist:
+ *
+ *   4  above the title
+ *   2  between the title and the score, or the two lines merge into one
+ *      block of text and the score stops looking like a number
+ *   2  below the score, or it sits flush on the playfield's top edge
+ *
+ * The first version of this took the 2 between the rows and gave it to the
+ * top margin, which is what a header looks like when the constraint is met
+ * arithmetically and not looked at.
+ */
+#define NEXUS_HUD_END 34
+#define NEXUS_HUD_TITLE_Y 4
+#define NEXUS_HUD_ROW_Y 20
+#define NEXUS_HUD_ROW_H 14
+
+struct nexus_hud {
+	const char *title;
+	uint32_t score;
+	/* An opponent's score beside yours - Pong, and nothing else so far.
+	 * Negative for none, so 0-0 is still a scoreline. */
+	int32_t rival;
+	/* One word of game-specific state: Snake's WRAP/WALLS. Right-aligned
+	 * before the lives, because it is read once at a glance and then
+	 * ignored for the rest of the round. */
+	const char *note;
+	uint8_t level; /* 0 draws no badge */
+	uint8_t lives; /* 0 draws no pips */
+	gfx_color life;
+};
+
+/**
+ * Title, HOLD=EXIT, score, level and lives, in the same place in every game.
+ *
+ * Everything but the title and the score is optional and simply absent when
+ * it does not apply - a game with no lives does not get an empty row where
+ * the pips would be.
+ */
+void nexus_draw_game_header(const struct nexus_hud *h);
+
+/**
+ * A playfield's ground: flat and opaque, deliberately not frosted.
+ *
+ * Everything else on this device is a translucent pane over a gradient with
+ * two soft colour blobs behind it, and that is right for a dashboard - it is
+ * wrong behind a game. The blob edge is a smooth curve crossing the play
+ * area, which on a 240px panel reads as a tear in the image rather than as
+ * decoration, and everywhere it does not tear it just lowers contrast on the
+ * things you are trying to track.
+ *
+ * The decoration stays on the ground, the cards, the menus and the game
+ * headers. It stops at the field border.
+ */
+void nexus_draw_field(int x, int y, int w, int h);
+
 /** Horizontal capsule meter, 0-100, with a rounded cap at low values. */
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill);
 

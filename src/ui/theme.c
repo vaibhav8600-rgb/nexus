@@ -31,6 +31,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFFFFFu), NEXUS_C(0xFFC2DCu),
 			      NEXUS_C(0xFF5FA2u), NEXUS_C(0x8E2A63u),
 			      NEXUS_C(0x3A0F2Au) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -52,6 +53,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFFFFFu), NEXUS_C(0xFFC2DCu),
 			      NEXUS_C(0xFF5FA2u), NEXUS_C(0x8E2A63u),
 			      NEXUS_C(0x3A0F2Au) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -73,6 +75,10 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0x8FA0F0u), NEXUS_C(0x5A6BE0u),
 			      NEXUS_C(0x3B4BC8u), NEXUS_C(0x26308Au),
 			      NEXUS_C(0x161C52u) },
+		/* No halo on a light ground: it reads as blur rather
+		 * than as light, and wordmark[2] outlines the letter
+		 * instead so the edges stay defined. */
+		.wordmark_glow_alpha = 0,
 		.radius = 7,
 	},
 	{
@@ -82,7 +88,16 @@ static const struct nexus_theme themes[] = {
 		.bg_top = NEXUS_C(0x2B3143u), .bg_bot = NEXUS_C(0x232835u),
 		.glow_a = NEXUS_C(0x000000u), .glow_b = NEXUS_C(0x000000u),
 		.glow_alpha = 0,
-		.panel = NEXUS_C(0x272C3Bu), .panel_alpha = 255,
+		/*
+		 * One shade above the ground, not equal to it. Pure
+		 * neumorphism reads a pane through a soft shadow on both
+		 * sides, and a 1px hairline cannot do that: with the pane the
+		 * ground's own colour, the top two cards were nothing but a
+		 * line above and a line below with no body between them,
+		 * which reads as a rendering artifact rather than an edge.
+		 * It was 5 luma DARKER than the top of the gradient.
+		 */
+		.panel = NEXUS_C(0x343B51u), .panel_alpha = 255,
 		.edge_hi = NEXUS_C(0x4A5271u), .edge_hi_alpha = 255,
 		.edge_lo = NEXUS_C(0x151824u), .edge_lo_alpha = 255,
 		.border = NEXUS_C(0x353B4Eu), .border_alpha = 200,
@@ -94,6 +109,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xF7C2D8u), NEXUS_C(0xE86A9Au),
 			      NEXUS_C(0xA83C6Cu), NEXUS_C(0x6B2244u),
 			      NEXUS_C(0x3A1226u) },
+		.wordmark_glow_alpha = 70,
 		.radius = 9,
 	},
 	{
@@ -113,6 +129,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFF0D8u), NEXUS_C(0xFFD9A0u),
 			      NEXUS_C(0xE9A23Bu), NEXUS_C(0x8A5414u),
 			      NEXUS_C(0x4A2C0Au) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -132,6 +149,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xE8FFF4u), NEXUS_C(0xB8FFDCu),
 			      NEXUS_C(0x5CFFB0u), NEXUS_C(0x2FBE80u),
 			      NEXUS_C(0x0E4A32u) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 	{
@@ -140,7 +158,20 @@ static const struct nexus_theme themes[] = {
 		 * the same panel colour reads violet at the top of the screen
 		 * and amber at the bottom, because it actually is. */
 		.name = "SUNSET",
-		.bg_top = NEXUS_C(0x170B2Cu), .bg_bot = NEXUS_C(0xD95A32u),
+		/*
+		 * The sky was near-black at the top and bright orange at the
+		 * bottom, under one uniform dark glass. So the header pane
+		 * vanished (2 luma off the ground) while the battery panes
+		 * shouted (38 off it) - the same card reading as two
+		 * different materials depending on where it sat.
+		 *
+		 * No opacity fixes the top, because the tint and the top of
+		 * the sky are both dark and there is nothing to contrast. The
+		 * ground has to meet the glass instead: a lighter violet up
+		 * top and a calmer orange below, which is still a sunset and
+		 * puts every pane between 10 and 34 luma off its ground.
+		 */
+		.bg_top = NEXUS_C(0x351C5Cu), .bg_bot = NEXUS_C(0xC4532Fu),
 		.glow_a = NEXUS_C(0xFFB450u), .glow_b = NEXUS_C(0xFF783Cu),
 		.glow_alpha = 16,
 		.panel = NEXUS_C(0x140622u), .panel_alpha = 88,
@@ -155,6 +186,7 @@ static const struct nexus_theme themes[] = {
 		.wordmark = { NEXUS_C(0xFFF6DCu), NEXUS_C(0xFFE9A8u),
 			      NEXUS_C(0xFFB347u), NEXUS_C(0xC4506Bu),
 			      NEXUS_C(0x5A1430u) },
+		.wordmark_glow_alpha = 70,
 		.radius = 7,
 	},
 };

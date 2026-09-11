@@ -239,16 +239,12 @@ def main():
        'your paddle covers %dpx while the ball crosses (%dpx needed), so a '
        'faster ball is still reachable' % (reach, PK['FIELD_H'] - PK['PAD_H']))
 
-    hud_end = PK['HUD_Y'] + 7 * 3
-    ok(hud_end <= PK['FIELD_Y'] - 2,
-       'the score ends at y=%d, clear of the court at y=%d - at BIG it ran '
-       'to 50 and the ball passed through it'
-       % (hud_end, PK['FIELD_Y'] - 2))
-    ok('HUD_TXT NEXUS_TXT_VALUE' in p, 'which is why it is VALUE, not BIG')
-    # The title row is a LABEL at y=8, so it owns rows 8..22.
-    ok(PK['HUD_Y'] >= 8 + 7 * 2,
-       'and starts at y=%d, below the PONG/HOLD=EXIT row it sits between'
-       % PK['HUD_Y'])
+    # Pong used to own its HUD - two big numerals either side of centre,
+    # which at NEXUS_TXT_BIG ran into the court and the ball passed through
+    # them. It is the shared header's problem now, and the header's own
+    # section below proves the block clears every field including this one.
+    ok('HUD_Y' not in p and 'HUD_TXT' not in p,
+       'and Pong no longer carries a HUD of its own')
 
     print('\nAll three repaint the panel, and only what moved')
     for name, f in (('jumper', 'src/games/jumper/jumper.c'),
@@ -284,8 +280,9 @@ def main():
                     ('pong', 'src/games/pong/pong.c'),
                     ('snake', 'src/games/snake/snake.c')):
         g = src(f)
-        ok('nexus_draw_level(' in g, '%-9s shows the level' % name)
-        ok('level' in g, '%-9s tracks one' % name)
+        # The badge is placed by the shared header now, so what a game
+        # owns is the number it hands over.
+        ok('.level = ' in g, '%-9s hands its level to the header' % name)
 
     # Clearing the board must not be an ending any more, or the level never
     # gets past 1 and the badge is decoration.
@@ -329,6 +326,115 @@ def main():
     ok(pcap < PK['PAD_W'] + PK['BALL_R'],
        'same for the paddle plane, which is also a point test')
     ok('TO_FIX(PAD_W + BALL_R - 1)' in p, 'and also derived')
+
+    print('\nOne header, seven games')
+    # Seven games had seven headers: Snake and Pac-Man labelled the score,
+    # Breakout and Invaders showed a bare number, Tetris put it in a side
+    # panel. Paging between them moved the furniture.
+    HDR = consts(src('include/nexus/widgets.h'),
+                 ['NEXUS_HUD_END', 'NEXUS_HUD_TITLE_Y', 'NEXUS_HUD_ROW_Y',
+                  'NEXUS_HUD_ROW_H'])
+    ok(HDR['NEXUS_HUD_ROW_Y'] + HDR['NEXUS_HUD_ROW_H'] <= HDR['NEXUS_HUD_END'],
+       'the live row (%d..%d) closes inside the block (..%d)'
+       % (HDR['NEXUS_HUD_ROW_Y'],
+          HDR['NEXUS_HUD_ROW_Y'] + HDR['NEXUS_HUD_ROW_H'],
+          HDR['NEXUS_HUD_END']))
+    # Not "does not overlap" - adjacent is the bug. The first version had
+    # the title end exactly where the score began and the two read as one
+    # block of text, which is how a 14px numeral stops looking like a score.
+    gap = HDR['NEXUS_HUD_ROW_Y'] - (HDR['NEXUS_HUD_TITLE_Y'] + 14)
+    ok(gap >= 2, 'the title clears the score row by %dpx' % gap)
+    ok(HDR['NEXUS_HUD_TITLE_Y'] >= 4,
+       'and the title clears the top of the panel by %d'
+       % HDR['NEXUS_HUD_TITLE_Y'])
+
+    # Same on the other side: the score must not sit flush on a playfield.
+    tet = src('src/games/tetris/tetris.c') + src('include/nexus/widgets.h') \
+        + src('src/games/tetris/tetris_core.h')
+    below = consts(tet, ['FRAME_Y'])['FRAME_Y'] - HDR['NEXUS_HUD_END']
+    ok(below >= 2,
+       'and the tightest field below it (Tetris) clears it by %dpx' % below)
+
+    ALL7 = (('tetris', 'src/games/tetris/tetris.c'),
+            ('snake', 'src/games/snake/snake.c'),
+            ('breakout', 'src/games/breakout/breakout.c'),
+            ('pacman', 'src/games/pacman/pacman.c'),
+            ('jumper', 'src/games/jumper/jumper.c'),
+            ('invaders', 'src/games/invaders/invaders.c'),
+            ('pong', 'src/games/pong/pong.c'))
+
+    for name, f in ALL7:
+        g = src(f)
+        ok('nexus_draw_game_header(&hud)' in g,
+           '%-9s draws the shared header' % name)
+        # Nothing may draw its own title, HOLD=EXIT or score any more -
+        # that is what made the rect differ per game in the first place.
+        ok('"HOLD=EXIT"' not in g.split('g_over_hint2')[0]
+           or 'nexus_draw_label(NEXUS_PAD' not in g,
+           '%-9s has no title row of its own left' % name)
+        ok('nexus_draw_level(' not in g,
+           '%-9s does not place the level badge itself' % name)
+
+    w = src('src/ui/widgets.c')
+    ok(w.count('nexus_draw_game_header') == 1,
+       'and there is exactly one place that draws it')
+
+    print('\n    the playfield starts below the block, in every game')
+    for name, f, key in (('tetris', 'src/games/tetris/tetris.c', 'FRAME_Y'),
+                         ('snake', 'src/games/snake/snake.c', 'FRAME_Y'),
+                         ('breakout', 'src/games/breakout/breakout.c',
+                          'FIELD_Y'),
+                         ('pacman', 'src/games/pacman/pacman.c', 'FRAME_Y'),
+                         ('jumper', 'src/games/jumper/jumper.c', 'VIEW_Y'),
+                         ('invaders', 'src/games/invaders/invaders.c',
+                          'FIELD_Y'),
+                         ('pong', 'src/games/pong/pong.c', 'FIELD_Y')):
+        text = src(f) + src('include/nexus/widgets.h')
+        if name == 'tetris':
+            text += src('src/games/tetris/tetris_core.h')
+        top = consts(text, [key])[key]
+        ok(top >= HDR['NEXUS_HUD_END'],
+           '%-9s field starts at %d, clear of the header at %d'
+           % (name, top, HDR['NEXUS_HUD_END']))
+
+    print('\n    and its border is a panel border, not a hand-picked radius')
+    for name, f in ALL7:
+        g = src(f)
+        frame = g.split('round_frame')[-1][:80]
+        ok(', 3, t->border' not in g and ', 3,\n' not in frame,
+           '%-9s uses t->radius for its field frame' % name)
+
+    print('\nEvery playfield is flat')
+    # The ground is a gradient with two soft colour blobs behind it, which is
+    # right for a dashboard and wrong behind a game: the blob edge is a
+    # smooth curve crossing the play area, and on a 240px panel that reads as
+    # a tear in the image. Breakout and Invaders had no fill at all, so the
+    # raw ground showed through the whole field.
+    ALL = (('tetris', 'src/games/tetris/tetris.c'),
+           ('snake', 'src/games/snake/snake.c'),
+           ('breakout', 'src/games/breakout/breakout.c'),
+           ('pacman', 'src/games/pacman/pacman.c'),
+           ('jumper', 'src/games/jumper/jumper.c'),
+           ('invaders', 'src/games/invaders/invaders.c'),
+           ('pong', 'src/games/pong/pong.c'))
+    for name, f in ALL:
+        g = src(f)
+        ok('nexus_draw_field(' in g,
+           '%-9s fills its field through the shared helper' % name)
+        # Not "no translucent track anywhere" - Tetris tints its
+        # next-piece box and Pac-Man cuts its mouth with the same colour.
+        # What must be gone is a translucent fill at the FIELD's own rect.
+        ok(not re.search(r'gfx_rect\((WELL|FIELD|VIEW)_X[^;]*, \d+\);', g),
+           '%-9s has no translucent fill left at its field rect' % name)
+
+    w = src('src/ui/widgets.c')
+    ok('gfx_rect(x, y, w, h, nexus_theme()->track, GFX_OPAQUE)' in w,
+       'and the helper is opaque, so no ground reaches through it')
+
+    ru = src('scripts/render_ui.py')
+    ok(ru.count('u.field(') == len(ALL),
+       'the renderer fills all %d, so the doc shots show what ships'
+       % len(ALL))
 
     print('\nThe shared 3D vocabulary is actually used')
     w = src('src/ui/widgets.c')

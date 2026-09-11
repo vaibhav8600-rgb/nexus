@@ -30,11 +30,15 @@ def ok(cond, why):
 
 
 def main():
-    src = open(SRC, encoding='utf-8').read()
+    # widgets.h too: the header block is shared, so the constant that
+    # says where the well may start does not live in pacman.c.
+    src = open(SRC, encoding='utf-8').read() + open(
+        os.path.join(ROOT, 'include', 'nexus', 'widgets.h'),
+        encoding='utf-8').read()
 
     C = {k: int(v) for k, v in
          re.findall(r'^#define (COLS|ROWS|CELL|WELL_Y|GHOSTS|LIVES|'
-                    r'HUD_Y|HUD_H)\s+(\d+)', src, re.M)}
+                    r'NEXUS_HUD_END)\s+(\d+)', src, re.M)}
 
     block = re.search(r'maze_src\[ROWS\] = \{(.*?)\n\};', src, re.S).group(1)
     maze = re.findall(r'"([^"]*)"', block)
@@ -74,7 +78,8 @@ def main():
             if maze[r][c] in '.o']
     stranded = [p for p in dots if p not in seen]
     ok(not stranded, 'all %d dots reachable from the spawn%s'
-       % (len(dots), '' if not stranded else ' - stranded at %s' % stranded[:4]))
+       % (len(dots),
+          '' if not stranded else ' - stranded at %s' % stranded[:4]))
 
     opens = [(r, c) for r in range(C['ROWS']) for c in range(C['COLS'])
              if maze[r][c] != '#']
@@ -104,9 +109,9 @@ def main():
     print('\nIt fits the panel')
     ww, wh = C['COLS'] * C['CELL'], C['ROWS'] * C['CELL']
     ok(ww <= 240 and wh <= 240, 'well is %dx%d' % (ww, wh))
-    ok(C['WELL_Y'] >= C['HUD_Y'] + C['HUD_H'],
-       'the well (y=%d) clears the HUD (ends %d)'
-       % (C['WELL_Y'], C['HUD_Y'] + C['HUD_H']))
+    ok(C['WELL_Y'] >= C['NEXUS_HUD_END'],
+       'the well (y=%d) clears the shared header (ends %d)'
+       % (C['WELL_Y'], C['NEXUS_HUD_END']))
     ok(C['WELL_Y'] + wh <= 240,
        'and ends on the panel at %d' % (C['WELL_Y'] + wh))
     ok(C['CELL'] >= 10,
@@ -121,7 +126,8 @@ def main():
         ('d == opposite', 'a chaser never reverses, so it commits to a route'),
         ('next_dir', 'a turn is a request, taken at the next junction'),
         ('nexus_game_speed()', 'the tick scales with the live setting'),
-        ('nexus_screen_invalidate_rows(HUD_Y', 'the score band repaints'),
+        ('nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y',
+         'the score band repaints'),
     ]:
         ok(frag in src, why)
 

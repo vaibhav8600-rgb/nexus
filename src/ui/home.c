@@ -104,13 +104,19 @@ static const uint16_t tr_ble[TR_H] = {
  * than a peer. 27x27 is what snake-module uses and it sits properly. */
 #define ST_SCALE 3
 
-static const uint16_t st_ok[ST_H] = {   /* tick: bonded and connected */
-	0x1FF, 0x101, 0x141, 0x161, 0x175, 0x11D, 0x109, 0x101, 0x1FF,
+/*
+ * Filled, crossed, hollow. The state is in the SHAPE, not the colour: a tick
+ * read as "task complete" rather than as a link being up, and its green was
+ * the one colour that did not belong in half the palettes - in Espresso it
+ * was the only green thing on the screen.
+ */
+static const uint16_t st_ok[ST_H] = {   /* filled: bonded and connected */
+	0x1FF, 0x101, 0x17D, 0x17D, 0x17D, 0x17D, 0x17D, 0x101, 0x1FF,
 };
 static const uint16_t st_down[ST_H] = { /* cross: bonded, not connected */
 	0x1FF, 0x101, 0x145, 0x129, 0x111, 0x129, 0x145, 0x101, 0x1FF,
 };
-static const uint16_t st_open[ST_H] = { /* dashed: open, waiting to pair */
+static const uint16_t st_open[ST_H] = { /* hollow: open, waiting to pair */
 	0x155, 0x000, 0x101, 0x000, 0x101, 0x000, 0x101, 0x000, 0x155,
 };
 
@@ -121,12 +127,26 @@ static const uint16_t mod_glyphs[4][MOD_GLYPH_H] = {
 	/* SHIFT: filled up arrow, head over a stem. */
 	{ 0x020, 0x070, 0x0F8, 0x1FC, 0x3FE, 0x7FF, 0x070, 0x070, 0x070,
 	  0x070, 0x000 },
-	/* ALT: the option stroke - bar over a stepped diagonal. */
-	{ 0x7CF, 0x7DF, 0x018, 0x038, 0x030, 0x070, 0x060, 0x0E0, 0x0C0,
-	  0x7C0, 0x780 },
-	/* GUI: four panes. The Windows key is what is printed on the key. */
-	{ 0x7DF, 0x7DF, 0x7DF, 0x7DF, 0x7DF, 0x000, 0x7DF, 0x7DF, 0x7DF,
-	  0x7DF, 0x7DF },
+	/*
+	 * ALT, as the option symbol: a short bar top left that drops down a
+	 * diagonal to a bar bottom right, and a separate bar top right.
+	 *
+	 * The shape was always meant to be this, but its two top bars were
+	 * one column apart in the second row - at scale 2 that is a two-pixel
+	 * gap, which closes up, so the top read as one long bar and the whole
+	 * glyph read as a Z. Three columns apart now, and the diagonal is an
+	 * even two-wide staircase instead of alternating two and three.
+	 */
+	{ 0x78F, 0x78F, 0x018, 0x030, 0x030, 0x060, 0x060, 0x0C0, 0x0C0,
+	  0x7C0, 0x7C0 },
+	/*
+	 * GUI, as the command symbol: a square whose four sides run past the
+	 * corners and curl into loops. It was the Windows four-pane logo,
+	 * which on an 11x11 grid is indistinguishable from a 2x2 grid of
+	 * anything - it did not read as a key at all.
+	 */
+	{ 0x306, 0x489, 0x489, 0x3FE, 0x088, 0x088, 0x088, 0x3FE, 0x489,
+	  0x489, 0x306 },
 };
 
 static const uint8_t mod_bits[4] = {
@@ -229,21 +249,19 @@ static void draw_link(const struct nexus_status *st)
 	 * USB, BLE, profile number, tile - 87px inside a 107px card.
 	 */
 	const uint16_t *tile;
-	gfx_color tile_c;
 
 	if (!st->bt_profile_bonded) {
 		tile = st_open;                 /* open, waiting to pair */
-		tile_c = t->warning;
 	} else if (st->bt_connected) {
 		tile = st_ok;                   /* bonded and connected  */
-		tile_c = t->success;
 	} else {
 		tile = st_down;                 /* bonded, not connected */
-		tile_c = t->error;
 	}
+	/* One colour for all three: the mark says which, so the tile can sit
+	 * in the theme's own palette instead of borrowing a traffic light. */
 	gfx_glyph(num_x + gfx_text_w("0", NEXUS_TXT_BIG) + 5,
 		  y + (TR_H * TR_SCALE - ST_H * ST_SCALE) / 2, tile,
-		  ST_W, ST_H, ST_SCALE, tile_c, GFX_OPAQUE);
+		  ST_W, ST_H, ST_SCALE, t->accent, GFX_OPAQUE);
 
 }
 
@@ -335,8 +353,18 @@ static void draw_mods(const struct nexus_status *st)
 		 * unheld modifier is visibly an empty slot rather than
 		 * something that failed to draw.
 		 */
+		/*
+		 * Held: the accent, the colour every other live thing on
+		 * this screen uses. It was accent_alt at 110, which over a
+		 * dark card is the pink diluted down to a muddy maroon - the
+		 * one colour in the palette that looked like a mistake.
+		 *
+		 * 170 is as far as it can go and stay a tint: the glyph on
+		 * top keeps at least 89 luma of contrast in every theme,
+		 * Sunset being the tightest.
+		 */
 		gfx_round_rect(x, y, slot_w, slot_h, 4,
-			       on ? t->accent_alt : t->track, on ? 110 : 150);
+			       on ? t->accent : t->track, on ? 170 : 150);
 		gfx_round_frame(x, y, slot_w, slot_h, 4,
 				on ? t->accent : t->border,
 				on ? GFX_OPAQUE : t->border_alpha);

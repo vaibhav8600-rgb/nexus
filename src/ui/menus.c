@@ -690,13 +690,22 @@ static void about_draw(void)
 	 */
 	nexus_draw_wordmark(GFX_W / 2, 31, NEXUS_PRODUCT, 2);
 
-	nexus_draw_card(NEXUS_PAD, 84, NEXUS_CONTENT_W, 38);
+	/*
+	 * The version, and what it runs on, in one pane. The three detail
+	 * lines used to float between the cards - the only unpanelled text on
+	 * the screen, which read as leftovers rather than as information.
+	 *
+	 * The version is VALUE size: it is the thing people open this screen
+	 * to read, and it was the same size as the creator's name, which at
+	 * fourteen white characters against six mint ones outweighed it.
+	 */
+	nexus_draw_card(NEXUS_PAD, 84, NEXUS_CONTENT_W, 85);
 	nexus_draw_caption_c(GFX_W / 2, 91, "FIRMWARE");
-	gfx_text_c(GFX_W / 2, 102, "V" NEXUS_VERSION_STR, NEXUS_TXT_BODY,
+	gfx_text_c(GFX_W / 2, 102, "V" NEXUS_VERSION_STR, NEXUS_TXT_VALUE,
 		   t->accent, GFX_OPAQUE);
 
 	for (size_t i = 0; i < ARRAY_SIZE(lines); i++) {
-		nexus_draw_caption_c(GFX_W / 2, 130 + (int)i * 14, lines[i]);
+		nexus_draw_caption_c(GFX_W / 2, 131 + (int)i * 12, lines[i]);
 	}
 
 	/*
@@ -705,15 +714,15 @@ static void about_draw(void)
 	 * text on its About screen. Empty CONFIG_NEXUS_AUTHOR hides it.
 	 */
 	if (sizeof(NEXUS_AUTHOR) > 1) {
-		nexus_draw_card(NEXUS_PAD, 180, NEXUS_CONTENT_W, 46);
-		nexus_draw_caption_c(GFX_W / 2, 188, "CREATED BY");
+		nexus_draw_card(NEXUS_PAD, 177, NEXUS_CONTENT_W, 46);
+		nexus_draw_caption_c(GFX_W / 2, 185, "CREATED BY");
 
 		int scale = gfx_text_w(NEXUS_AUTHOR, NEXUS_TXT_BODY) <=
 					    NEXUS_CONTENT_W - 16
 				    ? NEXUS_TXT_BODY
 				    : NEXUS_TXT_CAPTION;
 
-		gfx_text_c(GFX_W / 2, 202, NEXUS_AUTHOR, scale, t->value,
+		gfx_text_c(GFX_W / 2, 199, NEXUS_AUTHOR, scale, t->value,
 			   GFX_OPAQUE);
 	}
 }

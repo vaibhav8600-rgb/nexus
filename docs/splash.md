@@ -86,15 +86,23 @@ theme's background.
 Three lines, all configuration:
 
 ```
-CONFIG_NEXUS_BRAND="VAIBHAV TECH"      # small, above
 CONFIG_NEXUS_PRODUCT="NEXUS"           # the wordmark
-CONFIG_NEXUS_SUBTITLE="SMART ZMK DONGLE"
+CONFIG_NEXUS_SUBTITLE="SMART ZMK DONGLE" # what it is, under the wordmark
+CONFIG_NEXUS_BRAND="VAIBHAV TECH"      # who made it, smallest, at the foot
 ```
 
 Set `BRAND` or `SUBTITLE` to `""` to hide that line. `PRODUCT` is drawn as
 glass in the active theme's colours -- a near-white face with a soft accent
 halo behind it and a one-pixel bevel, the same treatment the cards get. The
-subtitle is tracked small under it and the brand sits below a hairline.
+subtitle sits under it at body size, and the brand sits below a hairline --
+the smallest and quietest text on the screen.
+
+That order is deliberate: what the device *is* comes before who made it. The
+brand used to be twice the subtitle's size and the brightest text on the
+screen, 164px wide under a 108px wordmark, so it was the second thing you read
+and it argued with the first. A subtitle too long for body size (more than 18
+characters) steps down to caption size rather than running off the panel --
+the same rule the wordmark follows.
 
 These strings apply to the **drawn badge only**. A supplied PNG replaces the
 function that draws them; see "Your image is the whole splash" below.
@@ -122,9 +130,9 @@ primitives -- no bitmap, no font conversion, no widget tree:
      an inner disc with a white hairline
    the N, centred in it
    NEXUS            the glass wordmark
-   SMART ZMK DONGLE tracked, small
+   SMART ZMK DONGLE at body size, bright
    ----             a hairline
-   VAIBHAV TECH     tracked, at body size
+   VAIBHAV TECH     tracked, caption size, muted
 ```
 
 It costs a few hundred bytes of code against 115,200 for the same picture as a

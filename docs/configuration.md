@@ -7,8 +7,8 @@ Everything is Kconfig or devicetree. If you find yourself editing a file under
 
 | Option | Default | |
 | --- | --- | --- |
-| `CONFIG_NEXUS_BRAND` | `"VAIBHAV TECH"` | Small line above the wordmark on the splash and About screens. Empty hides it. |
-| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Drawn as glass -- a near-white face with a soft accent halo behind it and a one-pixel bevel -- as large as it fits; a longer name steps down a size rather than overflowing. |
+| `CONFIG_NEXUS_BRAND` | `"VAIBHAV TECH"` | The maker line: the smallest, quietest text on the splash, below a hairline under the subtitle. Also on About. Empty hides it. |
+| `CONFIG_NEXUS_PRODUCT` | `"NEXUS"` | The wordmark itself. Drawn as glass -- a near-white face with a soft accent halo behind it (an outline instead, on a light theme) and a one-pixel bevel -- as large as it fits; a longer name steps down a size rather than overflowing. |
 | `CONFIG_NEXUS_AUTHOR` | `"VAIBHAV RAJPUT"` | Creator credit on the About screen. Empty hides the card. |
 | `CONFIG_NEXUS_SUBTITLE` | `"SMART ZMK DONGLE"` | Strapline on the splash badge, and a line on About. Empty hides it. Deliberately **not** on Home: the brand plate carries the name and nothing else. |
 
@@ -183,7 +183,13 @@ everywhere else is how a menu stops being predictable. The screens say so --
 Four 22 px pills, lit while the modifier is held, drawn with the symbol the key
 itself is printed with rather than an initial:
 
-caret = Ctrl · up arrow = Shift · option stroke = Alt · four panes = GUI
+caret = Ctrl · up arrow = Shift · option `⌥` = Alt · command `⌘` = GUI
+
+GUI used to be the Windows four-pane logo. On an 11x11 grid that is
+indistinguishable from a 2x2 grid of anything and did not read as a key at
+all, so it is the command loop now -- the one GUI symbol that survives being
+drawn that small. On a Windows keyboard that means the glyph is not what is
+printed on the key; it is still the one that reads as a key at 22px.
 
 Left and right variants are merged -- there is no room for eight pills and no
 value in telling them apart at a glance.

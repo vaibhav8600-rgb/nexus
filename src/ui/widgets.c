@@ -130,6 +130,82 @@ int nexus_draw_level(int right, int y, uint8_t level)
 	return x;
 }
 
+void nexus_draw_game_header(const struct nexus_hud *h)
+{
+	const struct nexus_theme *t = nexus_theme();
+	char buf[12];
+
+	if (gfx_hits(NEXUS_HUD_TITLE_Y, gfx_text_h(NEXUS_TXT_LABEL))) {
+		nexus_draw_label(NEXUS_PAD, NEXUS_HUD_TITLE_Y, h->title);
+
+		/*
+		 * One physical button has to mean two things, so the screen
+		 * has to say which is which. Without this the only way out of
+		 * a game is to already know that a long press exits - a short
+		 * press just toggles pause, so it looks like the dongle is
+		 * stuck (Section 12).
+		 */
+		nexus_draw_label(GFX_W - NEXUS_PAD -
+					 gfx_text_w("HOLD=EXIT",
+						    NEXUS_TXT_LABEL),
+				 NEXUS_HUD_TITLE_Y, "HOLD=EXIT");
+	}
+
+	if (!gfx_hits(NEXUS_HUD_ROW_Y, NEXUS_HUD_ROW_H)) {
+		return;
+	}
+
+	int x = NEXUS_PAD;
+
+	gfx_text(x, NEXUS_HUD_ROW_Y,
+		 gfx_utoa(h->score, buf, sizeof(buf), 0), NEXUS_TXT_BODY,
+		 t->value, GFX_OPAQUE);
+
+	if (h->rival >= 0) {
+		x += gfx_text_w(gfx_utoa(h->score, buf, sizeof(buf), 0),
+				NEXUS_TXT_BODY);
+		gfx_text(x, NEXUS_HUD_ROW_Y, "-", NEXUS_TXT_BODY, t->caption,
+			 GFX_OPAQUE);
+		x += gfx_text_w("-", NEXUS_TXT_BODY);
+		gfx_text(x, NEXUS_HUD_ROW_Y,
+			 gfx_utoa((uint32_t)h->rival, buf, sizeof(buf), 0),
+			 NEXUS_TXT_BODY, t->error, GFX_OPAQUE);
+	}
+
+	int right = GFX_W - NEXUS_PAD;
+
+	if (h->level) {
+		right = nexus_draw_level(right, NEXUS_HUD_ROW_Y, h->level);
+	}
+	for (int i = 0; i < h->lives; i++) {
+		gfx_disc(right - 12 - i * 12, NEXUS_HUD_ROW_Y + 8, 4, h->life,
+			 GFX_OPAQUE);
+	}
+	if (h->lives) {
+		right -= 12 * h->lives;
+	}
+	if (h->note) {
+		gfx_text(right - 8 - gfx_text_w(h->note, NEXUS_TXT_CAPTION),
+			 NEXUS_HUD_ROW_Y + 4, h->note, NEXUS_TXT_CAPTION,
+			 t->caption, GFX_OPAQUE);
+	}
+}
+
+void nexus_draw_field(int x, int y, int w, int h)
+{
+	/*
+	 * Opaque rather than a band-level skip of the glow.
+	 *
+	 * Skipping the blobs for bands inside the field is cheaper and was the
+	 * obvious approach, but the fields are not the full width of the
+	 * panel: the glow would then stop dead along the field's top edge and
+	 * carry on in the few pixels of margin either side of it, which is a
+	 * seam across the whole screen - trading one artifact for a worse one.
+	 * Covering the ground has no edge to see.
+	 */
+	gfx_rect(x, y, w, h, nexus_theme()->track, GFX_OPAQUE);
+}
+
 void nexus_draw_meter(int x, int y, int w, int h, uint8_t pct, gfx_color fill)
 {
 	const struct nexus_theme *t = nexus_theme();
@@ -259,7 +335,6 @@ void nexus_draw_tracked(int cx, int y, const char *text, int scale, int track,
  * itself; the home screen does not.
  */
 #define WORDMARK_GLOW_CELLS 2
-#define WORDMARK_GLOW_ALPHA 70
 
 /*
  * The wordmark, made of the same glass as the cards under it.
@@ -310,13 +385,17 @@ static void wordmark_letters(int cx, int y, const char *text, int scale,
 	for (const char *p = text; p && *p; p++) {
 		gfx_color top = t->wordmark[0];
 		gfx_color bot = t->wordmark[1];
-		uint8_t glow = WORDMARK_GLOW_ALPHA;
+		uint8_t glow = t->wordmark_glow_alpha;
 
 		if (lit >= 0 && (p - text) == lit) {
 			/* The splash walks this along the word: the lit letter
-			 * goes flat white and its halo comes up. */
+			 * goes flat and its halo comes up. On a theme with no
+			 * halo the colour change carries it alone, which on a
+			 * light ground is the stronger signal anyway. */
 			top = bot = t->value;
-			glow = 255;
+			if (glow) {
+				glow = 255;
+			}
 		}
 
 		one[0] = *p;

@@ -64,6 +64,7 @@ def main():
                                           'NEXUS_GAME_SPEED_', 'NEXUS_TXT_',
                                           'NEXUS_PAD', 'NEXUS_GAP',
                                           'NEXUS_CONTENT_', 'NEXUS_C',
+                                          'NEXUS_HUD_',
                                           'NEXUS_DONGLE', 'NEXUS_SOUND_')))
     for s in ghosts:
         where = ', '.join(f for f, t in docs.items() if s in t)

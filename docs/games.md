@@ -231,6 +231,68 @@ speed-step in milliseconds long before there was a level, so its badge is
 simply that step given a number. Two curves stacked on one game is how a
 difficulty setting stops meaning anything.
 
+### One header
+
+Seven games used to draw seven headers. Snake and Pac-Man labelled the score,
+Breakout and Invaders showed a bare number, Tetris put it in a side panel
+entirely -- so paging between them moved the furniture, and the set read as
+seven programs rather than one product with seven games.
+
+`nexus_draw_game_header()` draws all of them: title, `HOLD=EXIT`, score, and
+whichever of level, lives and one note the game has. The block it owns is
+fixed at `y 0..NEXUS_HUD_END`, so nothing shifts when you page.
+
+That constant is **34**, and Tetris decides it rather than taste: its well is
+20 rows of 10px plus a 2px frame either side, which is 204 of the panel's 240
+and leaves exactly 36. Two rows of 14px text take 28 of that, and the eight
+left over are not margin to spend -- they are three gaps that all have to
+exist: four above the title, two between the title and the score, and two
+below the score so it does not sit flush on the playfield.
+
+The score is therefore `NEXUS_TXT_BODY` in all seven games. A `NEXUS_TXT_VALUE`
+score would need 41px of header and Tetris has 36, so the only way to a bigger
+score everywhere is a smaller Tetris well.
+
+Tetris keeps the side panel for `LEVEL`, `LINES` and `NEXT` -- those are
+genuinely game-specific -- and having lost the score card, each of the three
+gets more room: the next-piece preview is 10px a cell rather than 8. It is
+also the one game with no `L` badge, because its panel already says LEVEL in
+words and two of them would be a duplicate.
+
+Pong is the other game whose HUD had to bend. It used to put two big numerals
+either side of centre, which at `NEXUS_TXT_BIG` ran into the court and the
+ball passed through them. Its score is now where every other game's is and in the
+same colour, with the opponent's beside it in the red of the paddle it
+belongs to.
+
+Playfield borders take `t->radius` in every game, the same corner the
+dashboard panels use -- five of them had a hardcoded 3.
+
+### Playfields are flat
+
+The ground is a gradient with two soft colour blobs behind it. That is right
+for a dashboard and wrong behind a game: the blob edge is a smooth curve
+crossing the play area, which on a 240px panel reads as a tear in the image
+rather than as decoration, and everywhere it does not tear it lowers contrast
+on whatever you are trying to track.
+
+`nexus_draw_field()` paints the playfield opaque, so the decoration stops at
+the field border and keeps the header, the cards and the menus. Breakout and
+Invaders had no fill at all before this -- the raw ground showed through their
+entire field.
+
+Opaque rather than skipping the blobs for the bands inside the field, which is
+cheaper and was the obvious approach: the fields are not the full width of the
+panel, so the glow would stop dead along the field's top edge and carry on in
+the few pixels of margin either side of it. That is a seam across the whole
+screen -- one artifact traded for a worse one.
+
+It is not free. Covering the ground costs an opaque fill where skipping it
+would have saved a blended one: the five games that already had a translucent
+fill get slightly cheaper, and the two that had none pay about 40,000 opaque
+writes a frame against the 57,600 the gradient already costs. That is the
+price of not having a seam.
+
 ### They all look like one product
 
 Anything solid is drawn through `nexus_draw_block()`, anything round through

@@ -268,7 +268,7 @@ def main():
     # updated - it read as a score stuck on 0. Tetris was fine because its
     # score sits in the side panel, inside the band the well already dirties.
     for name, src in (("snake", snake_c),):
-        ok = "HUD_Y" in src and "nexus_screen_invalidate_rows(HUD_Y" in src
+        ok = "nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y" in src
         print(("  ok    " if ok else "  FAIL  ")
               + "%s: the score band is invalidated when it changes" % name)
         if not ok:
@@ -277,7 +277,7 @@ def main():
     # ... and only when it changes: the HUD must not be dirtied every tick.
     step = snake_c.split("static void step(void)")[1].split("\n}\n")[0]
     ate = step.split("if (ate) {")[-1]
-    ok = "nexus_screen_invalidate_rows(HUD_Y" in ate
+    ok = "nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y" in ate
     print(("  ok    " if ok else "  FAIL  ")
           + "snake: the HUD repaint is inside the scoring branch")
     if not ok:
@@ -286,7 +286,7 @@ def main():
     bo = open(os.path.join(root, "src", "games", "breakout", "breakout.c"),
               encoding="utf-8").read()
 
-    ok = bo.count("nexus_screen_invalidate_rows(HUD_Y") >= 2
+    ok = bo.count("nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y") >= 2
     print(("  ok    " if ok else "  FAIL  ")
           + "breakout: both the brick score and the lost life redraw the HUD")
     if not ok:

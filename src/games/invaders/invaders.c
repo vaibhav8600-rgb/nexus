@@ -43,8 +43,6 @@
 #define FIELD_R (FIELD_X + FIELD_W)
 #define FIELD_B (FIELD_Y + FIELD_H)
 
-#define HUD_Y 20
-#define HUD_H 22
 
 #define CANNON_W 28
 #define CANNON_H 14
@@ -393,7 +391,9 @@ static void step(void)
 	}
 
 	if (scored) {
-		nexus_screen_invalidate_rows(HUD_Y, HUD_Y + HUD_H);
+		nexus_screen_invalidate_rows(NEXUS_HUD_ROW_Y,
+				     NEXUS_HUD_ROW_Y +
+					     NEXUS_HUD_ROW_H);
 	}
 	nexus_screen_invalidate_rows(FIELD_Y, FIELD_B);
 }
@@ -439,33 +439,25 @@ static void draw_alien(int x, int y, int row)
 static void invaders_draw(void)
 {
 	const struct nexus_theme *t = nexus_theme();
-	char buf[12];
 
-	if (gfx_hits(8, gfx_text_h(NEXUS_TXT_LABEL))) {
-		nexus_draw_label(NEXUS_PAD, 8, "INVADERS");
-		nexus_draw_label(GFX_W - NEXUS_PAD -
-					 gfx_text_w("HOLD=EXIT", NEXUS_TXT_LABEL),
-				 8, "HOLD=EXIT");
-	}
+	const struct nexus_hud hud = {
+		.title = "INVADERS",
+		.score = g_f.score,
+		.rival = -1,
+		.level = g_f.level,
+		.lives = g_f.lives,
+		.life = t->success,
+	};
 
-	if (gfx_hits(HUD_Y, HUD_H)) {
-		gfx_text(NEXUS_PAD, 24,
-			 gfx_utoa(g_f.score, buf, sizeof(buf), 0),
-			 NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
-		int lx = nexus_draw_level(GFX_W - NEXUS_PAD, 24, g_f.level);
-
-		for (int i = 0; i < g_f.lives; i++) {
-			gfx_disc(lx - 12 - i * 12, 30, 4, t->success,
-				 GFX_OPAQUE);
-		}
-	}
+	nexus_draw_game_header(&hud);
 
 	if (!gfx_hits(FIELD_Y, FIELD_H)) {
 		return;
 	}
 
-	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4, 3,
-			t->border, t->border_alpha);
+	nexus_draw_field(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
+	gfx_round_frame(FIELD_X - 2, FIELD_Y - 2, FIELD_W + 4, FIELD_H + 4,
+			t->radius, t->border, t->border_alpha);
 
 	for (int r = 0; r < ROWS; r++) {
 		if (g_f.row[r] == 0) {

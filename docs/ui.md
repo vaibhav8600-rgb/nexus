@@ -62,8 +62,9 @@ Four rows in a 240x240 square:
 - **modifiers and WPM**
 - **both halves' batteries**
 
-The title is drawn as glass -- a near-white face over a soft accent halo, with
-a one-pixel bevel -- in the active theme's colours. `CONFIG_NEXUS_PRODUCT` sets
+The title is drawn as glass -- a near-white face over a soft accent halo (a
+one-pixel outline instead, on a light theme), with a one-pixel bevel -- in the
+active theme's colours. `CONFIG_NEXUS_PRODUCT` sets
 the word; nothing sits under it, deliberately.
 
 Gutters are 5px rather than the usual 7, which is what buys the link row the
@@ -109,13 +110,18 @@ profile number you cannot currently use does not look active.
 ### 4. Profile status
 
 A bordered tile answering "is this profile usable", independently of which
-transport is selected.
+transport is selected. The state is in the **shape** of the mark -- hollow,
+crossed, filled -- and all three are drawn in the theme accent.
 
 | | state |
 | --- | --- |
-| <img src="images/ui/tile-open.png" height="34"> | **Open.** Nothing has ever paired to this profile. Put the host in pairing mode. |
-| <img src="images/ui/tile-down.png" height="34"> | **Bonded, not connected.** A host is remembered but not here -- asleep, out of range, or connected to something else. |
-| <img src="images/ui/tile-ok.png" height="34"> | **Bonded and connected.** Type. |
+| <img src="images/ui/tile-open.png" height="34"> | **Hollow -- open.** Nothing has ever paired to this profile. Put the host in pairing mode. |
+| <img src="images/ui/tile-down.png" height="34"> | **Crossed -- bonded, not connected.** A host is remembered but not here -- asleep, out of range, or connected to something else. |
+| <img src="images/ui/tile-ok.png" height="34"> | **Filled -- bonded and connected.** Type. |
+
+It used to be a tick in the success green. A tick reads as "task complete"
+rather than as a link being up, and the green did not belong in half the
+palettes -- in Espresso it was the only green thing on the screen.
 
 ## Modifiers
 
@@ -215,6 +221,14 @@ Each theme also carries a five-stop ramp for the title, brightest to darkest:
 `[0]`/`[1]` shade the face, `[2]` is the halo behind it, `[3]`/`[4]` the two
 graded pixels of shade under every edge.
 
+`wordmark_glow_alpha` sets how strongly `[2]` sits behind the letters, and
+**zero means outline, not off**: `[2]` is drawn one opaque pixel around the
+letterform instead. A halo works because a bright letter plausibly spills
+light into a dark ground -- on a light one there is nothing to spill into, and
+the same halo reads as the screen being out of focus. Daylight is the theme
+that takes the outline; the edge definition is still needed, only the blur is
+not.
+
 | | ramp |
 | --- | --- |
 | NEXUS | <img src="images/ui/wordmark-nexus.png" height="16"> |
@@ -284,9 +298,15 @@ entirely, text included. See [splash.md](splash.md).
 
 <br clear="right">
 
-Brand, wordmark, firmware version, the hardware it runs on, and the creator
-credit. `CONFIG_NEXUS_BRAND`, `_PRODUCT`, `_SUBTITLE` and `_AUTHOR` set the
-strings; an empty one hides its line.
+Three panes: brand and wordmark; the firmware version with the hardware it
+runs on; and the creator credit. `CONFIG_NEXUS_BRAND`, `_PRODUCT`, `_SUBTITLE`
+and `_AUTHOR` set the strings; an empty one hides its line.
+
+The version is the largest text below the wordmark, because it is what people
+open this screen to read. It used to be the same size as the creator's name,
+which at fourteen white characters against six mint ones outweighed it -- and
+the three hardware lines floated between the panes, the only unpanelled text on
+the screen.
 
 ## Regenerating these images
 

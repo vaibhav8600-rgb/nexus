@@ -41,8 +41,11 @@ static void gc_draw(void)
 	if (gfx_hits(TITLE_Y, gfx_text_h(NEXUS_TXT_LABEL))) {
 		nexus_draw_label(NEXUS_PAD, TITLE_Y, "GAME CENTER");
 
-		/* "01/03" - position in the list, so a second game is visibly
-		 * expected rather than a surprise. */
+		/* Position over total, zero-padded to two digits, so a game
+		 * you have not reached yet is visibly expected rather than a
+		 * surprise. Both halves come from the registry - a total
+		 * written down anywhere is a total that goes stale the next
+		 * time a game is added or removed. */
 		gfx_utoa(count ? g_selected + 1U : 0U, buf, sizeof(buf), 2);
 		int n = 0;
 
