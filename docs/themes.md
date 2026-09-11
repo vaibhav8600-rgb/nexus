@@ -40,7 +40,7 @@ Colours are `gfx_color` (RGB565). Write them as RGB888 literals through the
 | `caption` | Small uppercase labels. |
 | `value` | Big numerals and primary text. |
 | `accent` | WPM, battery meters, selection outlines. |
-| `accent_alt` | Active modifier pills. |
+| `accent_alt` | The second accent -- what the games ramp toward in brick and alien gradients, and a few sprite details. A held modifier uses `accent`, not this: at the old opacity it read as a muddy maroon. |
 | `track` | Battery trough, Tetris well background. |
 | `muted` | Inactive glyphs and unknown values. |
 | `success` / `warning` / `error` | Battery bands and lock indicators. |

@@ -49,7 +49,7 @@ struct nexus_theme {
 	gfx_color caption;    /* small uppercase labels */
 	gfx_color value;      /* numerals and primary text */
 	gfx_color accent;     /* WPM, meters, selection */
-	gfx_color accent_alt; /* active modifier pills */
+	gfx_color accent_alt; /* second accent: what game gradients ramp to */
 	gfx_color muted;      /* inactive glyphs */
 	gfx_color track;      /* meter trough, game well */
 	gfx_color success;

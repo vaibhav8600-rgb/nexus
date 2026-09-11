@@ -335,8 +335,18 @@ static void draw_mods(const struct nexus_status *st)
 		 * unheld modifier is visibly an empty slot rather than
 		 * something that failed to draw.
 		 */
+		/*
+		 * Held: the accent, the colour every other live thing on
+		 * this screen uses. It was accent_alt at 110, which over a
+		 * dark card is the pink diluted down to a muddy maroon - the
+		 * one colour in the palette that looked like a mistake.
+		 *
+		 * 170 is as far as it can go and stay a tint: the glyph on
+		 * top keeps at least 89 luma of contrast in every theme,
+		 * Sunset being the tightest.
+		 */
 		gfx_round_rect(x, y, slot_w, slot_h, 4,
-			       on ? t->accent_alt : t->track, on ? 110 : 150);
+			       on ? t->accent : t->track, on ? 170 : 150);
 		gfx_round_frame(x, y, slot_w, slot_h, 4,
 				on ? t->accent : t->border,
 				on ? GFX_OPAQUE : t->border_alpha);

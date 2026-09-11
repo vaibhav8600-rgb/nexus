@@ -100,6 +100,20 @@ def main():
            '%-9s pane is %+d luma against the top, %+d against the bottom'
            % (t['name'], top, bot))
 
+    print('\nA held modifier is lit in the accent, and still legible')
+    # It was accent_alt at 110 - pink diluted to maroon over a dark card, the
+    # one muddy colour in the palette. It is the accent at 170 now, which is
+    # only safe if the glyph drawn on top of it can still be read.
+    home = read('src', 'ui', 'home.c')
+    ok('on ? t->accent : t->track, on ? 170 : 150' in home,
+       'the fill is t->accent at 170, from the theme table')
+    for t in ts:
+        mid = over(t['bg_top'], t['bg_bot'], 128)   # row 2 is mid-gradient
+        card = over(t['panel'], mid, t['panel_alpha'])
+        fill = over(t['accent'], card, 170)
+        d = abs(lum(t['value']) - lum(fill))
+        ok(d >= 60, '%-9s held glyph is %d luma off its fill' % (t['name'], d))
+
     print('\nThe wordmark halo is a dark-ground device')
     # A halo works because a bright letter plausibly spills light into a dark
     # ground. On a light one there is nothing to spill into and the same

@@ -568,8 +568,8 @@ def home(cv, t, st):
     for i in range(4):
         on = bool(st['mods'] & (1 << i))
         cv.round_rect(x, my, slot_w, slot_h, 4,
-                      t['accent_alt'] if on else t['track'],
-                      110 if on else 150)
+                      t['accent'] if on else t['track'],
+                      170 if on else 150)
         cv.round_frame(x, my, slot_w, slot_h, 4,
                        t['accent'] if on else t['border'],
                        OPAQUE if on else t['border_alpha'])
