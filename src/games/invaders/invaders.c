@@ -54,16 +54,16 @@
 #define MAX_BOMBS 3
 
 /*
- * Auto-fire. The original allowed one shot at a time, which is what made
- * missing cost you something - but that rule was written for a cabinet with a
- * dedicated fire button, and here the button repeats at
- * CONFIG_NEXUS_ACTION_REPEAT_MS. Holding it under the old rule produced a
- * shot, a long wait while it flew the length of the field, then another: the
- * gun felt broken rather than deliberate.
+ * Hold to fire: up to MAX_SHOTS in the air, one every SHOT_COOL ticks, for as
+ * long as a fire key is down. The cap is what keeps it a game - three in
+ * flight is a stream you have to aim, not a wall that clears the screen on
+ * its own.
  *
- * So: hold to fire, up to MAX_SHOTS in the air, one every SHOT_COOL ticks.
- * The cap is what keeps it a game - three in flight is a stream you have to
- * aim, not a wall that clears the screen on its own.
+ * Held means held, asked of the action layer on every tick - not key repeat.
+ * The first version leaned on repeat and only ever worked for UP: ROTATE and
+ * DROP, which is where most keymaps put the fire keys, deliberately do not
+ * repeat anywhere (a held Tetris piece would spin, and every new one would
+ * hard-drop), so holding them fired exactly once.
  */
 #define MAX_SHOTS 3
 #define SHOT_COOL 4
@@ -107,6 +107,7 @@ static const char *g_over_hint2;
 
 static void tick_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_tick, tick_fn);
+static void fire(void);
 
 extern const struct nexus_game nexus_game_invaders;
 
@@ -398,6 +399,15 @@ static void step(void)
 	nexus_screen_invalidate_rows(FIELD_Y, FIELD_B);
 }
 
+/* Every verb invaders_input() treats as fire, asked while it is held. */
+static bool fire_held(void)
+{
+	return nexus_action_held(NEXUS_ACTION_ROTATE) ||
+	       nexus_action_held(NEXUS_ACTION_DROP) ||
+	       nexus_action_held(NEXUS_ACTION_UP) ||
+	       nexus_action_held(NEXUS_ACTION_SELECT);
+}
+
 static void tick_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
@@ -407,6 +417,13 @@ static void tick_fn(struct k_work *work)
 	}
 	step();
 	if (g_state == NEXUS_GAME_RUNNING) {
+		/* After step(), so the cooldown it just counted down is the
+		 * one that decides; fire() itself enforces it and the cap.
+		 * The press already fired once through the input path - this
+		 * is every shot after the first. */
+		if (fire_held()) {
+			fire();
+		}
 		arm_tick();
 	}
 }

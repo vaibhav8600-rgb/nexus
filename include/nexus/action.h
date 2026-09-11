@@ -53,14 +53,34 @@ enum nexus_action {
 void nexus_action_dispatch(enum nexus_action action);
 
 /**
+ * A keymap key bound to @p action went down. Dispatches it, and records that
+ * the key is held until nexus_action_release() says otherwise.
+ *
+ * Separate from dispatch because dispatch has other callers - the auto-repeat
+ * and the dongle's own button - that are not a key being held, and would
+ * leave the flag stuck on with no release ever coming.
+ */
+void nexus_action_press(enum nexus_action action);
+
+/**
  * A keymap key bound to @p action was released.
  *
- * Only meaningful for the movement actions, which auto-repeat while held -
- * holding K to soft-drop in Tetris, or J to slide the paddle in Breakout,
- * rather than tapping it thirty times. Everything else ignores it: repeating
- * MENU or SELECT would open a screen once per tick.
+ * Clears its held flag, and ends its auto-repeat if it is one of the movement
+ * actions that repeat - holding K to soft-drop in Tetris, or J to slide the
+ * paddle in Breakout, rather than tapping it thirty times.
  */
 void nexus_action_release(enum nexus_action action);
+
+/**
+ * Is a key bound to @p action physically down right now?
+ *
+ * For a game that wants "while held" rather than "once per press" for an
+ * action that does not auto-repeat - Invaders firing while I or Space is held.
+ * Repeat is the wrong tool there: making ROTATE or DROP repeat for every
+ * screen would spin a held Tetris piece and hard-drop every new one. Asking
+ * leaves each game to decide what holding means in it.
+ */
+bool nexus_action_held(enum nexus_action action);
 
 /** Map a physical button gesture to an action using the active screen's table. */
 void nexus_action_button_event(bool long_press);
