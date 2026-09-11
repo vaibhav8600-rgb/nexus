@@ -110,13 +110,18 @@ profile number you cannot currently use does not look active.
 ### 4. Profile status
 
 A bordered tile answering "is this profile usable", independently of which
-transport is selected.
+transport is selected. The state is in the **shape** of the mark -- hollow,
+crossed, filled -- and all three are drawn in the theme accent.
 
 | | state |
 | --- | --- |
-| <img src="images/ui/tile-open.png" height="34"> | **Open.** Nothing has ever paired to this profile. Put the host in pairing mode. |
-| <img src="images/ui/tile-down.png" height="34"> | **Bonded, not connected.** A host is remembered but not here -- asleep, out of range, or connected to something else. |
-| <img src="images/ui/tile-ok.png" height="34"> | **Bonded and connected.** Type. |
+| <img src="images/ui/tile-open.png" height="34"> | **Hollow -- open.** Nothing has ever paired to this profile. Put the host in pairing mode. |
+| <img src="images/ui/tile-down.png" height="34"> | **Crossed -- bonded, not connected.** A host is remembered but not here -- asleep, out of range, or connected to something else. |
+| <img src="images/ui/tile-ok.png" height="34"> | **Filled -- bonded and connected.** Type. |
+
+It used to be a tick in the success green. A tick reads as "task complete"
+rather than as a link being up, and the green did not belong in half the
+palettes -- in Espresso it was the only green thing on the screen.
 
 ## Modifiers
 

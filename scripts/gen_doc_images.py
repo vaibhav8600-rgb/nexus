@@ -144,9 +144,9 @@ def main():
         ('usb-nohid', 'tr_usb_idle', 'TR', 'value'),
         ('ble-selected', 'tr_ble', 'TR', 'value'),
         ('ble-idle', 'tr_ble', 'TR', 'muted'),
-        ('tile-ok', 'st_ok', 'ST', 'success'),
-        ('tile-down', 'st_down', 'ST', 'error'),
-        ('tile-open', 'st_open', 'ST', 'warning'),
+        ('tile-ok', 'st_ok', 'ST', 'accent'),
+        ('tile-down', 'st_down', 'ST', 'accent'),
+        ('tile-open', 'st_open', 'ST', 'accent'),
     ]
     for out_name, sym, kind, col in want:
         if sym not in g:

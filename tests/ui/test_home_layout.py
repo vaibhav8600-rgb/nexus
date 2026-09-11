@@ -310,6 +310,18 @@ def main():
         ok(face_w('NEXUS', asz) + 2 * GLOW_CELLS * asz
            <= C['NEXUS_CONTENT_W'], 'About wordmark fits the card width')
 
+    print('\nProfile tile: the state is in the shape, not the colour')
+    # A tick read as "task complete", and its success green was the one
+    # colour that did not belong in half the palettes.
+    ok('st_ok[ST_H] = {   /* filled' in src,
+       'bonded and connected is a filled mark, not a tick')
+    link = src.split('static void draw_link')[1].split('\n}\n')[0]
+    ok('t->success' not in link and 't->error' not in link
+       and 't->warning' not in link,
+       'the tile borrows no traffic-light colour')
+    ok('ST_SCALE, t->accent, GFX_OPAQUE' in link,
+       'and draws all three states in the theme accent')
+
     print('\nUI static RAM')
     # The ceiling, and the only number in Diagnostics that is a promise
     # rather than a reading. Every buffer NEXUS owns is static, so this is

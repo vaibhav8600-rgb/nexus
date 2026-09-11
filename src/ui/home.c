@@ -104,13 +104,19 @@ static const uint16_t tr_ble[TR_H] = {
  * than a peer. 27x27 is what snake-module uses and it sits properly. */
 #define ST_SCALE 3
 
-static const uint16_t st_ok[ST_H] = {   /* tick: bonded and connected */
-	0x1FF, 0x101, 0x141, 0x161, 0x175, 0x11D, 0x109, 0x101, 0x1FF,
+/*
+ * Filled, crossed, hollow. The state is in the SHAPE, not the colour: a tick
+ * read as "task complete" rather than as a link being up, and its green was
+ * the one colour that did not belong in half the palettes - in Espresso it
+ * was the only green thing on the screen.
+ */
+static const uint16_t st_ok[ST_H] = {   /* filled: bonded and connected */
+	0x1FF, 0x101, 0x17D, 0x17D, 0x17D, 0x17D, 0x17D, 0x101, 0x1FF,
 };
 static const uint16_t st_down[ST_H] = { /* cross: bonded, not connected */
 	0x1FF, 0x101, 0x145, 0x129, 0x111, 0x129, 0x145, 0x101, 0x1FF,
 };
-static const uint16_t st_open[ST_H] = { /* dashed: open, waiting to pair */
+static const uint16_t st_open[ST_H] = { /* hollow: open, waiting to pair */
 	0x155, 0x000, 0x101, 0x000, 0x101, 0x000, 0x101, 0x000, 0x155,
 };
 
@@ -243,21 +249,19 @@ static void draw_link(const struct nexus_status *st)
 	 * USB, BLE, profile number, tile - 87px inside a 107px card.
 	 */
 	const uint16_t *tile;
-	gfx_color tile_c;
 
 	if (!st->bt_profile_bonded) {
 		tile = st_open;                 /* open, waiting to pair */
-		tile_c = t->warning;
 	} else if (st->bt_connected) {
 		tile = st_ok;                   /* bonded and connected  */
-		tile_c = t->success;
 	} else {
 		tile = st_down;                 /* bonded, not connected */
-		tile_c = t->error;
 	}
+	/* One colour for all three: the mark says which, so the tile can sit
+	 * in the theme's own palette instead of borrowing a traffic light. */
 	gfx_glyph(num_x + gfx_text_w("0", NEXUS_TXT_BIG) + 5,
 		  y + (TR_H * TR_SCALE - ST_H * ST_SCALE) / 2, tile,
-		  ST_W, ST_H, ST_SCALE, tile_c, GFX_OPAQUE);
+		  ST_W, ST_H, ST_SCALE, t->accent, GFX_OPAQUE);
 
 }
 

@@ -543,11 +543,11 @@ def home(cv, t, st):
             t['caption'] if on_usb else t['accent'])
 
     if not st['bonded']:
-        tile, tc = G['st_open'], t['warning']
+        tile, tc = G['st_open'], t['accent']
     elif st['connected']:
-        tile, tc = G['st_ok'], t['success']
+        tile, tc = G['st_ok'], t['accent']
     else:
-        tile, tc = G['st_down'], t['error']
+        tile, tc = G['st_down'], t['accent']
     cv.glyph(num_x + text_w('0', BIG) + 5,
              y + (K['TR_H'] * K['TR_SCALE'] - K['ST_H'] * K['ST_SCALE']) // 2,
              tile, K['ST_W'], K['ST_H'], K['ST_SCALE'], tc)
