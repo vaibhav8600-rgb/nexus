@@ -44,7 +44,24 @@ in your repo rather than in the module because a module that references
 The firmware will not build without it -- the `#error` in `host_link.c` points
 back here rather than failing somewhere confusing.
 
-**3. The companion:**
+**3. The companion,** running on the machine. This is the step people miss:
+flashing the firmware gets you the HOST screen, but it draws only what
+something pushes at it, and nothing on your PC pushes by itself. No companion
+means `NO LINK`, correctly.
+
+On **Windows**, nothing to install -- Windows binds its own `usbser.sys` to the
+dongle's serial interface, so the port is there the moment it enumerates:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\nexus-host\nexus_host.ps1
+```
+
+`-ExecutionPolicy Bypass` because a repo downloaded as a ZIP carries the
+mark-of-the-web and will not run otherwise. Add `-List` to see the ports it
+found, or `-Port COM15` to pin one -- worth doing if you use ZMK Studio at the
+same time, so the companion leaves Studio's interface alone.
+
+**Everywhere else**, the Python one. Same protocol, needs two packages:
 
 ```sh
 pip install pyserial psutil
@@ -52,8 +69,15 @@ python tools/nexus-host/nexus_host.py --list    # find the port
 python tools/nexus-host/nexus_host.py           # run it
 ```
 
+On Linux the port is `/dev/ttyACM*` and reading it needs group `dialout`
+(`sudo usermod -aG dialout $USER`, then log back in).
+
 Then open the HOST screen on the dongle: `SETTINGS -> COMPANION`, where the
 row reads `LINKED` when the companion is talking to it.
+
+Leave it running. It reconnects on its own across reflashes, reboots and
+unplugs, so it is worth starting with the machine -- on Windows, a shortcut to
+that command line in `shell:startup`.
 
 A menu walk is no way to read a clock, so there is also a direct action,
 `NEXUS_ACT_HOST`, to bind to a key:
