@@ -184,15 +184,74 @@ def main():
        % (IS.get('MAX_SHOTS', 0), IS.get('SHOT_COOL', 0)))
     ok(IS.get('MAX_SHOTS', 99) <= 4,
        'but capped - an uncapped stream clears the screen without aiming')
-    # The gun must not out-run the key: a cooldown longer than the repeat
-    # would drop presses and feel like the button was broken.
-    rep = int(re.search(r'config NEXUS_ACTION_REPEAT_MS\s*\n\s*int[^\n]*'
-                        r'\n\s*default (\d+)', src('Kconfig')).group(1))
+    # Held means held, not repeated. This used to be proved by comparing the
+    # cooldown to the key-repeat interval - arithmetic that was true and beside
+    # the point, because ROTATE and DROP, where the fire keys live, never
+    # repeat at all. Holding I or Space fired once and the test passed.
+    act = src('src/action.c')
+    beh = src('src/behaviors/behavior_nexus_action.c')
+    ok('atomic_set_bit(&g_down, action)' in act
+       and 'atomic_clear_bit(&g_down, action)' in act,
+       'the action layer records which keys are down, press to release')
+    ok('nexus_action_press(' in beh,
+       'and the keymap behavior reports a press, not a bare dispatch')
+    rep_list = act.split('static bool action_repeats')[1].split('\n}\n')[0]
+    ok('case NEXUS_ACTION_ROTATE:' not in rep_list
+       and 'case NEXUS_ACTION_DROP:' not in rep_list,
+       'ROTATE and DROP still do not repeat - a held Tetris piece must not '
+       'spin, and a held drop must not slam every new piece')
+
+    verbs = set(re.findall(r'NEXUS_ACTION_(\w+)',
+                           inv.split('static bool fire_held')[1]
+                           .split('\n}\n')[0]))
+    # The case labels that fall through into the switch's fire(), plus
+    # SELECT, which fires from its own branch above the switch.
+    before_fire = inv.split('static bool invaders_input')[1] \
+        .rsplit('fire();', 1)[0].rsplit('return true;', 1)[-1]
+    fires = set(re.findall(r'case NEXUS_ACTION_(\w+):', before_fire))
+    fires.add('SELECT')
+    ok(verbs == fires,
+       'fire_held() asks for exactly the verbs input fires on: %s'
+       % ', '.join(sorted(verbs)))
+    tick_body = inv.split('static void tick_fn(struct k_work *work)\n{')[1]
+    ok('fire_held()' in tick_body.split('\n}\n')[0],
+       'and the tick asks it, so it fires with no key repeat involved')
+
+    # Hold a fire key down and watch what the tick does with it, using the
+    # game's own numbers: first shot on the press, then one per cooldown
+    # until the cap, then one each time a shot leaves the field.
+    IK2 = consts(inv, ['CANNON_Y', 'FIELD_Y', 'MAX_SHOTS', 'SHOT_COOL'])
+    flight = (IK2['CANNON_Y'] - IK2['FIELD_Y']) // 7 + 1
     tick = int(re.search(r'config NEXUS_INVADERS_TICK_MS\s*\n\s*int[^\n]*'
                          r'\n\s*default (\d+)', src('Kconfig')).group(1))
-    ok(IS.get('SHOT_COOL', 99) * tick <= rep,
-       'the %dms cooldown is inside the %dms key repeat, so holding the key '
-       'really does fire continuously' % (IS.get('SHOT_COOL', 0) * tick, rep))
+
+    def hold(ticks, held_for):
+        shots, cool, fired = [], 0, 0
+
+        def fire():
+            nonlocal cool, fired
+            if cool or len(shots) >= IK2['MAX_SHOTS']:
+                return
+            shots.append(flight)
+            cool = IK2['SHOT_COOL']
+            fired += 1
+        fire()                                   # the press itself
+        for t in range(ticks):
+            cool = max(0, cool - 1)              # step(): cooldown
+            shots[:] = [f - 1 for f in shots if f > 1]   # step(): flight
+            if t < held_for:                     # tick_fn(): still down?
+                fire()
+        return fired
+
+    second = 1000 // tick
+    held = hold(second, second)
+    tapped = hold(second, 0)
+    ok(held >= 6,
+       'held for a second: %d shots - a stream, not one' % held)
+    ok(tapped == 1, 'tapped once: exactly %d shot' % tapped)
+    ok(hold(second, second // 4) < held,
+       'and letting go stops it (%d shots when released after 250ms)'
+       % hold(second, second // 4))
     ok(IK['COLS'] <= 16,
        '%d columns fit a uint16_t row mask' % IK['COLS'])
     span = IK['COLS'] * (IK['ALIEN_W'] + 4)
@@ -229,6 +288,10 @@ def main():
     ok(2.0 / 3.0 < 1.0,
        'and two thirds of it, so a steep return outruns the paddle')
 
+    # The paddle keys DO repeat - UP and DOWN are movement - so for Pong
+    # the repeat interval is the right thing to measure against.
+    rep = int(re.search(r'config NEXUS_ACTION_REPEAT_MS\s*\n\s*int[^\n]*'
+                        r'\n\s*default (\d+)', kc).group(1))
     ps = int(re.search(r'config NEXUS_PONG_PADDLE_STEP\s*\n\s*int[^\n]*'
                        r'\n\s*default (\d+)', kc).group(1))
     tick = int(re.search(r'config NEXUS_PONG_TICK_MS\s*\n\s*int[^\n]*'

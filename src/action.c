@@ -132,6 +132,14 @@ static bool action_repeats(enum nexus_action a)
 
 static enum nexus_action g_held;
 
+/*
+ * One bit per action whose key is down. Written from the keymap's thread,
+ * read from the display work queue by a game's tick, hence atomic.
+ */
+static atomic_t g_down;
+BUILD_ASSERT(NEXUS_ACT_THEME_PREV < 32,
+	     "g_down is one word - widen it before adding action 32");
+
 /* Forward-declared so the handler can reschedule its own work item, which it
  * cannot do if the item is defined after it. */
 static void repeat_fn(struct k_work *work);
@@ -149,8 +157,25 @@ static void repeat_fn(struct k_work *work)
 				    K_MSEC(CONFIG_NEXUS_ACTION_REPEAT_MS));
 }
 
+void nexus_action_press(enum nexus_action action)
+{
+	if ((unsigned int)action < 32U) {
+		atomic_set_bit(&g_down, action);
+	}
+	nexus_action_dispatch(action);
+}
+
+bool nexus_action_held(enum nexus_action action)
+{
+	return (unsigned int)action < 32U && atomic_test_bit(&g_down, action);
+}
+
 void nexus_action_release(enum nexus_action action)
 {
+	if ((unsigned int)action < 32U) {
+		atomic_clear_bit(&g_down, action);
+	}
+
 	/*
 	 * Only the key that started the repeat may stop it. Releasing J while
 	 * L is already held would otherwise cancel L's repeat and leave the

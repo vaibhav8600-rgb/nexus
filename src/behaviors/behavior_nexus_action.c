@@ -28,8 +28,9 @@ static int on_pressed(struct zmk_behavior_binding *binding,
 	ARG_UNUSED(event);
 
 	/* Fire on press, not release: UI navigation should feel immediate, and
-	 * dispatch only queues work - it never blocks the keymap thread. */
-	nexus_action_dispatch((enum nexus_action)binding->param1);
+	 * dispatch only queues work - it never blocks the keymap thread. Press
+	 * rather than dispatch, so a game can also ask whether it is held. */
+	nexus_action_press((enum nexus_action)binding->param1);
 	return ZMK_BEHAVIOR_OPAQUE;
 }
 
@@ -38,9 +39,9 @@ static int on_released(struct zmk_behavior_binding *binding,
 {
 	ARG_UNUSED(event);
 
-	/* Ends an auto-repeat, if this action was one that repeats. The
-	 * release was being discarded, which is why holding a direction key
-	 * did exactly as much as tapping it once. */
+	/* Clears the held flag, and ends an auto-repeat if this action was one
+	 * that repeats. The release was being discarded, which is why holding
+	 * a direction key did exactly as much as tapping it once. */
 	nexus_action_release((enum nexus_action)binding->param1);
 	return ZMK_BEHAVIOR_OPAQUE;
 }

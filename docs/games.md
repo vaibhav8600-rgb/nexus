@@ -351,13 +351,20 @@ formation, one row lower, marching sooner. The drop caps at six waves, because
 past that the fleet starts level with the cannon, which is not difficulty but
 an instant loss.
 
-**Hold to fire.** The original allowed one shot at a time, which is what made a
-miss cost you something - but that rule was written for a cabinet with its own
-fire button. Here the key repeats every `CONFIG_NEXUS_ACTION_REPEAT_MS`, and
-under the old rule holding it gave you a shot, a long wait while it flew the
-length of the field, then another: the gun felt broken rather than strict. Now
-it fires every four ticks with up to three in the air. The cap is what keeps it
-a game - three in flight is a stream you still have to aim.
+**Hold to fire.** Hold any fire key -- ROTATE, DROP, UP or ENTER, which on
+the usual game layer is `I`, `Space`, `UP` or `ENTER` -- and the cannon keeps
+firing, a shot every four ticks with up to three in the air, until you let go.
+The cap is what keeps it a game: three in flight is a stream you still have to
+aim, not a wall that clears the screen on its own.
+
+"Held" is asked, not repeated. The action layer records which keys are down
+between their press and their release (`nexus_action_held()`), and the game's
+tick fires while one is. The first version leaned on key repeat instead, and
+only ever worked for `UP`: ROTATE and DROP deliberately do not repeat anywhere
+-- a held Tetris piece would spin, and every new piece would hard-drop -- so
+holding `I` or `Space` fired exactly once. Asking leaves each game to decide
+what holding means in it, without changing what a held key does in any other
+game.
 
 ### Pong
 
