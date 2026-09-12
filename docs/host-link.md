@@ -115,9 +115,15 @@ desk must not do.
 
 - **USB only.** On BLE to a phone or a TV there is no companion, and the HOST
   screen reads `NO LINK`. That is correct, not a failure.
-- **Now playing is per-OS and best effort.** `playerctl` on Linux,
-  `nowplaying-cli` on macOS, the `winsdk` package on Windows. Without one of
-  those the field is simply empty; everything else still works.
+- **Now playing is per-OS and best effort.** The PowerShell companion reads
+  Windows' own media session -- the one the volume flyout shows -- so any app
+  that reports to it works with nothing installed. Elsewhere it is `playerctl`
+  on Linux and `nowplaying-cli` on macOS. Without one the field is empty;
+  everything else still works.
+- **The panel's font is ASCII 32-90: space through Z, upper case only.** Track
+  titles are folded to that on arrival -- lower case folds up, anything else is
+  dropped. The firmware does it rather than the companions, because the
+  constraint belongs to the font, so no companion needs to know about it.
 - **psutil is optional.** Without it the companion sends only the clock.
 - **One more USB interface.** The dongle already exposes one serial port for
   ZMK Studio; this is a second. If your machine is short of USB endpoints,

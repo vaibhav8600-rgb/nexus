@@ -52,6 +52,16 @@ class Host:
                 return None
         return v
 
+    def fold(self, text):
+        """Mirrors fold() in host_link.c: ASCII 32..90, upper case, drop
+        anything else. The font has no lower case and draws the rest as
+        '?'."""
+        out = ''
+        for ch in text.upper():
+            if 32 <= ord(ch) <= 90 and len(out) < self.text_max - 1:
+                out += ch
+        return out
+
     def line(self, raw):
         raw = raw[:71]                       # LINE_MAX - 1, the C truncates
         if not raw:
@@ -68,7 +78,7 @@ class Host:
             if n is not None:
                 self.clock_sec = n
         elif key == 'N':
-            self.now_playing = val[:self.text_max - 1]
+            self.now_playing = self.fold(val)
         elif key == 'X':
             self.cpu = self.mem = UNKNOWN
             self.now_playing = ''
@@ -93,7 +103,8 @@ def main():
     st.line('T 48720')
     ok(st.clock_sec == 48720, 'T is seconds since local midnight (13:32)')
     st.line('N Artist - Title')
-    ok(st.now_playing == 'Artist - Title', 'N sets now playing')
+    ok(st.now_playing == 'ARTIST - TITLE',
+       'N sets now playing, folded to the font')
     st.line('N ')
     ok(st.now_playing == '', 'and an empty N clears it')
 
@@ -110,6 +121,29 @@ def main():
     ok(len(st.now_playing) == text_max - 1,
        'an over-long string is truncated to %d, never overrunning'
        % (text_max - 1))
+
+    print('\nNow playing, folded to what the font can draw')
+    # The font is ASCII 32..90 - space through Z - and gfx_text() draws
+    # anything else as '?'. A real track title is full of things outside it.
+    st.line('N Miles Davis - So What')
+    ok(st.now_playing == 'MILES DAVIS - SO WHAT',
+       'lower case folds up rather than drawing as question marks')
+    st.line(u'N Sigur R\u00f3s \u2014 Hopp\u00edpolla')
+    ok(st.now_playing == 'SIGUR RS  HOPPPOLLA',
+       'accents and em dashes are dropped, not substituted: %s'
+       % st.now_playing)
+    st.line('N ' + 'A' * 100)
+    ok(len(st.now_playing) == text_max - 1,
+       'and it still cannot overrun (%d)' % len(st.now_playing))
+
+    c_fold = c.split('static void fold')[1].split('\n}\n')[0]
+    ok("c -= 'a' - 'A'" in c_fold, 'the C folds case')
+    ok('> 90U' in c_fold and 'continue' in c_fold,
+       'and drops what is left outside the font')
+    ok('fold(clean, val, sizeof(clean))' in c
+       and 'strcmp(g_host.now_playing, clean)' in c,
+       'the comparison happens after folding - two titles that draw the same '
+       'must not cost a repaint')
 
     print('\nThe link going away')
     st.line('C 40')

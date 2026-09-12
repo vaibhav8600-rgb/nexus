@@ -45,11 +45,72 @@ function Get-NexusPorts {
         } | Sort-Object Interface
 }
 
+# Now playing, from the same Windows media session the volume flyout shows.
+# Anything that reports to it works - browsers, Spotify, Apple Music - with no
+# per-app support and nothing installed.
+#
+# The WinRT plumbing is set up once here rather than per call: resolving the
+# type and building the AsTask shim every second would cost more than the
+# reading is worth.
+$script:npReady = $false
+try {
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction Stop
+    $script:asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() |
+        Where-Object {
+            $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+        })[0]
+    # One line, deliberately: PowerShell will not parse a type literal split
+    # across lines, whatever the line length rules say.
+    [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media, ContentType = WindowsRuntime] | Out-Null
+    $script:npReady = $true
+} catch {
+    Write-Warning "now playing unavailable: $($_.Exception.Message)"
+}
+
+function Wait-WinRt($operation, $type) {
+    $task = $script:asTask.MakeGenericMethod($type).Invoke($null, @($operation))
+    if (-not $task.Wait(2000)) { throw 'WinRT call timed out' }
+    $task.Result
+}
+
 function Get-NowPlaying {
-    # Windows has no scriptable now-playing without extra packages. Left
-    # empty rather than guessed at: an empty field is honest, a wrong one
-    # is not. Use the Python companion with winsdk if you want this.
-    return ''
+    if (-not $script:npReady) { return '' }
+    try {
+        $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
+        $mgr = Wait-WinRt ($mgrType::RequestAsync()) $mgrType
+
+        # Prefer whatever is actually playing. With a paused YouTube tab and
+        # music running, the "current" session is not always the one making
+        # the noise, and the noise is what you want named.
+        $session = $null
+        foreach ($s in $mgr.GetSessions()) {
+            if ($s.GetPlaybackInfo().PlaybackStatus -eq 'Playing') {
+                $session = $s; break
+            }
+        }
+        if (-not $session) { $session = $mgr.GetCurrentSession() }
+        if (-not $session) { return '' }
+
+        $propType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]
+        $p = Wait-WinRt ($session.TryGetMediaPropertiesAsync()) $propType
+
+        $artist = "$($p.Artist)".Trim()
+        $title = "$($p.Title)".Trim()
+        $text = if ($artist -and $title) { "$artist - $title" }
+                elseif ($title) { $title } else { $artist }
+
+        # Fold to what the panel's font covers: ASCII 32..90, upper case only.
+        # The firmware does this too and does not trust us to - but doing it
+        # here keeps the wire carrying only what can be drawn, and means a
+        # title reads correctly on firmware built before that fold existed.
+        return -join ($text.ToUpper().ToCharArray() |
+            Where-Object { [int]$_ -ge 32 -and [int]$_ -le 90 })
+    } catch {
+        # A session can vanish between listing it and asking about it.
+        Write-Verbose "now playing: $($_.Exception.Message)"
+        return ''
+    }
 }
 
 if ($List) {

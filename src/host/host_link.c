@@ -93,6 +93,42 @@ static uint32_t to_u32(const char *s, uint32_t max)
 }
 
 /*
+ * Fold a host string into what the panel can actually draw.
+ *
+ * The font is ASCII 32..90 - space through Z, uppercase only - and gfx_text()
+ * draws anything else as '?'. A track title from a real media player is full
+ * of things outside that: lower case, em dashes, accents, whatever the artist
+ * felt like. Unfolded, "Miles Davis - So What" arrives as a row of question
+ * marks.
+ *
+ * Here rather than in the companions, because the constraint belongs to the
+ * font, not to the host. Every companion that ever gets written benefits, and
+ * none of them has to know what the dongle's font covers.
+ *
+ * Lower case folds up. Everything still out of range is dropped rather than
+ * substituted: a dropped character leaves a readable title, and a line of '?'
+ * where the accents were does not. UTF-8 multibyte sequences are all >127, so
+ * they disappear by the same rule.
+ */
+static void fold(char *dst, const char *src, size_t max)
+{
+	size_t n = 0;
+
+	for (; *src && n + 1U < max; src++) {
+		char c = *src;
+
+		if (c >= 'a' && c <= 'z') {
+			c -= 'a' - 'A';
+		}
+		if ((unsigned char)c < 32U || (unsigned char)c > 90U) {
+			continue;
+		}
+		dst[n++] = c;
+	}
+	dst[n] = '\0';
+}
+
+/*
  * One line. The first character is the field; anything after a single space
  * is its value. Unknown fields are ignored rather than rejected, so a newer
  * companion talking to older firmware degrades instead of failing.
@@ -139,13 +175,19 @@ static void parse_line(const char *line)
 		g_host.clock_sec = n;
 		g_host.clock_at = k_uptime_get();
 		break;
-	case 'N':
-		if (strncmp(g_host.now_playing, val, NEXUS_HOST_TEXT - 1)) {
-			strncpy(g_host.now_playing, val, NEXUS_HOST_TEXT - 1);
-			g_host.now_playing[NEXUS_HOST_TEXT - 1] = '\0';
+	case 'N': {
+		char clean[NEXUS_HOST_TEXT];
+
+		/* Compared after folding, not before: two titles that differ
+		 * only in case or in an accent draw identically, and a repaint
+		 * that changes nothing on screen is a wasted frame. */
+		fold(clean, val, sizeof(clean));
+		if (strcmp(g_host.now_playing, clean)) {
+			strcpy(g_host.now_playing, clean);
 			nexus_host_screen_dirty(NEXUS_HOST_F_NP);
 		}
 		break;
+	}
 	case 'X':
 		/* The companion is going away and says so, rather than leaving
 		 * numbers on screen that stopped being true when it quit. */
