@@ -28,6 +28,7 @@ string, and CI fails the build if one appears (Requirement B).
 | `CONFIG_NEXUS_UI_REFRESH_NORMAL_MS` | `200` | Status dashboard. |
 | `CONFIG_NEXUS_UI_REFRESH_IDLE_MS` | `1000` | Static screens. |
 | `CONFIG_NEXUS_HOST_LINK` | `n` | A companion on your PC pushes the time, CPU, memory and now-playing down a second USB serial, shown on the HOST screen. Needs a devicetree node you add yourself -- see [host-link.md](host-link.md). |
+| `CONFIG_NEXUS_HOST_CLOCK_24H` | `n` | Draw the host clock as 14:32 rather than 2:32 PM. Drawing only -- the companion sends the same thing either way. |
 | `CONFIG_NEXUS_HOST_STALE_S` | `5` | Treat host data as stale after N silent seconds, and go back to dashes. |
 | `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` | `0` | Blank the display after N idle seconds. `0` disables. Idle is ZMK's activity state leaving ACTIVE, so typing on either half counts. Never fires during a game, and any action wakes it. Works on every wiring, but what it can do depends on the backlight -- see [hardware.md](hardware.md#backlight). |
 

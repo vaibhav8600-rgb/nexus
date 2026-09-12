@@ -131,6 +131,18 @@ config NEXUS_HOST_LINK
 	  not want this gets a second serial port appearing on their machine.
 	  docs/host-link.md has the two lines and the companion.
 
+config NEXUS_HOST_CLOCK_24H
+	bool "Show the host clock as 24 hour"
+	default n
+	depends on NEXUS_HOST_LINK
+	help
+	  Off means 12 hour with AM or PM, which is what most desk clocks show.
+	  On means 14:32 rather than 2:32 PM.
+
+	  The companion always sends seconds since local midnight either way -
+	  this is only how it is drawn, so changing it needs no companion
+	  change and no reflash of anything on the other end.
+
 config NEXUS_HOST_STALE_S
 	int "Treat host data as stale after N silent seconds"
 	default 5

@@ -662,7 +662,7 @@ def host_meter(cv, t, x, w, label, pct):
             t['warning'] if pct >= 80 else t['accent'])
 
 
-def host(cv, t, link=True, clock='13:32', cpu=37, mem=62,
+def host(cv, t, link=True, clock='1:32', suffix='PM', cpu=37, mem=62,
          np='Miles Davis - So What'):
     """The HOST screen, with a companion connected. Mirrors host_screen.c."""
     u, K = UI(cv, t), HOST
@@ -678,7 +678,15 @@ def host(cv, t, link=True, clock='13:32', cpu=37, mem=62,
         cv.text_c(W // 2, K['CLOCK_Y'] + 36, '--:--', BIG, t['muted'])
     else:
         u.caption_c(W // 2, K['CLOCK_Y'] + 12, 'HOST TIME')
-        cv.text_c(W // 2, K['CLOCK_Y'] + 28, clock, BIG, t['value'])
+        # Numerals big, AM/PM small on their baseline, group centred.
+        tw = text_w(clock, BIG)
+        sw = text_w(suffix, BODY) + 6 if suffix else 0
+        x = W // 2 - (tw + sw) // 2
+        cv.text(x, K['CLOCK_Y'] + 28, clock, BIG, t['value'])
+        if suffix:
+            cv.text(x + tw + 6,
+                    K['CLOCK_Y'] + 28 + text_h(BIG) - text_h(BODY),
+                    suffix, BODY, t['caption'])
 
     host_meter(cv, t, PAD, 106, 'CPU', cpu)
     host_meter(cv, t, PAD + 112, 110, 'MEM', mem)
@@ -1232,7 +1240,8 @@ def main():
         ('about', lambda cv: about(cv, nx)),
         ('host', lambda cv: host(cv, nx)),
         ('host-nolink', lambda cv: host(cv, nx, link=False, clock=None,
-                                        cpu=None, mem=None, np='')),
+                                        suffix=None, cpu=None, mem=None,
+                                        np='')),
         ('splash', lambda cv: splash(cv, nx)),
     ]
     for name, fn in shots:

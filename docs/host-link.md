@@ -100,6 +100,11 @@ would rather show you nothing than something that stopped being true.
 timezone database and no business having one; your machine already knows what
 the clock on its own wall says.
 
+The dongle draws it as **12 hour with AM or PM** by default, which is what most
+desk clocks show. `CONFIG_NEXUS_HOST_CLOCK_24H=y` switches to 14:32. That is
+only how it is drawn -- the companion sends the same seconds-since-midnight
+either way, so changing it needs nothing on the host.
+
 Between updates the dongle counts forward with its kernel uptime, which drifts.
 The companion resends `T` every minute, so the drift never accumulates past
 that. Seconds are not displayed, on purpose: a seconds digit would repaint that

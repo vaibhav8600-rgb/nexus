@@ -18,6 +18,7 @@
 #include <nexus/screen.h>
 #include <nexus/theme.h>
 #include <nexus/widgets.h>
+#include <zephyr/kernel.h>
 
 #include "../nexus_priv.h"
 
@@ -46,22 +47,51 @@ static void draw_clock(void)
 	}
 
 	/*
-	 * HH:MM as one string, padded, so the colon never moves. Seconds are
-	 * deliberately absent: they would repaint this card once a second
-	 * forever, which is the one thing a screen that sits idle must not do.
+	 * Seconds are deliberately absent: they would repaint this card once a
+	 * second forever, which is the one thing a screen that sits idle on a
+	 * desk must not do.
 	 */
+	uint32_t hour = sec / 3600U;
+	uint32_t min = (sec % 3600U) / 60U;
+	const char *suffix = NULL;
 	int n = 0;
 
-	gfx_utoa(sec / 3600U, buf, sizeof(buf), 2);
+	if (!IS_ENABLED(CONFIG_NEXUS_HOST_CLOCK_24H)) {
+		suffix = hour < 12U ? "AM" : "PM";
+		hour %= 12U;
+		if (hour == 0U) {
+			hour = 12U;   /* midnight and noon are 12, not 0 */
+		}
+	}
+
+	/* Padded on a 24 hour clock so the colon never moves; unpadded on a 12
+	 * hour one, because "01:32 PM" is not what a clock face says. */
+	gfx_utoa(hour, buf, sizeof(buf), suffix ? 0 : 2);
 	while (buf[n]) {
 		n++;
 	}
 	buf[n++] = ':';
-	gfx_utoa((sec % 3600U) / 60U, &buf[n], (int)sizeof(buf) - n, 2);
+	gfx_utoa(min, &buf[n], (int)sizeof(buf) - n, 2);
 
 	nexus_draw_caption_c(GFX_W / 2, CLOCK_Y + 12, "HOST TIME");
-	gfx_text_c(GFX_W / 2, CLOCK_Y + 28, buf, NEXUS_TXT_BIG, t->value,
-		   GFX_OPAQUE);
+
+	/*
+	 * The numerals big, AM/PM small beside them and sitting on their
+	 * baseline, the whole group centred. At NEXUS_TXT_BIG the suffix would
+	 * be as loud as the hour, which is the wrong way round - you read the
+	 * time, you glance at which half of the day it is.
+	 */
+	int tw = gfx_text_w(buf, NEXUS_TXT_BIG);
+	int sw = suffix ? gfx_text_w(suffix, NEXUS_TXT_BODY) + 6 : 0;
+	int x = GFX_W / 2 - (tw + sw) / 2;
+
+	gfx_text(x, CLOCK_Y + 28, buf, NEXUS_TXT_BIG, t->value, GFX_OPAQUE);
+	if (suffix) {
+		gfx_text(x + tw + 6,
+			 CLOCK_Y + 28 + gfx_text_h(NEXUS_TXT_BIG) -
+				 gfx_text_h(NEXUS_TXT_BODY),
+			 suffix, NEXUS_TXT_BODY, t->caption, GFX_OPAQUE);
+	}
 }
 
 static void draw_meter(int x, int w, const char *label, uint8_t pct)

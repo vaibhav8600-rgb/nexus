@@ -148,6 +148,47 @@ def main():
        "the screen refreshes at NORMAL - IDLE's one-second coalesce would "
        'make a ticking clock look stuck')
 
+    print('\nThe clock')
+    kc = read('Kconfig').split('config NEXUS_HOST_CLOCK_24H')[1]
+    kc = kc.split('\nconfig ')[0]
+    ok('default n' in kc, '12 hour with AM/PM is the default, 24 hour is opt in')
+    clock = s.split('static void draw_clock')[1].split('\n}\n')[0]
+    ok('IS_ENABLED(CONFIG_NEXUS_HOST_CLOCK_24H)' in clock,
+       'and the format is a build option, not a hard-coded one')
+
+    def face(sec, h24):
+        """Mirrors draw_clock(): the numerals, and the suffix or None."""
+        hour, minute = sec // 3600, (sec % 3600) // 60
+        if h24:
+            return '%02d:%02d' % (hour, minute), None
+        suffix = 'AM' if hour < 12 else 'PM'
+        hour %= 12
+        return '%d:%02d' % (hour or 12, minute), suffix
+
+    for sec, want12, want24 in ((0, ('12:00', 'AM'), ('00:00', None)),
+                                (60, ('12:01', 'AM'), ('00:01', None)),
+                                (11 * 3600 + 59 * 60, ('11:59', 'AM'),
+                                 ('11:59', None)),
+                                (12 * 3600, ('12:00', 'PM'),
+                                 ('12:00', None)),
+                                (13 * 3600 + 32 * 60, ('1:32', 'PM'),
+                                 ('13:32', None)),
+                                (23 * 3600 + 59 * 60, ('11:59', 'PM'),
+                                 ('23:59', None))):
+        got = face(sec, False)
+        ok(got == want12, '%5ds -> %s %s' % (sec, got[0], got[1]))
+        ok(face(sec, True) == want24, '%5ds -> %s in 24 hour'
+           % (sec, want24[0]))
+
+    ok('hour = 12U' in clock,
+       'midnight and noon read as 12, never as 0 - the bug every 12 hour '
+       'clock ships once')
+    ok('suffix ? 0 : 2' in clock,
+       'padded on a 24 hour face so the colon never moves, unpadded on a 12 '
+       'hour one')
+    ok('NEXUS_TXT_BODY' in clock and 'gfx_text_h(NEXUS_TXT_BIG)' in clock,
+       'AM/PM is drawn smaller, on the numerals\' baseline')
+
     print('\nLayout fits the panel')
     K = {k: int(v) for k, v in
          re.findall(r'^#define (\w+_[YH]) (\d+)', s, re.M)}
