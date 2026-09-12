@@ -55,6 +55,12 @@ static void handle(enum nexus_action action)
 		nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
 		nexus_screen_push(&nexus_screen_settings_def);
 		break;
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+	case NEXUS_ACTION_HOST:
+		nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
+		nexus_screen_push(&nexus_screen_host_def);
+		break;
+#endif
 	case NEXUS_ACTION_THEME_NEXT:
 	case NEXUS_ACTION_THEME_PREV:
 		/*

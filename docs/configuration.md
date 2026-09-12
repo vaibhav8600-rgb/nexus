@@ -221,6 +221,7 @@ Include `<dt-bindings/nexus.h>` and bind any of:
 | `NEXUS_ACT_LEFT` / `RIGHT` / `ROTATE` / `DROP` | gameplay |
 | `NEXUS_ACT_SAVE` | commit settings, from any screen |
 | `NEXUS_ACT_THEME_NEXT` / `THEME_PREV` | cycle themes without opening Settings; saves itself once you stop |
+| `NEXUS_ACT_HOST` | open the HOST screen - the clock and the companion's data - from any screen. Needs `CONFIG_NEXUS_HOST_LINK`. |
 
 Verbs are context-sensitive by design (Section 13): the screen decides what
 `SELECT` means, not the key.

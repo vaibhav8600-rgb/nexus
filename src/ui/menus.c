@@ -427,12 +427,18 @@ static void a_about(void)
 }
 
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
-static void a_host(void)
+/*
+ * _link, because Diagnostics already has a v_host and it means something
+ * else: which host YOU are typing to, USB or a BLE profile. This one is the
+ * companion program on that host, which is a different question with the same
+ * word in it.
+ */
+static void a_host_link(void)
 {
 	nexus_screen_push(&nexus_screen_host_def);
 }
 
-static void v_host(char *out, size_t len)
+static void v_host_link(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
 
@@ -480,7 +486,7 @@ static const struct row settings_rows[] = {
 	{ "SPLASH", v_splash, NULL },
 	{ "GAMES", v_games, NULL },
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
-	{ "HOST", v_host, a_host },
+	{ "COMPANION", v_host_link, a_host_link },
 #endif
 	{ "DIAG", NULL, a_diagnostics },
 	{ "ABOUT", NULL, a_about },

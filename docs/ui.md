@@ -316,7 +316,8 @@ the screen.
 Opt-in, and off by default: `CONFIG_NEXUS_HOST_LINK` plus a devicetree node you
 add yourself. A companion on the machine the dongle is plugged into pushes the
 time, CPU and memory load and what is playing down a second USB serial;
-`SETTINGS -> HOST` shows it.
+`SETTINGS -> COMPANION` opens it, and `NEXUS_ACT_HOST` bound to a key opens
+it directly - a clock you have to walk two menus to read is not a clock.
 
 The clock is the reason it exists -- the dongle has no RTC, so the only real
 time it will ever see is a time somebody hands it. Seconds are deliberately not

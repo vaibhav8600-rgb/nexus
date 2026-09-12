@@ -52,8 +52,15 @@ python tools/nexus-host/nexus_host.py --list    # find the port
 python tools/nexus-host/nexus_host.py           # run it
 ```
 
-Then open `SETTINGS -> HOST` on the dongle. The row shows `LINKED` when the
-companion is talking to it.
+Then open the HOST screen on the dongle: `SETTINGS -> COMPANION`, where the
+row reads `LINKED` when the companion is talking to it.
+
+A menu walk is no way to read a clock, so there is also a direct action,
+`NEXUS_ACT_HOST`, to bind to a key:
+
+```dts
+#define NX_HOST  &nexus_action NEXUS_ACT_HOST
+```
 
 ## The protocol
 

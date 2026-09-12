@@ -44,4 +44,8 @@
 #define NEXUS_ACT_THEME_NEXT  18
 #define NEXUS_ACT_THEME_PREV  19
 
+/* Open the HOST screen - the clock and the companion's data - directly.
+ * A clock you have to walk two menus to read is not a clock. */
+#define NEXUS_ACT_HOST        20
+
 #endif /* DT_BINDINGS_NEXUS_H_ */
