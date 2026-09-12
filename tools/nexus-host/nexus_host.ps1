@@ -62,41 +62,48 @@ if ($List) {
     return
 }
 
-# Which port? If not told, try every NEXUS interface at once: the one that is
-# the host link shows up on the dongle, and the other is Studio's and ignores
-# us. Writing a line it cannot parse costs Studio nothing.
-$targets = if ($Port) { @($Port) } else { (Get-NexusPorts).Port }
-if (-not $targets) {
-    Write-Error 'No NEXUS dongle found. Plug in USB, or pass -Port.'
-    return
-}
-
-$open = @{}
-foreach ($name in $targets) {
-    try {
-        $sp = New-Object System.IO.Ports.SerialPort($name, 115200)
-        $sp.WriteTimeout = 2000
-        $sp.DtrEnable = $true
-        $sp.Open()
-        $open[$name] = $sp
-        Write-Output "open $name"
-    } catch {
-        Write-Warning "$name : $($_.Exception.Message)"
-    }
-}
-if ($open.Count -eq 0) { Write-Error 'No port could be opened.'; return }
-
 # One sample to prime the counter - the first read of % Processor Time is
 # always 0 and would put a lie on the screen for the first second.
 $cpuCounter = '\Processor(_Total)\% Processor Time'
 try { Get-Counter $cpuCounter -ErrorAction Stop | Out-Null } catch {}
 
 Write-Output 'NEXUS companion running. Ctrl-C to stop.'
-$lastClock = [datetime]::MinValue
-$lastNp = $null
+$open = @{}
 
 try {
-    while ($true) {
+  # Outer loop: reconnect rather than exit. The dongle disappears from USB on
+  # every reflash and every reboot, and a companion that has to be restarted
+  # by hand each time is a companion you stop bothering with.
+  while ($true) {
+    if ($open.Count -eq 0) {
+        # Which port? If not told, try every NEXUS interface at once: the one
+        # that is the host link shows up on the dongle, and the other is
+        # Studio's and ignores us. Writing a line it cannot parse costs
+        # Studio nothing - but pass -Port if you use Studio at the same time.
+        $targets = if ($Port) { @($Port) } else { (Get-NexusPorts).Port }
+        foreach ($name in $targets) {
+            try {
+                $sp = New-Object System.IO.Ports.SerialPort($name, 115200)
+                $sp.WriteTimeout = 2000
+                $sp.DtrEnable = $true
+                $sp.Open()
+                $open[$name] = $sp
+                Write-Output "open $name"
+            } catch {
+                Write-Verbose "$name : $($_.Exception.Message)"
+            }
+        }
+        if ($open.Count -eq 0) {
+            Write-Verbose 'no dongle; waiting'
+            Start-Sleep -Seconds 3
+            continue
+        }
+        # A fresh link knows nothing about us: resend everything.
+        $lastClock = [datetime]::MinValue
+        $lastNp = $null
+    }
+
+    while ($open.Count -gt 0) {
         $lines = New-Object System.Collections.Generic.List[string]
 
         if (((Get-Date) - $lastClock).TotalSeconds -ge $CLOCK_EVERY) {
@@ -134,12 +141,14 @@ try {
                 }
             }
         }
-        if ($open.Count -eq 0) {
-            Write-Error 'All ports gone. Reflashed? Run it again.'
-            return
-        }
         Start-Sleep -Milliseconds ([int]($Interval * 1000))
     }
+
+    # Dropped out of the inner loop: the dongle went away. Say so once, then
+    # go back round and wait for it to come back.
+    Write-Output 'link lost; waiting for the dongle'
+    Start-Sleep -Seconds 3
+  }
 } finally {
     # "I am going away", so the dongle shows dashes rather than numbers that
     # stopped being true the moment this stopped.
