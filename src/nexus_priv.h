@@ -52,5 +52,6 @@ int nexus_buzzer_tone(uint16_t freq_hz);
 
 int nexus_button_init(void);
 int nexus_backlight_init(void);
+int nexus_host_link_init(void);
 
 #endif /* NEXUS_PRIV_H_ */

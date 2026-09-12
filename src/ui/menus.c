@@ -15,6 +15,7 @@
 #include <nexus/game.h>
 #include <nexus/gfx.h>
 #include <nexus/nexus.h>
+#include <nexus/host.h>
 #include <nexus/screen.h>
 #include <nexus/settings.h>
 #include <nexus/sound.h>
@@ -425,6 +426,20 @@ static void a_about(void)
 	nexus_screen_push(&nexus_screen_about_def);
 }
 
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+static void a_host(void)
+{
+	nexus_screen_push(&nexus_screen_host_def);
+}
+
+static void v_host(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_host()->link ? "LINKED" : "--");
+}
+#endif
+
 static void v_save(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
@@ -464,6 +479,9 @@ static const struct row settings_rows[] = {
 #endif
 	{ "SPLASH", v_splash, NULL },
 	{ "GAMES", v_games, NULL },
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+	{ "HOST", v_host, a_host },
+#endif
 	{ "DIAG", NULL, a_diagnostics },
 	{ "ABOUT", NULL, a_about },
 	{ "SAVE", v_save, a_save },

@@ -118,6 +118,7 @@ buzzer and two tactile switches.
 | [themes.md](docs/themes.md) | The seven palettes, and how the glass is faked |
 | [games.md](docs/games.md) | The seven games, difficulty, and adding your own |
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
+| [host-link.md](docs/host-link.md) | The companion app: clock, CPU, memory, now playing |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |

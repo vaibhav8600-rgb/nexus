@@ -11,6 +11,7 @@ Start at [installation](installation.md) if you want it working, or
 - [themes](themes.md) - [live preview](theme-preview.html)
 - [games](games.md)
 - [zmk-studio](zmk-studio.md)
+- [host-link](host-link.md)
 - [architecture](architecture.md)
 - [development](development.md)
 - [troubleshooting](troubleshooting.md)

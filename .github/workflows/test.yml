@@ -40,9 +40,9 @@ jobs:
 
       - name: Python syntax and style
         run: |
-          python3 -m py_compile scripts/*.py tests/*/*.py
+          python3 -m py_compile scripts/*.py tests/*/*.py tools/*/*.py
           pip install --quiet flake8
-          flake8 --max-line-length 100 --extend-ignore=E203,W503 scripts/ tests/
+          flake8 --max-line-length 100 --extend-ignore=E203,W503 scripts/ tests/ tools/
 
       - name: Borrowed macros have their headers
         # ARG_UNUSED without <zephyr/kernel.h> is only a warning at compile

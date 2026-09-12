@@ -87,6 +87,16 @@ static int nexus_init(void)
 	}
 #endif
 
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+	/* Failure here is not fatal and never should be: the companion is an
+	 * extra, and a dongle that refuses to boot because a USB interface did
+	 * not come up would be a far worse bug than a HOST screen full of
+	 * dashes. */
+	if (nexus_host_link_init()) {
+		LOG_WRN("host link unavailable; HOST screen will show no data");
+	}
+#endif
+
 	nexus_status_init();
 	k_work_schedule_for_queue(nexus_workq(), &g_seed, K_MSEC(500));
 

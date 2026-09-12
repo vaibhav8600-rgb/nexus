@@ -108,6 +108,9 @@ extern const struct nexus_screen nexus_screen_home_def;
 extern const struct nexus_screen nexus_screen_settings_def;
 extern const struct nexus_screen nexus_screen_diagnostics_def;
 extern const struct nexus_screen nexus_screen_about_def;
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+extern const struct nexus_screen nexus_screen_host_def;
+#endif
 #if IS_ENABLED(CONFIG_NEXUS_SPLASH)
 extern const struct nexus_screen nexus_screen_splash_def;
 #endif

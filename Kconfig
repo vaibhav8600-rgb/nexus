@@ -111,6 +111,35 @@ config NEXUS_UI_REFRESH_IDLE_MS
 	int "Idle UI period, ms"
 	default 1000
 
+config NEXUS_HOST_LINK
+	bool "Companion link over a second USB serial"
+	default n
+	depends on NEXUS_DISPLAY && ZMK_USB
+	select SERIAL
+	select UART_INTERRUPT_DRIVEN
+	select USB_CDC_ACM
+	help
+	  A small program on the machine the dongle is plugged into pushes what
+	  only that machine knows - the time, CPU and memory load, what it is
+	  playing - down a USB serial port, and the HOST screen shows it.
+
+	  One way. The dongle never writes back, so the companion cannot be
+	  used to drive the keyboard.
+
+	  Off by default, and it needs one more step than the symbol: the
+	  nexus_host_cdc devicetree node ships disabled so that nobody who does
+	  not want this gets a second serial port appearing on their machine.
+	  docs/host-link.md has the two lines and the companion.
+
+config NEXUS_HOST_STALE_S
+	int "Treat host data as stale after N silent seconds"
+	default 5
+	depends on NEXUS_HOST_LINK
+	help
+	  The companion sends about once a second. After this long with
+	  nothing, the screen goes back to showing dashes rather than numbers
+	  that stopped being true when the cable came out.
+
 config NEXUS_BACKLIGHT_TIMEOUT_S
 	int "Blank the display after N idle seconds (0 = never)"
 	default 0

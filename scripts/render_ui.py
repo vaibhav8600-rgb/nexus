@@ -645,6 +645,53 @@ def menu(cv, t, title, rows, cursor=0):
     cv.text_c(W // 2, K['HINT_Y'], 'TAP=NEXT  HOLD=OK', LABEL, t['caption'])
 
 
+# ---------------------------------------------------------------- host
+HOST = defines(read('src/ui/host_screen.c'),
+               ['CLOCK_Y', 'CLOCK_H', 'METER_Y', 'METER_H', 'NP_Y', 'NP_H'])
+
+
+def host_meter(cv, t, x, w, label, pct):
+    u, K = UI(cv, t), HOST
+    u.card(x, K['METER_Y'], w, K['METER_H'])
+    u.caption(x + 8, K['METER_Y'] + 7, label)
+    if pct is None:
+        cv.text(x + 8, K['METER_Y'] + 21, '--', VALUE, t['muted'])
+        return
+    cv.text(x + 8, K['METER_Y'] + 19, str(pct), VALUE, t['value'])
+    u.meter(x + 8, K['METER_Y'] + K['METER_H'] - 12, w - 16, 6, pct,
+            t['warning'] if pct >= 80 else t['accent'])
+
+
+def host(cv, t, link=True, clock='13:32', cpu=37, mem=62,
+         np='Miles Davis - So What'):
+    """The HOST screen, with a companion connected. Mirrors host_screen.c."""
+    u, K = UI(cv, t), HOST
+    u.ground()
+    u.label(PAD, 6, 'HOST')
+    state = 'LINKED' if link else 'NO LINK'
+    cv.text(W - PAD - text_w(state, LABEL), 6, state, LABEL,
+            t['accent'] if link else t['muted'])
+
+    u.card(PAD, K['CLOCK_Y'], CONTENT_W, K['CLOCK_H'])
+    if clock is None:
+        u.caption_c(W // 2, K['CLOCK_Y'] + 20, 'NO HOST CLOCK')
+        cv.text_c(W // 2, K['CLOCK_Y'] + 36, '--:--', BIG, t['muted'])
+    else:
+        u.caption_c(W // 2, K['CLOCK_Y'] + 12, 'HOST TIME')
+        cv.text_c(W // 2, K['CLOCK_Y'] + 28, clock, BIG, t['value'])
+
+    host_meter(cv, t, PAD, 106, 'CPU', cpu)
+    host_meter(cv, t, PAD + 112, 110, 'MEM', mem)
+
+    u.card(PAD, K['NP_Y'], CONTENT_W, K['NP_H'])
+    u.caption(PAD + 8, K['NP_Y'] + 7, 'NOW PLAYING')
+    if not link or not np:
+        cv.text(PAD + 8, K['NP_Y'] + 24, '--', BODY, t['muted'])
+    else:
+        sc = BODY if text_w(np, BODY) <= CONTENT_W - 16 else CAPTION
+        cv.text(PAD + 8, K['NP_Y'] + 24, np, sc, t['value'])
+
+
 def about(cv, t):
     u = UI(cv, t)
     u.ground()
@@ -1183,6 +1230,9 @@ def main():
         ('settings', lambda cv: menu(cv, nx, 'SETTINGS', SETTINGS_ROWS, 4)),
         ('diagnostics', lambda cv: menu(cv, nx, 'DIAGNOSTICS', DIAG_ROWS, 9)),
         ('about', lambda cv: about(cv, nx)),
+        ('host', lambda cv: host(cv, nx)),
+        ('host-nolink', lambda cv: host(cv, nx, link=False, clock=None,
+                                        cpu=None, mem=None, np='')),
         ('splash', lambda cv: splash(cv, nx)),
     ]
     for name, fn in shots:

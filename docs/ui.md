@@ -308,6 +308,26 @@ which at fourteen white characters against six mint ones outweighed it -- and
 the three hardware lines floated between the panes, the only unpanelled text on
 the screen.
 
+## Host
+
+<img src="images/screens/host.png" width="170" alt="HOST, linked">
+<img src="images/screens/host-nolink.png" width="170" alt="HOST, no companion">
+
+Opt-in, and off by default: `CONFIG_NEXUS_HOST_LINK` plus a devicetree node you
+add yourself. A companion on the machine the dongle is plugged into pushes the
+time, CPU and memory load and what is playing down a second USB serial;
+`SETTINGS -> HOST` shows it.
+
+The clock is the reason it exists -- the dongle has no RTC, so the only real
+time it will ever see is a time somebody hands it. Seconds are deliberately not
+shown: a seconds digit would repaint that card once a second forever, which is
+the one thing a screen sitting idle on a desk must not do.
+
+The second shot is the normal state, and it is what the screen has to be good
+at. With no companion every field reads as dashes in the muted colour, never as
+the last number it saw -- a CPU meter frozen at 3% looks like it is working.
+Full protocol and setup: [host-link.md](host-link.md).
+
 ## Regenerating these images
 
 ```sh
