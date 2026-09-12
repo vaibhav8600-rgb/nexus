@@ -14,6 +14,7 @@
 #include <nexus/display.h>
 #include <nexus/gfx.h>
 #include <nexus/screen.h>
+#include <nexus/status.h>
 #include <nexus/sound.h>
 #include <nexus/theme.h>
 #include <nexus/widgets.h>
@@ -42,6 +43,19 @@ static const struct nexus_screen *g_stack[SCREEN_STACK_DEPTH];
 static uint8_t g_depth;
 static enum nexus_refresh g_rate_override;
 static int64_t g_last_input;
+
+/*
+ * The display is blanked because nothing has happened for a while, and when
+ * ZMK last said the user went away.
+ *
+ * g_dimmed is a flag rather than a question asked of the driver so the
+ * transition runs once: re-blanking every tick would push a command down the
+ * SPI bus once a second for as long as the desk is empty.
+ */
+static bool g_dimmed;
+static int64_t g_idle_since;
+
+static void set_dimmed(bool dim);
 
 /* Dirty region as a row range; empty when hi <= lo. */
 static int g_dirty_lo = GFX_H;
@@ -123,6 +137,14 @@ static void count_frame(void)
 
 static void render_dirty(void)
 {
+	/*
+	 * Nothing reaches the panel while it is blanked. A game keeps ticking
+	 * - its clock is its own - but pushing bands at a dark display is pure
+	 * SPI traffic, and the wake repaints everything anyway.
+	 */
+	if (g_dimmed) {
+		return;
+	}
 	if (g_dirty_hi <= g_dirty_lo || !gfx_ready()) {
 		return;
 	}
@@ -190,30 +212,90 @@ void nexus_screen_render_now(void)
 	 * runs in, so this cannot race it. The armed timer still fires and
 	 * finds a clean dirty range, which is a no-op.
 	 */
+	g_last_input = k_uptime_get();
+
+	/*
+	 * And it is the wake, for the same reason: this function is called
+	 * once per drained batch of actions and nothing else, so it is exactly
+	 * "the user did something". The first press of a blanked screen wakes
+	 * it; the action still happens underneath, which is what you want from
+	 * a screen that is off rather than locked.
+	 */
+	set_dimmed(false);
 	render_dirty();
 }
 
 /* ---- scheduler --------------------------------------------------------- */
 
-static void idle_backlight(void)
+/*
+ * Take the display down, or bring it back.
+ *
+ * Two hardware cases, and the second is the one the supplied wiring has. With
+ * a dimmable or switchable backlight, turning the light off is the cheapest
+ * possible blank and the panel keeps its image. With the backlight strapped
+ * to VCC there is no light to turn off, so the panel is blanked instead: the
+ * UI goes away and the backlight stays lit, which is a dark screen rather
+ * than an off one. That is the ceiling of what firmware can do on that
+ * wiring, and it is worth naming rather than looking like a half-done job.
+ */
+static void set_dimmed(bool dim)
 {
-	if (CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S == 0 ||
-	    nexus_display_backlight_mode() == NEXUS_BACKLIGHT_FIXED) {
+	if (g_dimmed == dim || CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S == 0) {
 		return;
+	}
+	g_dimmed = dim;
+
+	if (nexus_display_backlight_mode() == NEXUS_BACKLIGHT_FIXED) {
+		nexus_display_sleep(dim);
+	} else {
+		nexus_display_backlight_set(dim ? 0 : 100);
+	}
+
+	if (!dim) {
+		/* The panel keeps its memory across a blank, but a repaint
+		 * costs one frame and removes any question about what is on
+		 * it - including anything a game drew while it was dark. */
+		nexus_screen_invalidate();
+	}
+}
+
+static void idle_display(void)
+{
+	static bool was_active = true;
+
+	if (CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S == 0) {
+		return;
+	}
+
+	/*
+	 * Someone typing is not idle, however long since they last touched the
+	 * dongle's own button - and typing happens on the halves, which this
+	 * board cannot see. ZMK's activity state is the only thing that knows,
+	 * so the timeout runs from whichever came last: ZMK saying the user
+	 * went away, or the last press of the button in front of us.
+	 */
+	bool active = nexus_status_get()->user_active;
+
+	if (active != was_active) {
+		was_active = active;
+		if (!active) {
+			g_idle_since = k_uptime_get();
+		}
 	}
 
 	/* Never blank mid-game: the player is looking at it even when they are
 	 * not pressing anything (Section 66). */
 	const struct nexus_screen *cur = nexus_screen_current();
 
-	if (cur && cur->refresh == NEXUS_REFRESH_FAST) {
+	if (active || (cur && cur->refresh == NEXUS_REFRESH_FAST)) {
+		set_dimmed(false);
 		return;
 	}
 
-	bool idle = (k_uptime_get() - g_last_input) >
-		    (int64_t)CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S * MSEC_PER_SEC;
+	int64_t quiet = k_uptime_get() - MAX(g_last_input, g_idle_since);
 
-	nexus_display_backlight_set(idle ? 0 : 100);
+	set_dimmed(quiet > (int64_t)CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S *
+				   MSEC_PER_SEC);
 }
 
 static void tick_work_fn(struct k_work *work)
@@ -226,7 +308,7 @@ static void tick_work_fn(struct k_work *work)
 		cur->tick();
 	}
 
-	idle_backlight();
+	idle_display();
 	k_work_reschedule_for_queue(nexus_workq(), &g_tick,
 				    K_MSEC(current_rate_ms()));
 }

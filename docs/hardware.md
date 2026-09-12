@@ -61,7 +61,7 @@ Three levels of support, chosen entirely by devicetree:
 
 | devicetree | Behaviour |
 | --- | --- |
-| nothing | `FIXED`. Panel sleep still works, backlight timeout does not. |
+| nothing | `FIXED`. The idle timeout blanks the **panel** instead: the UI goes, the backlight stays lit. Darker, not dark. |
 | `nexus-backlight` alias on a `gpio-leds` child | On/off. `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` works. |
 | `nexus-backlight-pwm` alias on a `pwm-leds` child | Real brightness, 0-100%. |
 

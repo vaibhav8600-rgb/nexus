@@ -24,6 +24,11 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 
 static struct nexus_status g_status = {
 	.layer_name = "DEFAULT",
+	/* Present until ZMK says otherwise. Zero here would mean "the user has
+	 * gone" from boot until the first transition arrives - and ZMK only
+	 * sends transitions, so on a build without the event it would never
+	 * arrive and the display would idle out while someone watched it. */
+	.user_active = true,
 	.battery_left = NEXUS_BATTERY_UNKNOWN,
 	.battery_right = NEXUS_BATTERY_UNKNOWN,
 	.battery_dongle = NEXUS_BATTERY_UNKNOWN,

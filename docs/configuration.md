@@ -27,7 +27,7 @@ string, and CI fails the build if one appears (Requirement B).
 | `CONFIG_NEXUS_UI_REFRESH_FAST_MS` | `16` | Games and animations. This is the **hard ceiling on every game's frame rate** -- a game may tick as often as it likes, but nothing reaches the panel more than once per period. It was 33 when the bus ran at 8 MHz and more would only have queued work that could never land. |
 | `CONFIG_NEXUS_UI_REFRESH_NORMAL_MS` | `200` | Status dashboard. |
 | `CONFIG_NEXUS_UI_REFRESH_IDLE_MS` | `1000` | Static screens. |
-| `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` | `0` | Blank after N idle seconds. `0` disables. Never fires during a game. Needs a controllable backlight -- see [hardware.md](hardware.md#backlight). |
+| `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` | `0` | Blank the display after N idle seconds. `0` disables. Idle is ZMK's activity state leaving ACTIVE, so typing on either half counts. Never fires during a game, and any action wakes it. Works on every wiring, but what it can do depends on the backlight -- see [hardware.md](hardware.md#backlight). |
 
 The three refresh rates are the whole of Section 60's frame manager: each
 screen declares which class it belongs to and the scheduler picks the period.

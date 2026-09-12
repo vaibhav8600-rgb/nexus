@@ -57,7 +57,8 @@ enum nexus_battery_band {
 #define NEXUS_STATUS_LOCKS    BIT(5)
 #define NEXUS_STATUS_LINKS    BIT(6)
 #define NEXUS_STATUS_JIGGLE   BIT(7)
-#define NEXUS_STATUS_ALL      0xFF
+#define NEXUS_STATUS_ACTIVE   BIT(8)
+#define NEXUS_STATUS_ALL      0x1FF
 
 struct nexus_status {
 	const char *layer_name;
@@ -105,6 +106,22 @@ struct nexus_status {
 	 * present in the struct so widgets need no #ifdef; simply never true
 	 * without the module that reports it. */
 	bool anti_idle;
+
+	/*
+	 * ZMK says someone is using the keyboard: its activity state is
+	 * ACTIVE rather than IDLE or SLEEP.
+	 *
+	 * This is the only honest source for "is the user there". ZMK's
+	 * activity module already watches key presses on both halves and the
+	 * encoders, which nothing on the dongle can see directly - the dongle
+	 * is a central with no switches of its own, and a status event like a
+	 * battery report says only that time passed.
+	 *
+	 * True until told otherwise: a build without the activity event
+	 * should behave as though the user is always there, never as though
+	 * they have gone.
+	 */
+	bool user_active;
 };
 
 /** Live model. Read-only for everything outside src/status/. */

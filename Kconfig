@@ -112,10 +112,22 @@ config NEXUS_UI_REFRESH_IDLE_MS
 	default 1000
 
 config NEXUS_BACKLIGHT_TIMEOUT_S
-	int "Blank the backlight after N idle seconds (0 = never)"
+	int "Blank the display after N idle seconds (0 = never)"
 	default 0
 	help
-	  Never applied while a game is running or ZMK Studio is connected.
+	  Idle means ZMK's activity state has left ACTIVE - so someone typing
+	  on either half counts, which the dongle cannot see any other way -
+	  and the dongle's own button has not been pressed since.
+
+	  What blanking does depends on the wiring. With a switchable or
+	  dimmable backlight the light goes off and the panel keeps its image.
+	  With the backlight strapped to VCC there is nothing to switch, so the
+	  panel is blanked instead: the UI goes away and the backlight stays
+	  lit. Darker, not dark.
+
+	  Never applied while a game is running - the player is looking at it
+	  even when they are not pressing anything. Any action wakes it, and
+	  the press that wakes it still does its job.
 
 endif # NEXUS_DISPLAY
 

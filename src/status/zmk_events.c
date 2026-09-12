@@ -371,27 +371,40 @@ static int nexus_status_listener(const zmk_event_t *eh)
 			as_zmk_battery_state_changed(eh)->state_of_charge;
 		nexus_status_mark(NEXUS_STATUS_BATTERY);
 	}
-#if IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT)
 	else if (as_zmk_activity_state_changed(eh)) {
-		/*
-		 * ACTIVE <-> SLEEP only. IDLE is skipped on purpose: with the
-		 * stock CONFIG_ZMK_IDLE_TIMEOUT the dongle drops to IDLE after
-		 * 30 s of not typing, so chirping on it would mean a noise
-		 * every half minute you look away.
-		 */
 		static enum zmk_activity_state prev = ZMK_ACTIVITY_ACTIVE;
 		enum zmk_activity_state now =
 			as_zmk_activity_state_changed(eh)->state;
+		struct nexus_status *st = nexus_status_mut();
+		bool active = (now == ZMK_ACTIVITY_ACTIVE);
 
-		if (now == ZMK_ACTIVITY_SLEEP && prev != ZMK_ACTIVITY_SLEEP) {
-			nexus_sound_play(NEXUS_SOUND_SLEEP);
-		} else if (now == ZMK_ACTIVITY_ACTIVE &&
-			   prev == ZMK_ACTIVITY_SLEEP) {
-			nexus_sound_play(NEXUS_SOUND_WAKE);
+		/*
+		 * The model takes every transition, including IDLE: it is what
+		 * the display idle timeout counts from, and ZMK's own idle
+		 * window is the only thing that knows a key was pressed.
+		 */
+		if (st->user_active != active) {
+			st->user_active = active;
+			nexus_status_mark(NEXUS_STATUS_ACTIVE);
+		}
+
+		/*
+		 * The chirp is ACTIVE <-> SLEEP only. IDLE is skipped on
+		 * purpose: with the stock CONFIG_ZMK_IDLE_TIMEOUT the dongle
+		 * drops to IDLE after 30 s of not typing, so chirping on it
+		 * would mean a noise every half minute you look away.
+		 */
+		if (IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT)) {
+			if (now == ZMK_ACTIVITY_SLEEP &&
+			    prev != ZMK_ACTIVITY_SLEEP) {
+				nexus_sound_play(NEXUS_SOUND_SLEEP);
+			} else if (now == ZMK_ACTIVITY_ACTIVE &&
+				   prev == ZMK_ACTIVITY_SLEEP) {
+				nexus_sound_play(NEXUS_SOUND_WAKE);
+			}
 		}
 		prev = now;
 	}
-#endif
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 	else if (as_zmk_peripheral_battery_state_changed(eh)) {
 		const struct zmk_peripheral_battery_state_changed *p =
@@ -409,9 +422,9 @@ ZMK_SUBSCRIPTION(nexus_status, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_keycode_state_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(nexus_status, zmk_battery_state_changed);
-#if IS_ENABLED(CONFIG_NEXUS_SOUND_SPLIT)
+/* Unconditional now: the sound chirps were the only consumer, but the display
+ * idle timeout counts from this too, and it has nothing else to count from. */
 ZMK_SUBSCRIPTION(nexus_status, zmk_activity_state_changed);
-#endif
 #if IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)
 ZMK_SUBSCRIPTION(nexus_status, zmk_anti_idle_state);
 #endif
