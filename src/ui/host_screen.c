@@ -165,7 +165,10 @@ static void host_draw(void)
 
 	draw_clock();
 	draw_meter(NEXUS_PAD, 106, "CPU", h->cpu);
-	draw_meter(NEXUS_PAD + 112, 110, "MEM", h->mem);
+	/* RAM, not MEM: same three characters, one of them a word people
+	 * actually say. The wire keeps 'M' - that is a protocol letter, and
+	 * renaming it would break every companion already written. */
+	draw_meter(NEXUS_PAD + 112, 110, "RAM", h->mem);
 	draw_now_playing();
 }
 

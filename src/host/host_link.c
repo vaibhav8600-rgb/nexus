@@ -213,10 +213,19 @@ static void parse_work_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
-	if (!atomic_cas(&g_line_ready, 1, 0)) {
+	if (!atomic_get(&g_line_ready)) {
 		return;
 	}
 	parse_line(g_line);
+	/*
+	 * Cleared after the parse, not before. The ISR only writes g_line when
+	 * this flag is clear, so holding it up for the length of the parse is
+	 * what stops the ISR overwriting the line being read - clearing it
+	 * first would leave exactly the torn-line race the two buffers exist
+	 * to avoid. A line dropped in that window costs nothing; the next one
+	 * carries the same current values a second later.
+	 */
+	atomic_set(&g_line_ready, 0);
 
 	/*
 	 * Restart the staleness timer on every line. A companion that is

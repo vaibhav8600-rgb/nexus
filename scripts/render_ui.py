@@ -689,7 +689,7 @@ def host(cv, t, link=True, clock='1:32', suffix='PM', cpu=37, mem=62,
                     suffix, BODY, t['caption'])
 
     host_meter(cv, t, PAD, 106, 'CPU', cpu)
-    host_meter(cv, t, PAD + 112, 110, 'MEM', mem)
+    host_meter(cv, t, PAD + 112, 110, 'RAM', mem)
 
     u.card(PAD, K['NP_Y'], CONTENT_W, K['NP_H'])
     u.caption(PAD + 8, K['NP_Y'] + 7, 'NOW PLAYING')

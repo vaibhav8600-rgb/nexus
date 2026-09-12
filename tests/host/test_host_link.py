@@ -161,6 +161,15 @@ def main():
            'the ISR does not call %s()' % forbidden)
     ok('if (g_rx_len < LINE_MAX - 1)' in c,
        'the line buffer cannot overrun - longer lines truncate')
+    # The ISR writes g_line only while the ready flag is clear, so the flag
+    # has to stay up for the whole parse. Clearing it first - which an
+    # atomic_cas(1, 0) at the top of the work item does - lets the ISR
+    # overwrite the line being parsed, and a torn line reads as a plausible
+    # wrong number rather than a crash.
+    work = c.split('static void parse_work_fn')[-1].split('\n}\n')[0]
+    ok(work.index('parse_line(g_line)')
+       < work.index('atomic_set(&g_line_ready, 0)'),
+       'the ready flag is cleared after the parse, not before it')
     ok('k_work_reschedule_for_queue(nexus_workq(), &g_stale' in c,
        'every line restarts the staleness timer')
     # [-1]: the name appears as a forward declaration and in the work

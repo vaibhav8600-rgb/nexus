@@ -72,7 +72,7 @@ firmware without breaking it.
 | --- | --- |
 | `T 48720` | Local time as seconds since midnight. `48720` is 13:32. |
 | `C 37` | CPU load, 0-100. |
-| `M 62` | Memory used, 0-100. |
+| `M 62` | Memory used, 0-100. Drawn as `RAM`. |
 | `N Artist - Title` | Now playing. Empty clears it. Truncated at 39 characters. |
 | `X` | The companion is quitting. Everything reads unknown again immediately. |
 

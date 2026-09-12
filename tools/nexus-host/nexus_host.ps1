@@ -130,6 +130,8 @@ try { Get-Counter $cpuCounter -ErrorAction Stop | Out-Null } catch {}
 
 Write-Output 'NEXUS companion running. Ctrl-C to stop.'
 $open = @{}
+$script:moaned = @{}      # ports already complained about, so it is said once
+$script:waiting = $false
 
 try {
   # Outer loop: reconnect rather than exit. The dongle disappears from USB on
@@ -151,14 +153,29 @@ try {
                 $open[$name] = $sp
                 Write-Output "open $name"
             } catch {
-                Write-Verbose "$name : $($_.Exception.Message)"
+                # Said once per port, not once per retry: a port that is
+                # busy stays busy, and three lines a second of that is not
+                # a log, it is noise. Silence would be worse though - a
+                # companion that says "running" while quietly failing to
+                # open anything is the most confusing state it can be in,
+                # and "Access is denied" here almost always means another
+                # copy of this script already has the port.
+                if (-not $script:moaned[$name]) {
+                    Write-Warning "$name : $($_.Exception.Message)"
+                    $script:moaned[$name] = $true
+                }
             }
         }
         if ($open.Count -eq 0) {
-            Write-Verbose 'no dongle; waiting'
+            if (-not $script:waiting) {
+                Write-Output 'waiting for the dongle'
+                $script:waiting = $true
+            }
             Start-Sleep -Seconds 3
             continue
         }
+        $script:waiting = $false
+        $script:moaned = @{}
         # A fresh link knows nothing about us: resend everything.
         $lastClock = [datetime]::MinValue
         $lastNp = $null
@@ -188,6 +205,17 @@ try {
         $np = Get-NowPlaying
         if ($np.Length -gt $TEXT_MAX) { $np = $np.Substring(0, $TEXT_MAX) }
         if ($np -ne $lastNp) { $lines.Add("N $np"); $lastNp = $np }
+
+        # Never nothing. The dongle drops the link after a few silent seconds,
+        # so a round where every reading failed and the track did not change
+        # would show NO LINK while this is plainly still running - the one
+        # state that sends you looking for a hardware fault that is not there.
+        # A clock resend is the cheapest line to say it with: the dongle draws
+        # minutes, so landing in the same one costs no repaint.
+        if ($lines.Count -eq 0) {
+            $now = Get-Date
+            $lines.Add('T ' + [int]($now - $now.Date).TotalSeconds)
+        }
 
         foreach ($name in @($open.Keys)) {
             foreach ($line in $lines) {
