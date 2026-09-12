@@ -54,4 +54,21 @@ int nexus_button_init(void);
 int nexus_backlight_init(void);
 int nexus_host_link_init(void);
 
+/*
+ * One field of the host model changed. The HOST screen repaints the card that
+ * shows it, and nothing at all when it is not the screen you are looking at.
+ *
+ * Here rather than in host_link.c because the row numbers are layout, and
+ * layout lives with the drawing. The link knows what changed; the screen
+ * knows where it is.
+ */
+enum nexus_host_field {
+	NEXUS_HOST_F_LINK,   /* the header, and every value with it */
+	NEXUS_HOST_F_CLOCK,
+	NEXUS_HOST_F_LOAD,   /* cpu and mem share a row */
+	NEXUS_HOST_F_NP,
+};
+
+void nexus_host_screen_dirty(enum nexus_host_field field);
+
 #endif /* NEXUS_PRIV_H_ */

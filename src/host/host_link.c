@@ -101,29 +101,50 @@ static void parse_line(const char *line)
 {
 	char key = line[0];
 	const char *val = line[1] == ' ' ? &line[2] : &line[1];
+	bool was_linked = g_host.link;
 	uint32_t n;
 
+	/*
+	 * Every branch repaints only if the value actually moved, and only the
+	 * card that shows it. A companion sends the same CPU figure for
+	 * seconds at a time, and a number that has not changed is not news.
+	 */
 	switch (key) {
 	case 'C':
 		n = to_u32(val, 100);
-		g_host.cpu = (n == UINT32_MAX) ? NEXUS_HOST_UNKNOWN
-					       : (uint8_t)n;
+		n = (n == UINT32_MAX) ? NEXUS_HOST_UNKNOWN : n;
+		if (g_host.cpu != (uint8_t)n) {
+			g_host.cpu = (uint8_t)n;
+			nexus_host_screen_dirty(NEXUS_HOST_F_LOAD);
+		}
 		break;
 	case 'M':
 		n = to_u32(val, 100);
-		g_host.mem = (n == UINT32_MAX) ? NEXUS_HOST_UNKNOWN
-					       : (uint8_t)n;
+		n = (n == UINT32_MAX) ? NEXUS_HOST_UNKNOWN : n;
+		if (g_host.mem != (uint8_t)n) {
+			g_host.mem = (uint8_t)n;
+			nexus_host_screen_dirty(NEXUS_HOST_F_LOAD);
+		}
 		break;
 	case 'T':
 		n = to_u32(val, 86399);
-		if (n != UINT32_MAX) {
-			g_host.clock_sec = n;
-			g_host.clock_at = k_uptime_get();
+		if (n == UINT32_MAX) {
+			break;
 		}
+		/* The minute on the face is what is drawn, so a resync that
+		 * lands in the same minute is not worth a frame. */
+		if (nexus_host_clock() / 60U != n / 60U) {
+			nexus_host_screen_dirty(NEXUS_HOST_F_CLOCK);
+		}
+		g_host.clock_sec = n;
+		g_host.clock_at = k_uptime_get();
 		break;
 	case 'N':
-		strncpy(g_host.now_playing, val, NEXUS_HOST_TEXT - 1);
-		g_host.now_playing[NEXUS_HOST_TEXT - 1] = '\0';
+		if (strncmp(g_host.now_playing, val, NEXUS_HOST_TEXT - 1)) {
+			strncpy(g_host.now_playing, val, NEXUS_HOST_TEXT - 1);
+			g_host.now_playing[NEXUS_HOST_TEXT - 1] = '\0';
+			nexus_host_screen_dirty(NEXUS_HOST_F_NP);
+		}
 		break;
 	case 'X':
 		/* The companion is going away and says so, rather than leaving
@@ -132,14 +153,18 @@ static void parse_line(const char *line)
 		g_host.mem = NEXUS_HOST_UNKNOWN;
 		g_host.now_playing[0] = '\0';
 		g_host.link = false;
-		nexus_screen_invalidate();
+		nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
 		return;
 	default:
 		return;
 	}
 
 	g_host.link = true;
-	nexus_screen_invalidate();
+	if (!was_linked) {
+		/* Coming up is the one time the whole screen changes: the
+		 * header, and every dash that becomes a number. */
+		nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
+	}
 }
 
 static void parse_work_fn(struct k_work *work)
@@ -168,7 +193,7 @@ static void stale_work_fn(struct k_work *work)
 		return;
 	}
 	g_host.link = false;
-	nexus_screen_invalidate();
+	nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
 }
 
 /* ---- the wire ----------------------------------------------------------- */
@@ -204,14 +229,23 @@ static void uart_cb(const struct device *dev, void *user_data)
 		g_rx[g_rx_len] = '\0';
 
 		/*
-		 * If the work item has not consumed the last line yet, this
-		 * one replaces it. Dropping the older of two lines is right
-		 * for a feed of current values - none of them are events, and
-		 * the next update is a second away.
+		 * Drop this line if the work item has not taken the last one.
+		 *
+		 * Overwriting it instead would be writing g_line from an
+		 * interrupt while the parser reads it - a torn line, and a
+		 * race that would show up as an occasional nonsense value
+		 * rather than a crash, which is the worst kind. Losing a line
+		 * costs nothing here: none of these are events, they are
+		 * current values, and the next one is a second away.
 		 */
-		memcpy(g_line, g_rx, (size_t)g_rx_len + 1U);
-		atomic_set(&g_line_ready, 1);
+		uint8_t len = g_rx_len;
+
 		g_rx_len = 0;
+		if (atomic_get(&g_line_ready)) {
+			continue;
+		}
+		memcpy(g_line, g_rx, (size_t)len + 1U);
+		atomic_set(&g_line_ready, 1);
 		k_work_submit_to_queue(nexus_workq(), &g_parse);
 	}
 }

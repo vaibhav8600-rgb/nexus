@@ -169,6 +169,39 @@ static void host_draw(void)
 	draw_now_playing();
 }
 
+void nexus_host_screen_dirty(enum nexus_host_field field)
+{
+	/*
+	 * Not the screen in front of you: nothing to repaint. This is the
+	 * whole of the cost. A companion sends two or three lines a second,
+	 * and before this every one of them repainted all 240 rows - while
+	 * you were on the dashboard, or mid-game, where none of it is even
+	 * drawn. The panel is the slowest thing on this device; the cheapest
+	 * frame is the one never sent.
+	 */
+	if (nexus_screen_current() != &nexus_screen_host_def) {
+		return;
+	}
+
+	switch (field) {
+	case NEXUS_HOST_F_CLOCK:
+		nexus_screen_invalidate_rows(CLOCK_Y, CLOCK_Y + CLOCK_H);
+		break;
+	case NEXUS_HOST_F_LOAD:
+		nexus_screen_invalidate_rows(METER_Y, METER_Y + METER_H);
+		break;
+	case NEXUS_HOST_F_NP:
+		nexus_screen_invalidate_rows(NP_Y, NP_Y + NP_H);
+		break;
+	case NEXUS_HOST_F_LINK:
+	default:
+		/* The header says LINKED or not, and every value below it
+		 * turns to dashes with it. That is the whole screen. */
+		nexus_screen_invalidate();
+		break;
+	}
+}
+
 const struct nexus_screen nexus_screen_host_def = {
 	.name = "HOST",
 	.draw = host_draw,

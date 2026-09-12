@@ -137,6 +137,33 @@ def main():
        'uart_poll_out' not in c,
        'receive only - the dongle has no way to talk back')
 
+    print('\nIt repaints what moved, and only when you are looking')
+    # Every parsed line used to call nexus_screen_invalidate() - a full 240
+    # row repaint, two or three times a second, while you were on the
+    # dashboard or mid-game where none of it is drawn.
+    ok('nexus_screen_invalidate()' not in c,
+       'the link never repaints the whole screen itself')
+    ok(c.count('nexus_host_screen_dirty') >= 5,
+       'it names the field that changed and lets the screen decide')
+    for field in ('C', 'M', 'N'):
+        branch = c.split("case '%s':" % field)[1].split('break;')[0]
+        ok('if (' in branch and 'nexus_host_screen_dirty' in branch,
+           "'%s' repaints only when the value actually moved" % field)
+    # to the next case label: T guards an early break of its own.
+    clock = c.split("case 'T':")[1].split("case '")[0]
+    ok('/ 60U != ' in clock,
+       "'T' repaints only when the minute on the face changes, not on every "
+       'resync')
+
+    hs = read('src', 'ui', 'host_screen.c')
+    dirty = hs.split('void nexus_host_screen_dirty')[1].split('\n}\n')[0]
+    ok('nexus_screen_current() != &nexus_screen_host_def' in dirty,
+       'and nothing is repainted at all when HOST is not the current screen')
+    for rows in ('CLOCK_Y, CLOCK_Y + CLOCK_H', 'METER_Y, METER_Y + METER_H',
+                 'NP_Y, NP_Y + NP_H'):
+        ok(rows in dirty,
+           'a field maps to its own card (%s)' % rows.split(',')[0])
+
     print('\nThe screen survives having no host')
     s = read('src', 'ui', 'host_screen.c')
     ok(s.count('NEXUS_HOST_UNKNOWN') >= 1 and '"--"' in s,
