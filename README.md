@@ -32,6 +32,14 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
   high scores, and a difficulty knob in Settings so you never reflash to
   change how a game feels.
   ([watch them play](docs/ui.md#games))
+- **HOST screen** -- the time and date, CPU and RAM load, and the track and
+  artist playing on the machine it is plugged into. The companion needs
+  nothing installed on Windows, Linux or macOS, and with no companion at all
+  the screen still shows how long the host has been connected. The time and
+  date also sit either side of the name on the dashboard.
+  ([details](docs/host-link.md))
+- **Display blanking** after a configurable idle time, woken by typing on
+  either half -- on any backlight wiring.
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
   nRF52840 to blur a framebuffer.
 
@@ -118,7 +126,7 @@ buzzer and two tactile switches.
 | [themes.md](docs/themes.md) | The seven palettes, and how the glass is faked |
 | [games.md](docs/games.md) | The seven games, difficulty, and adding your own |
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
-| [host-link.md](docs/host-link.md) | The companion app: clock, CPU, memory, now playing |
+| [host-link.md](docs/host-link.md) | The HOST screen and its companion: clock and date, CPU, RAM, now playing |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |

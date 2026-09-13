@@ -517,14 +517,69 @@ HOME = defines(read('src/ui/home.c'),
 G = home_glyphs()
 
 
-def home(cv, t, st):
+def numerals_w(s, scale):
+    """nexus_host_numerals_w()."""
+    w = sum(4 * scale if ch == ':' else face_w('0', scale) + scale for ch in s)
+    return w - scale if w else 0
+
+
+def numerals(cv, x, y, s, scale, c):
+    """nexus_host_numerals(): the display face, with ':' and '-' drawn."""
+    for ch in s:
+        if ch == ':':
+            cv.rect(x + scale, y + 4 * scale, 2 * scale, 2 * scale, c)
+            cv.rect(x + scale, y + 9 * scale, 2 * scale, 2 * scale, c)
+            x += 4 * scale
+            continue
+        if ch == '-':
+            cv.rect(x + 2 * scale, y + 6 * scale, 6 * scale, 2 * scale, c)
+        else:
+            cv.glyph(x, y, F10[ord(ch) - 32], FACE_W, FACE_H, scale, c)
+        x += face_w('0', scale) + scale
+    return x
+
+
+def face_text(cv, x, y, s, scale, c):
+    for ch in s:
+        cv.glyph(x, y, F10[ord(ch) - 32], FACE_W, FACE_H, scale, c)
+        x += (FACE_W + 1) * scale
+
+
+def home_plate_clock(cv, t, clock, suffix, date):
+    """draw_host_clock() in home.c: time and date either side of the name.
+    Time and weekday in the display face at 1x, AM/PM and date in caption
+    type under them. @p date is (weekday, "13 SEP") or None."""
+    K = HOME
+    row1, row2 = K['BRAND_Y'] + 12, K['BRAND_Y'] + 30
+    half = face_w('NEXUS', 2) // 2 + 4
+    l0, l1 = K['COL_L'], W // 2 - half
+    r0, r1 = W // 2 + half, K['COL_L'] + CONTENT_W
+
+    def centred(a, b, w):
+        return (a + b) // 2 - w // 2
+
+    numerals(cv, centred(l0, l1, numerals_w(clock, 1)), row1, clock, 1,
+             t['value'])
+    if suffix:
+        cv.text(centred(l0, l1, text_w(suffix, CAPTION)), row2, suffix,
+                CAPTION, t['caption'])
+    if date:
+        wd, dm = date
+        face_text(cv, centred(r0, r1, face_w(wd, 1)), row1, wd, 1, t['accent'])
+        cv.text(centred(r0, r1, text_w(dm, CAPTION)), row2, dm, CAPTION,
+                t['caption'])
+
+
+def home(cv, t, st, clock=None, suffix=None, date=None):
     u, K = UI(cv, t), HOME
     u.ground()
 
-    # brand plate
+    # brand plate, and the host's clock beside the name once there is one
     u.card(K['COL_L'], K['BRAND_Y'], CONTENT_W, K['BRAND_H'])
     u.wordmark(W // 2,
                K['BRAND_Y'] + (K['BRAND_H'] - wordmark_h(2)) // 2, 'NEXUS', 2)
+    if clock is not None:
+        home_plate_clock(cv, t, clock, suffix, date)
 
     # link cluster: usb, ble, profile number, status tile
     u.card(K['COL_L'], K['ROW1_Y'], K['COL_W'], K['ROW1_H'])
@@ -646,50 +701,175 @@ def menu(cv, t, title, rows, cursor=0):
 
 
 # ---------------------------------------------------------------- host
-HOST = defines(read('src/ui/host_screen.c'),
-               ['CLOCK_Y', 'CLOCK_H', 'METER_Y', 'METER_H', 'NP_Y', 'NP_H'])
+HOST_SRC = read('src/ui/host_screen.c')
+HOST = defines(HOST_SRC, ['HDR_Y', 'PILL_H', 'CLOCK_Y', 'CLOCK_H', 'METER_Y',
+                          'METER_H', 'NP_Y', 'NP_H', 'STAT_W', 'TILE', 'ART',
+                          'EQ_ROOM', 'BIG', 'MON_W', 'MON_H',
+                          'ICON_H', 'CHIP_W', 'RAM_W', 'NOTE_W'])
+HOST_ICONS = {m.group(1): [int(v, 16) for v in
+                           re.findall(r'0x([0-9A-Fa-f]+)', m.group(2))]
+              for m in re.finditer(r'static const uint16_t (\w+)\[\w+\]\s*=\s*'
+                                   r'\{([^;]*?)\};', HOST_SRC, re.S)}
+WDAY = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+MONTH = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+         'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
 
-def host_meter(cv, t, x, w, label, pct):
-    u, K = UI(cv, t), HOST
-    u.card(x, K['METER_Y'], w, K['METER_H'])
-    u.caption(x + 8, K['METER_Y'] + 7, label)
-    if pct is None:
-        cv.text(x + 8, K['METER_Y'] + 21, '--', VALUE, t['muted'])
-        return
-    cv.text(x + 8, K['METER_Y'] + 19, str(pct), VALUE, t['value'])
-    u.meter(x + 8, K['METER_Y'] + K['METER_H'] - 12, w - 16, 6, pct,
-            t['warning'] if pct >= 80 else t['accent'])
+def host_date(days):
+    """format_date() in host_screen.c: civil_from_days."""
+    z = days + 719468
+    era, doe = z // 146097, z % 146097
+    yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    mp = (5 * doy + 2) // 153
+    mday = doy - (153 * mp + 2) // 5 + 1
+    mon = mp + 2 if mp < 10 else mp - 10
+    year = yoe + era * 400 + (1 if mon <= 1 else 0)
+    return '%s %d %s %d' % (WDAY[(days + 4) % 7], mday, MONTH[mon], year)
 
 
-def host(cv, t, link=True, clock='13:32', cpu=37, mem=62,
-         np='Miles Davis - So What'):
-    """The HOST screen, with a companion connected. Mirrors host_screen.c."""
-    u, K = UI(cv, t), HOST
+def host_fit(s, scale, room):
+    """fit_text(): cut to the room, '..' where it was cut."""
+    n = (room + scale) // (text_w('0', scale) + scale)
+    return s if len(s) <= n else s[:max(n - 2, 0)] + '..'
+
+
+def host_runs(cv, t, y, runs, big_c, unit_c):
+    """draw_runs(): numerals in the display face at BIG, units beside."""
+    K = HOST
+    big = K['BIG']
+
+    def run_w(r):
+        s, is_big = r
+        return numerals_w(s, big) if is_big else face_w(s, 1)
+
+    def gap(r):
+        return 10 if r[1] else 4
+
+    total = sum(run_w(r) + (gap(r) if i else 0) for i, r in enumerate(runs))
+    x = W // 2 - total // 2
+    for i, r in enumerate(runs):
+        if i:
+            x += gap(r)
+        s, is_big = r
+        if not is_big:
+            for k, ch in enumerate(s):
+                cv.glyph(x + k * (FACE_W + 1), y + FACE_H * big - FACE_H,
+                         F10[ord(ch) - 32], FACE_W, FACE_H, 1, unit_c)
+            x += run_w(r)
+            continue
+        numerals(cv, x, y, s, big, big_c)
+        x += run_w(r)
+
+
+def host(cv, t, link=True, clock='10:12', suffix='PM', day=20709,
+         host_up=True, session_min=134, cpu=64, mem=68, title='NEON NIGHTS',
+         artist='RETROSYNTH'):
+    """The HOST screen. Mirrors host_screen.c. day 20709 is 2026-09-13."""
+    u, K, ic = UI(cv, t), HOST, HOST_ICONS
     u.ground()
-    u.label(PAD, 6, 'HOST')
+
+    # header
+    on = t['success'] if link else t['muted']
     state = 'LINKED' if link else 'NO LINK'
-    cv.text(W - PAD - text_w(state, LABEL), 6, state, LABEL,
-            t['accent'] if link else t['muted'])
+    pw = text_w(state, CAPTION) + 26
+    px = W - PAD - pw
+    cv.glyph(PAD, K['HDR_Y'] + 3, ic['ic_monitor'], K['MON_W'], K['MON_H'], 2,
+             t['accent'] if link else t['muted'])
+    u.label(PAD + 28, K['HDR_Y'] + 3, 'HOST')
+    cv.round_rect(px, K['HDR_Y'] + 2, pw, K['PILL_H'], K['PILL_H'] // 2, on,
+                  40)
+    cv.round_frame(px, K['HDR_Y'] + 2, pw, K['PILL_H'], K['PILL_H'] // 2, on,
+                   110)
+    cv.disc(px + 10, K['HDR_Y'] + 10, 3, on)
+    cv.text(px + 18, K['HDR_Y'] + 7, state, CAPTION, on)
 
-    u.card(PAD, K['CLOCK_Y'], CONTENT_W, K['CLOCK_H'])
-    if clock is None:
-        u.caption_c(W // 2, K['CLOCK_Y'] + 20, 'NO HOST CLOCK')
-        cv.text_c(W // 2, K['CLOCK_Y'] + 36, '--:--', BIG, t['muted'])
+    # clock
+    cy, y = K['CLOCK_Y'], K['CLOCK_Y'] + 10
+    u.card(PAD, cy, CONTENT_W, K['CLOCK_H'])
+    cv.round_frame(PAD, cy, CONTENT_W, K['CLOCK_H'], t['radius'], t['accent'],
+                   70)
+    if clock is not None:
+        runs = [(clock, True)] + ([(suffix, False)] if suffix else [])
+        host_runs(cv, t, y, runs, t['value'], t['caption'])
+        if day is not None:
+            u.tracked(W // 2, cy + 60, host_date(day), CAPTION, 2,
+                      t['accent'])
+        else:
+            u.tracked(W // 2, cy + 60, 'HOST TIME', CAPTION, 2, t['caption'])
+    elif host_up:
+        hrs = min(session_min // 60, 999)
+        if hrs:
+            runs = [(str(hrs), True), ('H', False),
+                    ('%02d' % (session_min % 60), True)]
+        else:
+            runs = [(str(session_min), True)]
+        host_runs(cv, t, y, runs + [('M', False)], t['value'], t['caption'])
+        u.tracked(W // 2, cy + 60, 'SINCE HOST CONNECTED', CAPTION, 2,
+                  t['caption'])
     else:
-        u.caption_c(W // 2, K['CLOCK_Y'] + 12, 'HOST TIME')
-        cv.text_c(W // 2, K['CLOCK_Y'] + 28, clock, BIG, t['value'])
+        host_runs(cv, t, y, [('--:--', True)], t['muted'], t['muted'])
+        u.tracked(W // 2, cy + 60, 'NO HOST', CAPTION, 2, t['caption'])
 
-    host_meter(cv, t, PAD, 106, 'CPU', cpu)
-    host_meter(cv, t, PAD + 112, 110, 'MEM', mem)
+    # stats - values outlive the link in the model, not on screen
+    for x, label, icon, iw, pct, acc in (
+            (PAD, 'CPU', 'ic_chip', K['CHIP_W'], cpu, t['accent']),
+            (PAD + K['STAT_W'] + 6, 'RAM', 'ic_ram', K['RAM_W'], mem,
+             t['accent_alt'])):
+        my, sw, tile = K['METER_Y'], K['STAT_W'], K['TILE']
+        known = link and pct is not None
+        hot = known and pct >= 80
+        c = acc if known else t['muted']
+        u.card(x, my, sw, K['METER_H'])
+        cv.round_frame(x, my, sw, K['METER_H'], t['radius'], c, 60)
+        cv.round_rect(x + 8, my + 8, tile, tile, 7, c, 45)
+        cv.glyph(x + 8 + (tile - iw * 2) // 2,
+                 my + 8 + (tile - K['ICON_H'] * 2) // 2,
+                 ic[icon], iw, K['ICON_H'], 2, c)
+        u.caption(x + 42, my + 9, label)
+        if not known:
+            cv.text(x + 42, my + 20, '--', VALUE, t['muted'])
+            u.meter(x + 8, my + 44, sw - 16, 6, 0, c)
+            continue
+        s = str(pct)
+        cv.text(x + 42, my + 19, s, VALUE, t['warning'] if hot else t['value'])
+        cv.text(x + 42 + text_w(s, VALUE) + 3,
+                my + 19 + text_h(VALUE) - text_h(CAPTION), '%', CAPTION,
+                t['caption'])
+        u.meter(x + 8, my + 44, sw - 16, 6, pct,
+                t['warning'] if hot else acc)
 
-    u.card(PAD, K['NP_Y'], CONTENT_W, K['NP_H'])
-    u.caption(PAD + 8, K['NP_Y'] + 7, 'NOW PLAYING')
-    if not link or not np:
-        cv.text(PAD + 8, K['NP_Y'] + 24, '--', BODY, t['muted'])
+    # now playing
+    ny, art = K['NP_Y'], K['ART']
+    playing = bool(link and title)
+    tx = PAD + 8 + art + 10
+    room = CONTENT_W - (8 + art + 10) - 8 - (K['EQ_ROOM'] if playing else 0)
+    u.card(PAD, ny, CONTENT_W, K['NP_H'])
+    cv.round_rect(PAD + 8, ny + 8, art, art, 8,
+                  t['accent_alt'] if playing else t['muted'], 50)
+    if playing:
+        cv.glyph(PAD + 14, ny + 14, ic['ic_note'], K['NOTE_W'], K['ICON_H'], 3,
+                 t['accent_alt'], bot=t['accent'])
     else:
-        sc = BODY if text_w(np, BODY) <= CONTENT_W - 16 else CAPTION
-        cv.text(PAD + 8, K['NP_Y'] + 24, np, sc, t['value'])
+        cv.glyph(PAD + 14, ny + 14, ic['ic_note'], K['NOTE_W'], K['ICON_H'], 3,
+                 t['muted'])
+    u.caption(tx, ny + 9, 'NOW PLAYING')
+    if not link:
+        cv.text(tx, ny + 21, '--', BODY, t['muted'])
+        return
+    if not playing:
+        cv.text(tx, ny + 21, 'NOTHING', BODY, t['muted'])
+        return
+    sc = BODY if text_w(title, BODY) <= room else CAPTION
+    cv.text(tx, ny + 21 + (0 if sc == BODY else 4), host_fit(title, sc, room),
+            sc, t['value'])
+    if artist:
+        cv.text(tx, ny + 39, host_fit(artist, CAPTION, room), CAPTION,
+                t['caption'])
+    bx = PAD + CONTENT_W - 8 - 18
+    for k, hgt in enumerate((10, 20, 14, 24)):
+        cv.round_rect(bx + k * 5, ny + 8 + art - hgt - 4, 3, hgt, 1,
+                      t['accent_alt'])
 
 
 def about(cv, t):
@@ -1219,6 +1399,8 @@ def main():
 
     shots = [
         ('home', lambda cv: home(cv, nx, STATUS)),
+        ('home-host', lambda cv: home(cv, nx, STATUS, clock='3:49',
+                                      suffix='PM', date=('SUN', '13 SEP'))),
         ('game-center', lambda cv: game_center(cv, nx, 0)),
         ('tetris', lambda cv: tetris(cv, nx)),
         ('snake', lambda cv: snake(cv, nx)),
@@ -1232,7 +1414,8 @@ def main():
         ('about', lambda cv: about(cv, nx)),
         ('host', lambda cv: host(cv, nx)),
         ('host-nolink', lambda cv: host(cv, nx, link=False, clock=None,
-                                        cpu=None, mem=None, np='')),
+                                        suffix=None, day=None, cpu=None,
+                                        mem=None, title='', artist='')),
         ('splash', lambda cv: splash(cv, nx)),
     ]
     for name, fn in shots:

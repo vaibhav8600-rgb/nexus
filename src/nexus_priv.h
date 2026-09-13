@@ -2,6 +2,7 @@
 #ifndef NEXUS_PRIV_H_
 #define NEXUS_PRIV_H_
 
+#include <nexus/gfx.h>   /* gfx_color, for the host text helpers below */
 #include <zephyr/kernel.h>
 #include <stdint.h>
 
@@ -53,5 +54,42 @@ int nexus_buzzer_tone(uint16_t freq_hz);
 int nexus_button_init(void);
 int nexus_backlight_init(void);
 int nexus_host_link_init(void);
+
+/*
+ * One field of the host model changed. The HOST screen repaints the card that
+ * shows it, and nothing at all when it is not the screen you are looking at.
+ *
+ * Here rather than in host_link.c because the row numbers are layout, and
+ * layout lives with the drawing. The link knows what changed; the screen
+ * knows where it is.
+ */
+enum nexus_host_field {
+	NEXUS_HOST_F_LINK,   /* the header, and every value with it */
+	NEXUS_HOST_F_CLOCK,
+	NEXUS_HOST_F_LOAD,   /* cpu and mem share a row */
+	NEXUS_HOST_F_NP,
+};
+
+void nexus_host_screen_dirty(enum nexus_host_field field);
+
+/*
+ * The host clock as text, shared by HOST and the home screen's brand plate so
+ * the two can never disagree about how a time is written. Both live in
+ * host_screen.c and exist only with CONFIG_NEXUS_HOST_LINK.
+ */
+
+/** "12:59" into @p buf (8 bytes is plenty), "AM"/"PM" or NULL on a 24 hour
+ *  clock into @p suffix. False, and nothing written, if no host has sent a
+ *  time. */
+bool nexus_host_time_text(char *buf, int len, const char **suffix);
+
+/** Days since 1970-01-01 to "SUN" (4 bytes), "13 SEP" (7), "2026" (5). */
+void nexus_host_date_text(uint32_t days, char *wday, char *dmon, char *yyyy);
+
+/** Clock numerals - digits, ':' and '-' - in the display face at @p scale.
+ *  Returns the pen position after the last glyph. */
+int nexus_host_numerals(int x, int y, const char *s, int scale, gfx_color c);
+/** Their width, without the trailing gap. */
+int nexus_host_numerals_w(const char *s, int scale);
 
 #endif /* NEXUS_PRIV_H_ */

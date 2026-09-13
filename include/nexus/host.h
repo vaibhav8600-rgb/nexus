@@ -38,8 +38,12 @@ struct nexus_host {
 	uint8_t mem;
 #define NEXUS_HOST_UNKNOWN 0xFF
 
-	/** Whatever the host is playing, already truncated. Empty for none. */
+	/** The track title the host is playing, already folded to what the
+	 *  font can draw. Empty for none. */
 	char now_playing[NEXUS_HOST_TEXT];
+	/** Its artist, the same way. Empty when the host did not say - an
+	 *  older companion sends "Artist - Title" as the title alone. */
+	char artist[NEXUS_HOST_TEXT];
 
 	/*
 	 * Wall-clock, as seconds since midnight local time, plus the uptime it
@@ -54,6 +58,15 @@ struct nexus_host {
 	 */
 	uint32_t clock_sec;
 	int64_t clock_at;
+
+	/*
+	 * Local date, as days since 1970-01-01, for the day clock_sec was
+	 * counted from - not for today. nexus_host_day() adds the midnights
+	 * the kernel clock has crossed since, so the date turns over with the
+	 * time instead of waiting for the next resync. UINT32_MAX until a
+	 * companion sends one.
+	 */
+	uint32_t day;
 };
 
 /** The live host model. Never NULL; all-unknown until a companion connects. */
@@ -65,6 +78,12 @@ const struct nexus_host *nexus_host(void);
  * uptime, and wraps at midnight.
  */
 uint32_t nexus_host_clock(void);
+
+/**
+ * Today's local date as days since 1970-01-01, or UINT32_MAX if the host has
+ * never sent one. Turns over at the same midnight nexus_host_clock() wraps.
+ */
+uint32_t nexus_host_day(void);
 
 #ifdef __cplusplus
 }

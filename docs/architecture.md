@@ -170,6 +170,20 @@ Zephyr, no NEXUS, no rendering. `tetris.c` does drawing, timing and sound.
 That boundary is why the rules have 100+ assertions running in CI in under a
 second, instead of "it looked right on the bench". Keep it.
 
+### The host link is one way, and off by default
+
+What only the PC knows - the time, its load, what it is playing - reaches the
+dongle over a second USB serial interface, as lines of text a companion
+writes. The dongle never writes back, so the companion cannot type or drive
+the keyboard, and a serial terminal is a debugger. The ISR moves bytes into a
+ring and posts work; lines are parsed on the display queue, and each field
+repaints only the card that shows it, only on the screen in front of you.
+
+With `CONFIG_NEXUS_HOST_LINK=n`, the default, none of it is compiled: no
+serial interface, no HOST screen, no clock on the home plate. A host test holds
+every call into it to an `#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)`. See
+[host-link.md](host-link.md).
+
 ### Memory choices
 
 | Thing | Chosen | Obvious alternative | Why |
@@ -181,6 +195,7 @@ second, instead of "it looked right on the bench". Keep it.
 | Splash default | drawn with primitives, ~200 B | 160x160 bitmap, 51 KB | it is a logo, not a photograph |
 | Sound | synthesised square waves | PCM samples | a passive buzzer wants a waveform anyway |
 | Glass | alpha tint over a gradient | real backdrop blur | over a linear gradient the tint *is* the correct result |
+| Host link receive | 256 B byte ring, one 72 B line, ~100 B model | a line queue, or parsing in the ISR | a whole update fits one ring; lines are assembled off the interrupt, so nothing is torn or dropped |
 
 ### What is *not* built
 
@@ -233,6 +248,8 @@ visual feature threatens anything above it, the visual feature loses.
 | `src/ui/` | Screens, widgets, theme. |
 | `src/games/` | Manager + Tetris, Snake and Breakout. |
 | `src/hal/` | Button, buzzer, backlight. |
+| `src/host/` | The host link: USB serial receive ring, line parser, the host model. Only with `CONFIG_NEXUS_HOST_LINK`. |
+| `tools/nexus-host/` | The companions that feed it: PowerShell for Windows, Python for Linux and macOS, `install.cmd` / `uninstall.cmd`. |
 | `src/behaviors/` | `&nexus_action`. |
 | `scripts/png2c.py` | Splash asset pipeline. |
 | `assets/splash_default.c` | The default badge, drawn. No PNG ships with the module. |

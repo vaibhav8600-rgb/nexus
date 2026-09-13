@@ -11,6 +11,7 @@
  */
 
 #include <nexus/gfx.h>
+#include <nexus/host.h>
 #include <nexus/nexus.h>
 #include <nexus/screen.h>
 #include <nexus/sound.h>
@@ -184,22 +185,28 @@ static gfx_color batt_color(const struct nexus_theme *t, uint8_t pct)
 	}
 }
 
-static void draw_brand(void)
+/*
+ * The display face, so the plate carries the same letterforms as the splash
+ * rather than a scaled-up body font. Scale 2 is 108x28 for five characters,
+ * which fits the 50px plate with its rule; a longer CONFIG_NEXUS_PRODUCT steps
+ * down from there.
+ */
+static int brand_scale(void)
 {
-	nexus_draw_card(COL_L, BRAND_Y, NEXUS_CONTENT_W, BRAND_H);
-
-	/*
-	 * The display face, so the plate carries the same letterforms as the
-	 * splash rather than a scaled-up body font. Scale 2 is 108x28 for five
-	 * characters, which fits the 50px plate with its rule; a longer
-	 * CONFIG_NEXUS_PRODUCT steps down from there.
-	 */
 	int avail = NEXUS_CONTENT_W - 2 * INNER - 4;
 	int scale = 2;
 
 	while (scale > 1 && gfx_face_w(NEXUS_PRODUCT, scale) > avail) {
 		scale--;
 	}
+	return scale;
+}
+
+static void draw_brand(void)
+{
+	nexus_draw_card(COL_L, BRAND_Y, NEXUS_CONTENT_W, BRAND_H);
+
+	int scale = brand_scale();
 
 	nexus_draw_wordmark(GFX_W / 2,
 			    BRAND_Y + (BRAND_H - nexus_wordmark_h(scale)) / 2,
@@ -265,6 +272,119 @@ static void draw_link(const struct nexus_status *st)
 
 }
 
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+/*
+ * The host's time and date either side of the name: the time over AM/PM on
+ * the left, the weekday over the date on the right, each column centred in
+ * the space between the plate's edge and the wordmark's glow.
+ *
+ * The time and the weekday are the display face at 1x - 14px, bold two-pixel
+ * stems. The panel is about 23mm across, so that is 1.4mm, which reads from
+ * about three feet; caption type is half that. It is also the largest that
+ * fits: "12:59" is 47px, and the space beside a 2x name is 53. AM/PM and the
+ * date are caption type under them: all four rows in the bold face was too
+ * much ink crowded against the name, and those two are the ones you lean in
+ * for anyway.
+ *
+ * Drawn only once a companion has sent a time, and only while the name leaves
+ * room; until then, and in every build without the host link, the plate is
+ * exactly the name. It stays after the companion stops, because the clock
+ * stays true while the dongle has power.
+ */
+#define PLATE_ROW1 (BRAND_Y + 12) /* 14 + 4 + 7 tall, centred on the name */
+#define PLATE_ROW2 (BRAND_Y + 30)
+
+/* x for a run @p w wide, centred between @p a and @p b. */
+static int centred(int a, int b, int w)
+{
+	return (a + b) / 2 - w / 2;
+}
+
+/* The free space either side of the name, glow included. */
+static void plate_spaces(int *l1, int *r0)
+{
+	int scale = brand_scale();
+	int half = gfx_face_w(NEXUS_PRODUCT, scale) / 2 + 2 * scale;
+
+	*l1 = GFX_W / 2 - half;
+	*r0 = GFX_W / 2 + half;
+}
+
+/* Whether the plate is showing the clock: a time has arrived, and the widest
+ * column still fits beside the name. */
+static bool plate_clock_shown(void)
+{
+	int l1;
+	int r0;
+
+	if (nexus_host_clock() == UINT32_MAX) {
+		return false;
+	}
+	plate_spaces(&l1, &r0);
+	int right = COL_L + NEXUS_CONTENT_W - r0;
+
+	return nexus_host_numerals_w("00:00", 1) + 6 <= l1 - COL_L &&
+	       gfx_face_w("WED", 1) + 6 <= right &&
+	       gfx_text_w("00 MMM", NEXUS_TXT_CAPTION) + 6 <= right;
+}
+
+static void draw_host_clock(void)
+{
+	const struct nexus_theme *t = nexus_theme();
+	const char *suffix;
+	char hm[8];
+	int l1;
+	int r0;
+
+	if (!plate_clock_shown() ||
+	    !nexus_host_time_text(hm, sizeof(hm), &suffix)) {
+		return;
+	}
+
+	int l0 = COL_L;
+	int r1 = COL_L + NEXUS_CONTENT_W;
+
+	plate_spaces(&l1, &r0);
+	nexus_host_numerals(centred(l0, l1, nexus_host_numerals_w(hm, 1)),
+			    PLATE_ROW1, hm, 1, t->value);
+	if (suffix) {
+		gfx_text(centred(l0, l1, gfx_text_w(suffix, NEXUS_TXT_CAPTION)),
+			 PLATE_ROW2, suffix, NEXUS_TXT_CAPTION, t->caption,
+			 GFX_OPAQUE);
+	}
+
+	uint32_t day = nexus_host_day();
+
+	if (day == UINT32_MAX) {
+		return; /* an older companion: a time, no date */
+	}
+
+	char wd[4];
+	char dm[8];
+	char yy[5];
+
+	nexus_host_date_text(day, wd, dm, yy);
+	gfx_face_text(centred(r0, r1, gfx_face_w(wd, 1)), PLATE_ROW1, wd, 1,
+		      t->accent, GFX_OPAQUE);
+	gfx_text(centred(r0, r1, gfx_text_w(dm, NEXUS_TXT_CAPTION)), PLATE_ROW2,
+		 dm, NEXUS_TXT_CAPTION, t->caption, GFX_OPAQUE);
+}
+
+/* The minute and the day the plate last showed, or UINT32_MAX for no clock. */
+static uint32_t plate_clock_key(void)
+{
+	uint32_t sec = nexus_host_clock();
+	uint32_t day = nexus_host_day();
+
+	if (sec == UINT32_MAX) {
+		return UINT32_MAX;
+	}
+	return (day == UINT32_MAX ? 0U : day + 1U) * 1440U + sec / 60U;
+}
+
+static uint32_t g_plate_clock;
+#endif
+
 /*
  * One dot: the mouse jiggler, on the corner of the brand plate.
  *
@@ -284,12 +404,24 @@ static void draw_flags(const struct nexus_status *st)
 {
 	if (IS_ENABLED(CONFIG_NEXUS_ANTI_IDLE_STATUS)) {
 		const struct nexus_theme *t = nexus_theme();
-		const int r = 4;
+		int r = 4;
+		int halo = 3;
 		int y = BRAND_Y + 9;
 		int x = COL_L + NEXUS_CONTENT_W - 10;
 
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+		/* The host's weekday sits under this corner while its clock is
+		 * on the plate, so the dot tucks up into the corner above it:
+		 * a size smaller, still solid, still green. */
+		if (plate_clock_shown()) {
+			r = 3;
+			halo = 1;
+			y = BRAND_Y + 5;
+			x = COL_L + NEXUS_CONTENT_W - 7;
+		}
+#endif
 		if (st->anti_idle) {
-			gfx_disc(x, y, r + 3, t->success, 60);
+			gfx_disc(x, y, r + halo, t->success, 60);
 			gfx_disc(x, y, r, t->success, GFX_OPAQUE);
 		}
 	}
@@ -441,6 +573,9 @@ static void home_draw(void)
 	 */
 	if (gfx_hits(BRAND_Y, BRAND_H)) {
 		draw_brand();
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+		draw_host_clock();
+#endif
 		draw_flags(st);
 	}
 	if (gfx_hits(ROW1_Y, ROW1_H)) {
@@ -483,7 +618,27 @@ static void on_status(const struct nexus_status *st, uint32_t changed)
 static void home_enter(void)
 {
 	nexus_status_subscribe(on_status);
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+	g_plate_clock = plate_clock_key();
+#endif
 }
+
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+/*
+ * The clock moves without anything arriving to say so, so the plate checks
+ * for itself: one repaint of the brand band when the minute or the day turns,
+ * and when the first time arrives. Nothing on any other tick.
+ */
+static void home_tick(void)
+{
+	uint32_t key = plate_clock_key();
+
+	if (key != g_plate_clock) {
+		g_plate_clock = key;
+		nexus_screen_invalidate_rows(BRAND_Y, BRAND_Y + BRAND_H);
+	}
+}
+#endif
 
 static void home_exit(void)
 {
@@ -514,6 +669,9 @@ const struct nexus_screen nexus_screen_home_def = {
 	.exit = home_exit,
 	.draw = home_draw,
 	.action = home_action,
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+	.tick = home_tick,
+#endif
 	.refresh = NEXUS_REFRESH_NORMAL,
 	.btn_short = NEXUS_ACTION_SELECT, /* -> Game Center */
 	.btn_long = NEXUS_ACTION_MENU,    /* -> Settings    */

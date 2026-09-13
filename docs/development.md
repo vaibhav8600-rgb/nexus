@@ -160,6 +160,10 @@ Run this end to end after any wiring change (Section 111).
 | 12 | Studio | See [zmk-studio.md](zmk-studio.md#verifying-it-works) |
 | 13 | Tetris | Launch, move, rotate, drop, clear a line, pause, resume, game over, restart |
 | 14 | Reset | Press reset *during* a game with Studio connected: MCU restarts, ZMK boots, halves reconnect |
+| 15 | Idle blanking | With `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` set, stop typing: the panel blanks after that long; a key on either half wakes it, with the screen fully repainted |
+| 16 | Host link, nothing installed | HOST reads `NO LINK` and shows how long the host has been connected; home plate is just the name |
+| 17 | Host link, companion | Run the companion: HOST shows time, date, CPU, RAM, title and artist; home plate shows the time and date beside the name; both clocks turn over on the minute |
+| 18 | Host link and Studio together | With the companion running, Studio still connects |
 
 Step 14 is the one people skip. It is the one that matters: the reset button
 must work when the UI has crashed, and it can only do that because it is wired
@@ -173,6 +177,8 @@ to `RST` and NEXUS has no code near it.
 | The buzzer | Keyboard still types. Sound silently no-ops. |
 | The action button | Keyboard still types. UI is display-only. |
 | One half | Other half and host keep working; that card shows `--`. |
+| The companion (kill it, no `X`) | Within `CONFIG_NEXUS_HOST_STALE_S`, HOST goes `NO LINK` and CPU, RAM and the track go to dashes. The clock keeps counting. |
+| The USB cable, with the companion running | Companion prints `link lost`, then reopens the port by itself when the dongle comes back. |
 
 If any of those bricks the keyboard, that is a bug in NEXUS, not a
 configuration problem (Sections 87, 113, 141-A).
