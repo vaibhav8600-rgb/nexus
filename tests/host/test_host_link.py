@@ -711,10 +711,12 @@ def home_plate():
 
     flat = re.sub(r'\s+', ' ', draw)
     ok('PLATE_ROW1, hm, 1, t->value)' in flat
-       and 'PLATE_ROW1, wd, 1,' in flat and 'PLATE_ROW2, suffix, 1,' in flat
-       and 'PLATE_ROW2, dm, 1, t->value)' in flat,
-       'time, weekday, AM/PM and the day are the display face at 1x: 14px, '
-       'bold')
+       and 'PLATE_ROW1, wd, 1,' in flat,
+       'the time and the weekday are the display face at 1x: 14px, bold')
+    ok('PLATE_ROW2, suffix, NEXUS_TXT_CAPTION' in flat
+       and 'PLATE_ROW2, dm, NEXUS_TXT_CAPTION' in flat,
+       'AM/PM and the date are caption type under them - four bold rows '
+       'crowded the name')
     ok(arcmin(14, 914) >= 5,
        '14px is %.1fmm: %.1f arcmin at three feet, readable (was %.1f)'
        % (14 * mm_per_px, arcmin(14, 914), arcmin(7, 914)))
@@ -738,18 +740,21 @@ def home_plate():
         ok(x >= l0 + 3 and x + w <= l1 - 3,
            '"%s" spans %d-%d, between the plate edge (%d) and the glow (%d)'
            % (s, x, x + w, l0, l1))
-    dw = num_w('30') + 4 + text_w('SEP', 1)
-    for w, what in ((num_w('WED'), 'WED'), (dw, '30 SEP')):
+    for w, what in ((num_w('WED'), 'WED'), (text_w('30 SEP', 1), '30 SEP')):
         x = centred(r0, r1, w)
         ok(x >= r0 + 3 and x + w <= r1 - 3,
            '"%s" spans %d-%d, between the glow (%d) and the plate edge (%d)'
            % (what, x, x + w, r0, r1))
-    ok(row1 >= brand_y + 8 and row2 + 14 <= brand_y + brand_h - 6
+    ok(row1 >= brand_y + 8 and row2 + 7 <= brand_y + brand_h - 6
        and row2 >= row1 + 14 + 3,
        'rows at y %d and %d, inside the plate and clear of each other'
        % (row1, row2))
-    ok(abs((row1 + row2 + 14) / 2 - (brand_y + brand_h / 2)) <= 1,
+    ok(abs((row1 + row2 + 7) / 2 - (brand_y + brand_h / 2)) <= 1,
        'and centred on it, as the name is')
+    shown = body(home, 'static bool plate_clock_shown(void)\n{')
+    ok('gfx_face_w("WED", 1) + 6 <= right' in shown
+       and 'gfx_text_w("00 MMM", NEXUS_TXT_CAPTION) + 6 <= right' in shown,
+       'the room check covers both right-hand rows, not just the weekday')
 
     print('\nThe jiggler dot')
     flags = body(home, 'static void draw_flags(const struct nexus_status *st)'

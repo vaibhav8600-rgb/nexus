@@ -76,9 +76,9 @@ the word; nothing sits under it, deliberately.
 
 With the [host link](host-link.md) on, once a companion has sent the time the
 plate carries it either side of the name: the time over AM/PM on the left, the
-weekday over the date on the right. They are the display face at 1x -- 14px,
-bold, the largest that fits beside the name, and readable from about three
-feet -- with only the month small. The name and everything else on the screen
+weekday over the date on the right. The time and weekday are the display face
+at 1x -- 14px, bold, readable from about three feet -- with AM/PM and the date
+in caption type under them, so the plate stays light around the name. The name and everything else on the screen
 stay exactly where they are; before a time arrives, and in every build without
 the host link, the plate is the name alone. The clock stays when the companion
 stops. With the jiggler built in, its dot tucks into the plate's top corner

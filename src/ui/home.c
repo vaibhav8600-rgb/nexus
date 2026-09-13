@@ -19,7 +19,6 @@
 #include <nexus/theme.h>
 #include <nexus/widgets.h>
 #include <zephyr/kernel.h>
-#include <string.h>
 
 #include "../nexus_priv.h"
 
@@ -279,19 +278,21 @@ static void draw_link(const struct nexus_status *st)
  * the left, the weekday over the date on the right, each column centred in
  * the space between the plate's edge and the wordmark's glow.
  *
- * In the display face at 1x - 14px, bold two-pixel stems - rather than
- * caption type. The panel is about 23mm across, so 14px is 1.4mm, which reads
- * from about three feet; caption type is half that and reads from nowhere
- * much. It is also the largest that fits: "12:59" is 47px, and the space
- * beside a 2x name is 53. Only the month stays small, beside its day.
+ * The time and the weekday are the display face at 1x - 14px, bold two-pixel
+ * stems. The panel is about 23mm across, so that is 1.4mm, which reads from
+ * about three feet; caption type is half that. It is also the largest that
+ * fits: "12:59" is 47px, and the space beside a 2x name is 53. AM/PM and the
+ * date are caption type under them: all four rows in the bold face was too
+ * much ink crowded against the name, and those two are the ones you lean in
+ * for anyway.
  *
  * Drawn only once a companion has sent a time, and only while the name leaves
  * room; until then, and in every build without the host link, the plate is
  * exactly the name. It stays after the companion stops, because the clock
  * stays true while the dongle has power.
  */
-#define PLATE_ROW1 (BRAND_Y + 10) /* the two rows centre on the name */
-#define PLATE_ROW2 (BRAND_Y + 28)
+#define PLATE_ROW1 (BRAND_Y + 12) /* 14 + 4 + 7 tall, centred on the name */
+#define PLATE_ROW2 (BRAND_Y + 30)
 
 /* x for a run @p w wide, centred between @p a and @p b. */
 static int centred(int a, int b, int w)
@@ -320,10 +321,11 @@ static bool plate_clock_shown(void)
 		return false;
 	}
 	plate_spaces(&l1, &r0);
+	int right = COL_L + NEXUS_CONTENT_W - r0;
+
 	return nexus_host_numerals_w("00:00", 1) + 6 <= l1 - COL_L &&
-	       nexus_host_numerals_w("00", 1) + 4 +
-			       gfx_text_w("MMM", NEXUS_TXT_CAPTION) + 6 <=
-		       COL_L + NEXUS_CONTENT_W - r0;
+	       gfx_face_w("WED", 1) + 6 <= right &&
+	       gfx_text_w("00 MMM", NEXUS_TXT_CAPTION) + 6 <= right;
 }
 
 static void draw_host_clock(void)
@@ -346,8 +348,9 @@ static void draw_host_clock(void)
 	nexus_host_numerals(centred(l0, l1, nexus_host_numerals_w(hm, 1)),
 			    PLATE_ROW1, hm, 1, t->value);
 	if (suffix) {
-		gfx_face_text(centred(l0, l1, gfx_face_w(suffix, 1)), PLATE_ROW2,
-			      suffix, 1, t->caption, GFX_OPAQUE);
+		gfx_text(centred(l0, l1, gfx_text_w(suffix, NEXUS_TXT_CAPTION)),
+			 PLATE_ROW2, suffix, NEXUS_TXT_CAPTION, t->caption,
+			 GFX_OPAQUE);
 	}
 
 	uint32_t day = nexus_host_day();
@@ -361,24 +364,10 @@ static void draw_host_clock(void)
 	char yy[5];
 
 	nexus_host_date_text(day, wd, dm, yy);
-
-	/* "13 SEP" -> the day in the face, the month small on its baseline. */
-	char *mon = strchr(dm, ' ');
-
-	if (mon == NULL) {
-		return;
-	}
-	*mon++ = '\0';
-
-	int dw = nexus_host_numerals_w(dm, 1) + 4 +
-		 gfx_text_w(mon, NEXUS_TXT_CAPTION);
-	int x;
-
 	gfx_face_text(centred(r0, r1, gfx_face_w(wd, 1)), PLATE_ROW1, wd, 1,
 		      t->accent, GFX_OPAQUE);
-	x = nexus_host_numerals(centred(r0, r1, dw), PLATE_ROW2, dm, 1, t->value);
-	gfx_text(x + 3, PLATE_ROW2 + gfx_face_h(1) - gfx_text_h(NEXUS_TXT_CAPTION),
-		 mon, NEXUS_TXT_CAPTION, t->caption, GFX_OPAQUE);
+	gfx_text(centred(r0, r1, gfx_text_w(dm, NEXUS_TXT_CAPTION)), PLATE_ROW2,
+		 dm, NEXUS_TXT_CAPTION, t->caption, GFX_OPAQUE);
 }
 
 /* The minute and the day the plate last showed, or UINT32_MAX for no clock. */

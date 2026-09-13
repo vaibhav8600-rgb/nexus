@@ -546,10 +546,11 @@ def face_text(cv, x, y, s, scale, c):
 
 
 def home_plate_clock(cv, t, clock, suffix, date):
-    """draw_host_clock() in home.c: time and date either side of the name,
-    in the display face at 1x. @p date is (weekday, "13 SEP") or None."""
+    """draw_host_clock() in home.c: time and date either side of the name.
+    Time and weekday in the display face at 1x, AM/PM and date in caption
+    type under them. @p date is (weekday, "13 SEP") or None."""
     K = HOME
-    row1, row2 = K['BRAND_Y'] + 10, K['BRAND_Y'] + 28
+    row1, row2 = K['BRAND_Y'] + 12, K['BRAND_Y'] + 30
     half = face_w('NEXUS', 2) // 2 + 4
     l0, l1 = K['COL_L'], W // 2 - half
     r0, r1 = W // 2 + half, K['COL_L'] + CONTENT_W
@@ -560,15 +561,13 @@ def home_plate_clock(cv, t, clock, suffix, date):
     numerals(cv, centred(l0, l1, numerals_w(clock, 1)), row1, clock, 1,
              t['value'])
     if suffix:
-        face_text(cv, centred(l0, l1, face_w(suffix, 1)), row2, suffix, 1,
-                  t['caption'])
+        cv.text(centred(l0, l1, text_w(suffix, CAPTION)), row2, suffix,
+                CAPTION, t['caption'])
     if date:
         wd, dm = date
-        day, mon = dm.split(' ')
-        dw = numerals_w(day, 1) + 4 + text_w(mon, CAPTION)
         face_text(cv, centred(r0, r1, face_w(wd, 1)), row1, wd, 1, t['accent'])
-        x = numerals(cv, centred(r0, r1, dw), row2, day, 1, t['value'])
-        cv.text(x + 3, row2 + FACE_H - 7, mon, CAPTION, t['caption'])
+        cv.text(centred(r0, r1, text_w(dm, CAPTION)), row2, dm, CAPTION,
+                t['caption'])
 
 
 def home(cv, t, st, clock=None, suffix=None, date=None):
