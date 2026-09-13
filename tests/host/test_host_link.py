@@ -165,16 +165,17 @@ class Host:
 def civil(days):
     """format_date() in host_screen.c, ported line for line."""
     z = days + 719468
-    doe = z % 146097
+    era, doe = z // 146097, z % 146097
     yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
     doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
     mp = (5 * doy + 2) // 153
     mday = doy - (153 * mp + 2) // 5 + 1
     mon = mp + 2 if mp < 10 else mp - 10
+    year = yoe + era * 400 + (1 if mon <= 1 else 0)
     wday = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][(days + 4) % 7]
-    return '%s %d %s' % (wday, mday, ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-                                      'JUL', 'AUG', 'SEP', 'OCT', 'NOV',
-                                      'DEC'][mon])
+    return '%s %d %s %d' % (wday, mday,
+                            ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL',
+                             'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][mon], year)
 
 
 def text_w(s, scale):
@@ -469,20 +470,30 @@ def screen(s, events):
     print('\nThe date')
     fmt = body(s, 'static void format_date(uint32_t days, char *buf)\n{')
     for const in ('719468U', '146097U', '1460U', '36524U', '146096U',
-                  '153U', '(days + 4U) % 7U'):
+                  '153U', '(days + 4U) % 7U', 'era * 400U',
+                  '(mon <= 1U ? 1U : 0U)'):
         ok(const in fmt, 'format_date() is civil_from_days (%s)' % const)
     epoch = datetime.date(1970, 1, 1)
     wrong = []
-    for d in list(range(0, 800)) + list(range(10900, 11400)) + \
-            list(range(20000, 21000)) + list(range(47400, 47600)):
-        want = (epoch + datetime.timedelta(days=d)).strftime('%a %d %b')
-        want = want.upper().replace(' 0', ' ')
+    # Every day from 1970 to 2517 - the whole range D accepts - weekday, day,
+    # month and year, against Python's own calendar.
+    for d in range(0, 200001):
+        dt = epoch + datetime.timedelta(days=d)
+        want = '%s %d %s %d' % (dt.strftime('%a').upper(), dt.day,
+                                dt.strftime('%b').upper(), dt.year)
         if civil(d) != want:
             wrong.append((d, civil(d), want))
-    ok(not wrong, 'and it agrees with the calendar across leap years, 2000 '
-       'and 2100: %s' % (wrong[:3] or '2,500 days checked'))
-    ok(civil(20709) == 'SUN 13 SEP', 'day 20709 is SUN 13 SEP (2026)')
-    ok(len('WED 30 SEP') + 1 <= 16, 'the longest date fits its 16 byte buffer')
+    ok(not wrong, 'it agrees with the calendar on every day from 1970 to '
+       '2517, leap years and 2000 and 2100 included: %s'
+       % (wrong[:3] or '200,001 days checked'))
+    ok(civil(20709) == 'SUN 13 SEP 2026', 'day 20709 is SUN 13 SEP 2026')
+    ok(civil(0) == 'THU 1 JAN 1970', 'day 0 is THU 1 JAN 1970')
+    ok(civil(11016) == 'TUE 29 FEB 2000' and civil(47541) == 'MON 1 MAR 2100'
+       and civil(47540) == 'SUN 28 FEB 2100',
+       '2000 has a 29 February; 2100 does not')
+    longest = max((civil(d) for d in range(0, 200001, 7)), key=len)
+    ok(len(longest) + 1 <= 16 and 'char line[16]' in s,
+       'the longest date ("%s") fits its 16 byte buffer' % longest)
 
 
 def layout(s):
@@ -523,7 +534,7 @@ def layout(s):
         ok(runs_w(runs) <= content - 16,
            'the widest clock line fits its card: %s is %dpx'
            % (''.join(r[0] for r in runs), runs_w(runs)))
-    for line in ('SINCE HOST CONNECTED', 'WED 30 SEP'):
+    for line in ('SINCE HOST CONNECTED', 'WED 30 SEP 2026'):
         tw = text_w(line, 1) + (len(line) - 1) * 2
         ok(tw <= content - 16, '"%s" tracked is %dpx' % (line, tw))
     # 9 face pixels of digit, 3 to the colon square, colon at y+12 and y+27

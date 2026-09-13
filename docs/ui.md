@@ -16,7 +16,7 @@ is not. The draw order is the part transcribed by hand.
 
 ## Getting around
 
-Seven screens. One button drives all of them.
+Seven screens, eight with the host link. One button drives all of them.
 
 ```
    splash ──► home ◄──────────────► settings ──┬──► diagnostics
@@ -36,6 +36,7 @@ Seven screens. One button drives all of them.
 | **Settings** | move to the next row | activate that row | -- |
 | **Diagnostics** | move to the next row | activate that row | -- |
 | **About** | back | Home | -- |
+| **Host** | back | Home | -- |
 | **Splash** | skip | skip | -- |
 
 The lists invert the usual pairing on purpose. With one button, moving is the
@@ -45,6 +46,10 @@ stray tap can never flip a setting. You leave a list through its own `BACK`
 row, which is just another row to hold.
 
 `J` / `L` also move the Game Center's selection.
+
+Host is off the diagram because it is off by default: with
+`CONFIG_NEXUS_HOST_LINK` it opens from `SETTINGS -> COMPANION`, or from any
+screen with a key bound to `NEXUS_ACT_HOST`.
 
 Only the Game Center declares a double-tap, and only it pays for one: a screen
 with `btn_double` must hold a single tap back until the window closes
@@ -155,6 +160,7 @@ A held slot changes three things at once -- glyph colour, slot fill and border
 | `SNAKE WALL` | ON = fatal edges, OFF = the board wraps. |
 | `SPLASH` | Which splash the build got. Read-only. |
 | `GAMES` | How many games are built in. Read-only. |
+| `COMPANION` | Opens the HOST screen; reads `LINKED` while a companion is talking. Only with `CONFIG_NEXUS_HOST_LINK`. |
 | `DIAG` | Opens Diagnostics. |
 | `ABOUT` | Opens About. |
 | `SAVE` | Commits now rather than waiting for the autosave. |
@@ -321,7 +327,8 @@ bound to a key opens it directly - a clock you have to walk two menus to read
 is not a clock.
 
 Four cards. The clock is the hero, in the display face at 3x with AM/PM on its
-baseline and the date tracked beneath it in the accent. CPU and RAM each get an
+baseline and the full date tracked beneath it in the accent -- `SUN 13 SEP
+2026`, from the host's own calendar, turning over at midnight by itself. CPU and RAM each get an
 icon tile, the value, and a meter in their own accent - the theme's first and
 second - turning to the warning colour at 80%. Now playing has an art tile, the
 title with the artist under it, and still level bars. A title drops to caption

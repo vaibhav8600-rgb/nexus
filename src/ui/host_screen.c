@@ -172,27 +172,33 @@ static const char *const k_month[12] = {
 };
 
 /*
- * "SUN 13 SEP" from days since 1970-01-01. Howard Hinnant's civil_from_days,
- * cut down to the month and day: the year is not drawn, and a desk clock that
- * says the year is a desk clock with nothing better to say.
+ * "SUN 13 SEP 2026" from days since 1970-01-01: Howard Hinnant's
+ * civil_from_days. Pure integer arithmetic, correct for every Gregorian date
+ * this can be handed - leap years, 2000 and 2100 included - with no table
+ * and no library. @p buf needs 16 bytes.
  */
 static void format_date(uint32_t days, char *buf)
 {
 	uint32_t z = days + 719468U;
+	uint32_t era = z / 146097U;
 	uint32_t doe = z % 146097U;
 	uint32_t yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
 	uint32_t doy = doe - (365U * yoe + yoe / 4U - yoe / 100U);
 	uint32_t mp = (5U * doy + 2U) / 153U;
 	uint32_t mday = doy - (153U * mp + 2U) / 5U + 1U;
 	uint32_t mon = mp < 10U ? mp + 2U : mp - 10U; /* 0-based */
-	char dd[4];
+	/* The algorithm's year starts in March, so January and February
+	 * belong to the next calendar year. */
+	uint32_t year = yoe + era * 400U + (mon <= 1U ? 1U : 0U);
+	char num[8];
 
-	gfx_utoa(mday, dd, sizeof(dd), 0);
 	strcpy(buf, k_wday[(days + 4U) % 7U]); /* 1970-01-01 was a Thursday */
 	strcat(buf, " ");
-	strcat(buf, dd);
+	strcat(buf, gfx_utoa(mday, num, sizeof(num), 0));
 	strcat(buf, " ");
 	strcat(buf, k_month[mon]);
+	strcat(buf, " ");
+	strcat(buf, gfx_utoa(year, num, sizeof(num), 0));
 }
 
 /*
@@ -227,7 +233,7 @@ static void draw_clock(void)
 	int y = CLOCK_Y + 10;
 	char a[8];
 	char b[8];
-	char line[16];
+	char line[16]; /* "WED 30 SEP 2026" and its terminator, exactly */
 
 	nexus_draw_card(NEXUS_PAD, CLOCK_Y, NEXUS_CONTENT_W, CLOCK_H);
 	gfx_round_frame(NEXUS_PAD, CLOCK_Y, NEXUS_CONTENT_W, CLOCK_H, t->radius,

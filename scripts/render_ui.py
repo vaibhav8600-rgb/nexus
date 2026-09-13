@@ -661,15 +661,16 @@ MONTH = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
 
 
 def host_date(days):
-    """format_date() in host_screen.c: civil_from_days, month and day."""
+    """format_date() in host_screen.c: civil_from_days."""
     z = days + 719468
-    doe = z % 146097
+    era, doe = z // 146097, z % 146097
     yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
     doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
     mp = (5 * doy + 2) // 153
     mday = doy - (153 * mp + 2) // 5 + 1
     mon = mp + 2 if mp < 10 else mp - 10
-    return '%s %d %s' % (WDAY[(days + 4) % 7], mday, MONTH[mon])
+    year = yoe + era * 400 + (1 if mon <= 1 else 0)
+    return '%s %d %s %d' % (WDAY[(days + 4) % 7], mday, MONTH[mon], year)
 
 
 def host_fit(s, scale, room):
