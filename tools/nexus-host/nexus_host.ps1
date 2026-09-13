@@ -152,21 +152,59 @@ function Get-NexusPorts {
         } | Sort-Object Interface
 }
 
+# A ZMK Studio RPC request: SOF 0xAB, Request { request_id: 1, core {
+# get_lock_state: true } }, EOF 0xAD. Read-only - it changes nothing on the
+# dongle. The newline after it makes the bytes one ignored line if this lands
+# on the host link instead.
+$STUDIO_PING = [byte[]](0xAB, 0x08, 0x01, 0x1A, 0x02, 0x10, 0x01, 0xAD, 0x0A)
+
+function Test-StudioPort([string]$name) {
+    <#  $true if the port answers a Studio request, $false if it stays
+        silent, $null if it cannot be opened (Studio connected, usually). #>
+    try {
+        $p = New-Object System.IO.Ports.SerialPort($name, 115200)
+        $p.DtrEnable = $true
+        $p.Open()
+    } catch {
+        return $null
+    }
+    try {
+        Start-Sleep -Milliseconds 200
+        $p.DiscardInBuffer()
+        $p.Write($STUDIO_PING, 0, $STUDIO_PING.Length)
+        $end = (Get-Date).AddMilliseconds(1000)
+        while ((Get-Date) -lt $end) {
+            if ($p.BytesToRead -gt 0) { return $true }
+            Start-Sleep -Milliseconds 50
+        }
+        return $false
+    } catch {
+        return $null
+    } finally {
+        try { $p.Close() } catch {}
+    }
+}
+
 function Get-HostLinkPort {
-    <#  The host link, and only the host link: the highest-numbered interface.
+    <#  The host link, and only the host link.
 
-        This used to open every NEXUS port. Windows gives a COM port to one
-        program at a time, so holding Studio's port meant ZMK Studio could not
-        connect for as long as this ran - which, installed, is always - and
-        it was writing these lines into Studio's RPC channel besides.
+        With Studio built in the dongle has two serial ports. Opening both
+        held Studio's - Windows gives a port to one program at a time - so
+        ZMK Studio could not connect while this ran, and these lines went
+        into Studio's RPC channel.
 
-        The dongle cannot say which port is which; the link is one way. But
-        the order is fixed by how ZMK builds the USB device: Studio's
-        interface comes from ZMK itself and registers first, the host link
-        comes from the config's overlay and registers after it. On real
-        hardware that is Studio on MI_00 and the host link on MI_03. With no
-        Studio there is one port and this picks it. -Port overrides. #>
-    Get-NexusPorts | Select-Object -Last 1 | ForEach-Object { $_.Port }
+        Which is which cannot be guessed from the order: a guess that the
+        host link was the higher interface was wrong on the first real
+        dongle it met. So ask. Studio's port answers a Studio request; the
+        host link is one way and never answers anything. The port that stays
+        silent is ours. A port that will not open is skipped - that is
+        Studio with the app connected. With no Studio, the one port is
+        silent and is picked. -Port skips all of this. #>
+    foreach ($c in Get-NexusPorts) {
+        $studio = Test-StudioPort $c.Port
+        Write-Verbose "$($c.Port) (MI_$($c.Interface)): studio=$studio"
+        if ($studio -eq $false) { return $c.Port }
+    }
 }
 
 # Now playing, from the same Windows media session the volume flyout shows.
@@ -245,7 +283,13 @@ function Get-NowPlaying {
 if ($List) {
     Write-Output 'NEXUS serial ports (VID 1D50, PID 615E):'
     Get-NexusPorts | Format-Table -AutoSize
-    Write-Output "The companion uses: $(Get-HostLinkPort)  (the highest interface; -Port to override)"
+    foreach ($c in Get-NexusPorts) {
+        $studio = Test-StudioPort $c.Port
+        $what = if ($studio -eq $true) { 'ZMK Studio (answered a Studio request)' }
+                elseif ($studio -eq $false) { 'host link (silent) <- the companion uses this' }
+                else { 'busy (Studio connected, or a companion already running)' }
+        Write-Output "$($c.Port): $what"
+    }
     Write-Output ''
     Write-Output 'All serial ports:'
     Get-CimInstance Win32_PnPEntity |
@@ -296,7 +340,15 @@ try {
         }
         if ($open.Count -eq 0) {
             if (-not $script:waiting) {
-                Write-Output 'waiting for the dongle'
+                # Two different waits, and saying which saves a lot of
+                # guessing: no dongle at all, or a dongle whose host link
+                # port something else is holding.
+                if (-not $Port -and @(Get-NexusPorts).Count -gt 0) {
+                    Write-Output ('dongle found, but no free host link port - ' +
+                                  'is another copy running? (-List shows the ports)')
+                } else {
+                    Write-Output 'waiting for the dongle'
+                }
                 $script:waiting = $true
             }
             Start-Sleep -Seconds 3

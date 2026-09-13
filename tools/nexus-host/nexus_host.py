@@ -21,7 +21,6 @@ import argparse
 import datetime
 import glob
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -46,41 +45,74 @@ EPOCH = datetime.date(1970, 1, 1)
 
 # ---- ports ------------------------------------------------------------------
 
-def interface_of(name):
-    """The USB interface number in a port's location or by-id name, or None.
-    pyserial writes it as '1-1.2:1.3' or '1-1:x.3'; udev as '...-if03'."""
-    m = re.search(r'(?:-if|:(?:x|\d+)\.)(\d+)$', name or '')
-    return int(m.group(1)) if m else None
+# A ZMK Studio RPC request: SOF 0xAB, Request { request_id: 1, core {
+# get_lock_state: true } }, EOF 0xAD. Read-only. The newline makes the bytes
+# one ignored line if this lands on the host link instead.
+STUDIO_PING = bytes([0xAB, 0x08, 0x01, 0x1A, 0x02, 0x10, 0x01, 0xAD, 0x0A])
+
+
+def dongle_ports():
+    """Every serial port the dongle has - Studio's and the host link."""
+    if serial:
+        return sorted(p.device for p in list_ports.comports()
+                      if p.vid == ZMK_VID)
+    if sys.platform.startswith('linux'):
+        # udev names these after the USB manufacturer string, which ZMK
+        # sets. Stable across replugs, unlike ttyACM numbers.
+        return sorted(glob.glob('/dev/serial/by-id/usb-ZMK_Project_*'))
+    # macOS without pyserial: cu.usbmodem* is every CDC device on the
+    # machine, and writing to an Arduino is not a guess worth making.
+    return []
+
+
+def is_studio(path):
+    """True if the port answers a Studio request, False if it stays silent,
+    None if it cannot be opened."""
+    try:
+        if serial:
+            with serial.Serial(path, 115200, timeout=0.1,
+                               write_timeout=1) as s:
+                time.sleep(0.2)
+                s.reset_input_buffer()
+                s.write(STUDIO_PING)
+                end = time.time() + 1.0
+                while time.time() < end:
+                    if s.in_waiting:
+                        return True
+                    time.sleep(0.05)
+                return False
+        import select
+        import termios
+        import tty
+        fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            tty.setraw(fd)
+            time.sleep(0.2)
+            termios.tcflush(fd, termios.TCIFLUSH)
+            os.write(fd, STUDIO_PING)
+            ready, _, _ = select.select([fd], [], [], 1.0)
+            return bool(ready)
+        finally:
+            os.close(fd)
+    except Exception:            # OSError, or pyserial's SerialException
+        return None
 
 
 def candidates():
-    """The host link port: the dongle's highest-numbered serial interface.
+    """The host link port, and only that.
 
-    With ZMK Studio built in the dongle has two, and only one is ours. The
-    other is Studio's RPC channel, and writing these lines into it is not
-    harmless while Studio is connected. The dongle cannot say which is which
-    - the link is one way - but ZMK fixes the order: Studio's interface is
-    ZMK's own and registers first, the host link comes from the config's
-    overlay and registers after. On real hardware, Studio is interface 0 and
-    the host link 3. If the numbers cannot be read, every candidate is
-    returned and --port is the way to choose.
+    With ZMK Studio built in the dongle has two serial ports, and writing
+    these lines into Studio's is not harmless. Which is which cannot be
+    guessed from the order - a guess that the host link was the higher
+    interface was wrong on the first real dongle it met - so ask: Studio's
+    port answers a Studio request, and the host link, being one way, never
+    answers anything. The silent one is ours. With no Studio there is one
+    port, it is silent, and it is picked.
     """
-    if serial:
-        ports = [(interface_of(p.location), p.device)
-                 for p in list_ports.comports() if p.vid == ZMK_VID]
-    elif sys.platform.startswith('linux'):
-        # udev names these after the USB manufacturer string, which ZMK
-        # sets, and ends them with the interface. Stable across replugs,
-        # unlike ttyACM numbers.
-        ports = [(interface_of(p), p)
-                 for p in glob.glob('/dev/serial/by-id/usb-ZMK_Project_*')]
-    else:
-        # macOS without pyserial: cu.usbmodem* is every CDC device on the
-        # machine, and writing to an Arduino is not a guess worth making.
-        return []
-    if ports and all(i is not None for i, _ in ports):
-        return [max(ports)[1]]
-    return sorted(p for _, p in ports)
+    for path in dongle_ports():
+        if is_studio(path) is False:
+            return [path]
+    return []
 
 
 def open_port(path):
@@ -234,8 +266,12 @@ def main():
     args = ap.parse_args()
 
     if args.list:
-        for p in candidates():
-            print(p)
+        for p in dongle_ports():
+            studio = is_studio(p)
+            print('%-40s %s' % (p, 'ZMK Studio (answered a Studio request)'
+                                if studio else
+                                'host link (silent) <- used' if studio is False
+                                else 'busy - Studio connected, or a companion'))
         if sys.platform == 'darwin' and not serial:
             print('macOS: pass --port /dev/cu.usbmodem... (see ls /dev/cu.*)')
         return 0
@@ -261,7 +297,10 @@ def main():
                         print('%s: %s' % (path, e), file=sys.stderr)
                 if not open_:
                     if not waiting:
-                        print('waiting for the dongle')
+                        print('dongle found, but no free host link port - '
+                              'another copy running? (--list shows them)'
+                              if not args.port and dongle_ports()
+                              else 'waiting for the dongle')
                         waiting = True
                     time.sleep(3)
                     continue

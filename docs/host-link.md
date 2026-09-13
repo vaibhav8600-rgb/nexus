@@ -96,12 +96,13 @@ powershell -ExecutionPolicy Bypass -File tools\nexus-host\nexus_host.ps1
 mark-of-the-web and will not run otherwise.
 
 **Which port.** With ZMK Studio built in, the dongle has two serial ports:
-Studio's and the host link. The companion opens only the host link - the
-higher-numbered USB interface, because ZMK registers Studio's first and the
-overlay's node after it - so Studio can still connect while the companion
-runs. `-List` shows both and which one it uses. If your layout differs, pin it
-with `-Port COM15`; `nexus_host.ps1 -Install -Port COM15` pins it in the
-installed copy too.
+Studio's and the host link, in an order that depends on the build. The
+companion finds out rather than guessing: it sends each port a read-only
+Studio request (get lock state). Studio's port answers; the host link is one
+way and stays silent, so the silent one is used and Studio's is left alone -
+Studio can still connect while the companion runs. `-List` shows what each
+port did. To skip the check, pin it with `-Port COM14`;
+`nexus_host.ps1 -Install -Port COM14` pins it in the installed copy too.
 
 On **Linux and macOS**, the Python one. Same protocol, and nothing but the
 Python that is already there:
@@ -116,10 +117,10 @@ on Linux, and gets now playing from `playerctl` on Linux or the Music and
 Spotify apps on macOS. `pyserial` and `psutil` are used when they happen to be
 installed and never required -- on macOS, `psutil` is what adds CPU and RAM.
 
-- **Linux:** the port is found by name under `/dev/serial/by-id/`, and as on
-  Windows only the highest interface (`-if03`, not Studio's `-if00`) is used.
-  Writing to it needs group `dialout` (`sudo usermod -aG dialout $USER`, then
-  log back in).
+- **Linux:** the ports are found by name under `/dev/serial/by-id/`, and as
+  on Windows the one that does not answer a Studio request is used. Writing
+  to it needs group `dialout` (`sudo usermod -aG dialout $USER`, then log
+  back in).
 - **macOS:** without pyserial it cannot tell the dongle from any other USB
   serial device, so pass the port: `--port /dev/cu.usbmodem...`. The first
   now-playing read asks for permission to talk to Music or Spotify; say yes.

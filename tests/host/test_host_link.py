@@ -599,7 +599,7 @@ def companions():
     ok('osascript' in py and 'is running then' in py,
        'now playing on macOS from the Music and Spotify apps, without '
        'launching them')
-    ok('def candidates' in py and 'p.vid == ZMK_VID]' in py,
+    ok('def dongle_ports' in py and 'if p.vid == ZMK_VID)' in py,
        'it looks for the dongle by ZMK\'s USB vendor id')
 
     spec = importlib.util.spec_from_file_location(
@@ -620,46 +620,49 @@ def companions():
     ok(nh.fold(u'Sigur Rós') == 'SIGUR RS', 'and it folds like the dongle')
 
     print('\nOnly the host link port - never ZMK Studio\'s')
-    # Opening every NEXUS port held Studio's too, and Windows gives a port to
-    # one program at a time: with the companion installed, Studio could not
-    # connect. Measured on real hardware: Studio MI_00, host link MI_03.
-    for name, want in (('1-1.2:1.3', 3), ('1-1:x.3', 3), ('1-1:x.0', 0),
-                       ('/dev/serial/by-id/usb-ZMK_Project_S_1-if03', 3),
-                       ('1-1.2', None), (None, None)):
-        ok(nh.interface_of(name) == want,
-           'interface of %r is %r' % (name, want))
+    # Opening every NEXUS port held Studio's too - Windows gives a port to one
+    # program at a time - so with the companion installed Studio could not
+    # connect. The first fix guessed the host link was the higher interface,
+    # and on the real dongle it was the lower: Studio is MI_03 (COM15), the
+    # host link MI_00 (COM14). So the companions ask instead. Studio's port
+    # answered this exact request with AB 0A 06 08 01 1A 02 10 00 AD
+    # (request 1, lock state LOCKED); the host link stayed silent.
+    ok(nh.STUDIO_PING == bytes([0xAB, 0x08, 0x01, 0x1A, 0x02, 0x10, 0x01,
+                                0xAD, 0x0A]),
+       'the probe is a framed Studio get_lock_state request, and a newline')
 
-    class Port:
-        def __init__(self, device, location, vid=0x1D50):
-            self.device, self.location, self.vid = device, location, vid
+    saved = nh.dongle_ports, nh.is_studio
+    for ports, answers, want, why in (
+            (['COM14', 'COM15'], {'COM14': False, 'COM15': True}, ['COM14'],
+             'the real dongle: Studio answers on COM15, COM14 is ours'),
+            (['COM14', 'COM15'], {'COM14': True, 'COM15': False}, ['COM15'],
+             'the other order: still the silent one, whichever it is'),
+            (['COM14', 'COM15'], {'COM14': False, 'COM15': None}, ['COM14'],
+             'Studio connected, its port busy: skipped, ours still found'),
+            (['COM7'], {'COM7': False}, ['COM7'],
+             'a build without Studio: its one port'),
+            (['COM14', 'COM15'], {'COM14': None, 'COM15': True}, [],
+             'ours busy (another copy has it): nothing, rather than Studio\'s')):
+        nh.dongle_ports = lambda ports=ports: ports
+        nh.is_studio = lambda p, answers=answers: answers[p]
+        ok(nh.candidates() == want, '%s - %s' % (why, nh.candidates()))
+    nh.dongle_ports, nh.is_studio = saved
 
-    class Ports:
-        def __init__(self, ports):
-            self.ports = ports
-
-        def comports(self):
-            return self.ports
-
-    saved = nh.serial, getattr(nh, 'list_ports', None)
-    nh.serial = True
-    nh.list_ports = Ports([Port('COM14', '1-1:x.0'), Port('COM15', '1-1:x.3'),
-                           Port('COM3', '1-2:x.0', vid=0x2341)])
-    ok(nh.candidates() == ['COM15'],
-       'Studio on interface 0, host link on 3: only COM15 - %s'
-       % nh.candidates())
-    nh.list_ports = Ports([Port('COM7', '1-1:x.0')])
-    ok(nh.candidates() == ['COM7'], 'a build without Studio: its one port')
-    nh.list_ports = Ports([Port('COM14', None), Port('COM15', None)])
-    ok(nh.candidates() == ['COM14', 'COM15'],
-       'no interface numbers to go on: every candidate, and --port decides')
-    nh.serial, nh.list_ports = saved
+    st = Host(40)
+    st.isr(nh.STUDIO_PING + b'C 41\n')
+    st.work()
+    ok(st.cpu == 41,
+       'the probe landing on the host link is one ignored line; the next '
+       'line still parses')
 
     ps1 = read('tools', 'nexus-host', 'nexus_host.ps1')
+    ok('[byte[]](0xAB, 0x08, 0x01, 0x1A, 0x02, 0x10, 0x01, 0xAD, 0x0A)' in ps1,
+       'PowerShell sends the same request')
     ps_pick = ps1.split('function Get-HostLinkPort')[1].split('\n}\n')[0]
-    ok('Select-Object -Last 1' in ps_pick
-       and "[int][regex]::Match($_.DeviceID, 'MI_(\\d+)')" in ps1
-       and 'Sort-Object Interface' in ps1,
-       'PowerShell: the highest MI_ number, compared as a number')
+    ok('Test-StudioPort $c.Port' in ps_pick
+       and "if ($studio -eq $false) { return $c.Port }" in ps_pick
+       and 'Select-Object -Last 1' not in ps_pick,
+       'and takes the port that stays silent, not a guess from the order')
     ok('else { @(Get-HostLinkPort) }' in ps1
        and '(Get-NexusPorts).Port }' not in ps1,
        'and only that port is opened, unless -Port says otherwise')

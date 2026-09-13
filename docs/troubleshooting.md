@@ -194,11 +194,16 @@ Another copy already has the port - usually the one that starts with Windows.
 `install.cmd` stops any running copy before starting its own; running the
 script by hand alongside it does not.
 
-**It links, but nothing arrives, or it arrives on the wrong screen.**
-The companion picked the wrong serial interface. `nexus_host.ps1 -List` (or
-`nexus_host.py --list`) shows the ports and which one it uses: the highest
-interface number. If your USB layout differs, pin it with `-Port COMx` or
-`--port`.
+**The companion says `open COMx` but the dongle stays `NO LINK`.**
+It is writing to Studio's port. An older companion guessed the host link was
+the higher-numbered port, and on real hardware it was the other one; run
+`install.cmd` again. The current one asks each port - `nexus_host.ps1 -List`
+(or `nexus_host.py --list`) shows which answered as Studio and which stayed
+silent. You can always pin it with `-Port COMx` or `--port`.
+
+**The companion says "dongle found, but no free host link port".**
+The host link port is open in something else - usually another copy of the
+companion. Studio holding its own port does not cause this.
 
 **The clock is right but there is no date, or no artist.**
 An older companion that does not send `D` or `A`. Update it.
