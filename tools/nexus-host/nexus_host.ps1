@@ -139,18 +139,34 @@ if ($Install) {
 }
 
 function Get-NexusPorts {
-    <#  ZMK's USB id is 1D50:615E. The dongle exposes two serial interfaces -
-        one is ZMK Studio's RPC, one is this - and which is which depends on
-        the order the USB stack registered them, so both are candidates. #>
+    <#  ZMK's USB id is 1D50:615E. With Studio built in, the dongle has two
+        serial interfaces: ZMK Studio's RPC and the host link. #>
     Get-CimInstance Win32_PnPEntity |
         Where-Object { $_.Name -match 'COM(\d+)' -and
                        $_.DeviceID -match 'VID_1D50&PID_615E' } |
         ForEach-Object {
             [pscustomobject]@{
                 Port = [regex]::Match($_.Name, 'COM\d+').Value
-                Interface = [regex]::Match($_.DeviceID, 'MI_(\d+)').Groups[1].Value
+                Interface = [int][regex]::Match($_.DeviceID, 'MI_(\d+)').Groups[1].Value
             }
         } | Sort-Object Interface
+}
+
+function Get-HostLinkPort {
+    <#  The host link, and only the host link: the highest-numbered interface.
+
+        This used to open every NEXUS port. Windows gives a COM port to one
+        program at a time, so holding Studio's port meant ZMK Studio could not
+        connect for as long as this ran - which, installed, is always - and
+        it was writing these lines into Studio's RPC channel besides.
+
+        The dongle cannot say which port is which; the link is one way. But
+        the order is fixed by how ZMK builds the USB device: Studio's
+        interface comes from ZMK itself and registers first, the host link
+        comes from the config's overlay and registers after it. On real
+        hardware that is Studio on MI_00 and the host link on MI_03. With no
+        Studio there is one port and this picks it. -Port overrides. #>
+    Get-NexusPorts | Select-Object -Last 1 | ForEach-Object { $_.Port }
 }
 
 # Now playing, from the same Windows media session the volume flyout shows.
@@ -227,8 +243,10 @@ function Get-NowPlaying {
 }
 
 if ($List) {
-    Write-Output 'NEXUS candidates (VID 1D50, PID 615E):'
+    Write-Output 'NEXUS serial ports (VID 1D50, PID 615E):'
     Get-NexusPorts | Format-Table -AutoSize
+    Write-Output "The companion uses: $(Get-HostLinkPort)  (the highest interface; -Port to override)"
+    Write-Output ''
     Write-Output 'All serial ports:'
     Get-CimInstance Win32_PnPEntity |
         Where-Object { $_.Name -match 'COM\d+' } |
@@ -252,11 +270,8 @@ try {
   # by hand each time is a companion you stop bothering with.
   while ($true) {
     if ($open.Count -eq 0) {
-        # Which port? If not told, try every NEXUS interface at once: the one
-        # that is the host link shows up on the dongle, and the other is
-        # Studio's and ignores us. Writing a line it cannot parse costs
-        # Studio nothing - but pass -Port if you use Studio at the same time.
-        $targets = if ($Port) { @($Port) } else { (Get-NexusPorts).Port }
+        # The host link port only - never Studio's. See Get-HostLinkPort.
+        $targets = if ($Port) { @($Port) } else { @(Get-HostLinkPort) }
         foreach ($name in $targets) {
             try {
                 $sp = New-Object System.IO.Ports.SerialPort($name, 115200)

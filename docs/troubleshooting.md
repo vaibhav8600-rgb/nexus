@@ -175,6 +175,45 @@ Locked. Press your `&studio_unlock` key.
 `CONFIG_ZMK_STUDIO=n` but the keymap references `&studio_unlock`. Enable Studio
 or remove the binding.
 
+**Studio says the port is busy while the host companion runs.**
+A companion from before this fix opened both of the dongle's serial ports, and
+Windows gives a port to one program at a time. Run `tools/nexus-host/install.cmd`
+again to replace the installed copy; the current one opens only the host link.
+
+## Host link
+
+**HOST says `NO LINK`.**
+Normal until a companion runs - flashing alone never links (see
+[host-link.md](host-link.md)). With one running, check its window: `open COM15`
+(or similar) means it found the port. `waiting for the dongle` means no NEXUS
+serial port exists - the build lacks `CONFIG_NEXUS_HOST_LINK=y` or the
+`nexus_host_cdc` devicetree node.
+
+**The companion says "Access is denied".**
+Another copy already has the port - usually the one that starts with Windows.
+`install.cmd` stops any running copy before starting its own; running the
+script by hand alongside it does not.
+
+**It links, but nothing arrives, or it arrives on the wrong screen.**
+The companion picked the wrong serial interface. `nexus_host.ps1 -List` (or
+`nexus_host.py --list`) shows the ports and which one it uses: the highest
+interface number. If your USB layout differs, pin it with `-Port COMx` or
+`--port`.
+
+**The clock is right but there is no date, or no artist.**
+An older companion that does not send `D` or `A`. Update it.
+
+**CPU and RAM are dashes on macOS.**
+macOS has no standard-library source for them; `pip install psutil`.
+
+**Now playing is empty on Linux.**
+It comes from `playerctl`. Install it, and check `playerctl metadata` shows the
+track.
+
+**The clock was right and is now a minute or two off.**
+The dongle counts on its own between resyncs, and drifts. A running companion
+resyncs every minute; one that stopped hours ago does not.
+
 ## Build
 
 **`attempt to assign the value ... to the undefined symbol NEXUS_...`**

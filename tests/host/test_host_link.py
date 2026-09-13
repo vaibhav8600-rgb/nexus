@@ -599,10 +599,8 @@ def companions():
     ok('osascript' in py and 'is running then' in py,
        'now playing on macOS from the Music and Spotify apps, without '
        'launching them')
-    ok('def candidates' in py and 'p.vid == ZMK_VID)' in py,
-       'it writes to every ZMK serial port, not the first - the first is '
-       'often Studio\'s, which is why it used to find the dongle and show '
-       'nothing')
+    ok('def candidates' in py and 'p.vid == ZMK_VID]' in py,
+       'it looks for the dongle by ZMK\'s USB vendor id')
 
     spec = importlib.util.spec_from_file_location(
         'nexus_host', os.path.join(ROOT, 'tools', 'nexus-host',
@@ -620,6 +618,51 @@ def companions():
     ok(nh.clock_lines(noon) == ['T 48725', 'D 20709'],
        'T then D, from the same instant: %s' % nh.clock_lines(noon))
     ok(nh.fold(u'Sigur Rós') == 'SIGUR RS', 'and it folds like the dongle')
+
+    print('\nOnly the host link port - never ZMK Studio\'s')
+    # Opening every NEXUS port held Studio's too, and Windows gives a port to
+    # one program at a time: with the companion installed, Studio could not
+    # connect. Measured on real hardware: Studio MI_00, host link MI_03.
+    for name, want in (('1-1.2:1.3', 3), ('1-1:x.3', 3), ('1-1:x.0', 0),
+                       ('/dev/serial/by-id/usb-ZMK_Project_S_1-if03', 3),
+                       ('1-1.2', None), (None, None)):
+        ok(nh.interface_of(name) == want,
+           'interface of %r is %r' % (name, want))
+
+    class Port:
+        def __init__(self, device, location, vid=0x1D50):
+            self.device, self.location, self.vid = device, location, vid
+
+    class Ports:
+        def __init__(self, ports):
+            self.ports = ports
+
+        def comports(self):
+            return self.ports
+
+    saved = nh.serial, getattr(nh, 'list_ports', None)
+    nh.serial = True
+    nh.list_ports = Ports([Port('COM14', '1-1:x.0'), Port('COM15', '1-1:x.3'),
+                           Port('COM3', '1-2:x.0', vid=0x2341)])
+    ok(nh.candidates() == ['COM15'],
+       'Studio on interface 0, host link on 3: only COM15 - %s'
+       % nh.candidates())
+    nh.list_ports = Ports([Port('COM7', '1-1:x.0')])
+    ok(nh.candidates() == ['COM7'], 'a build without Studio: its one port')
+    nh.list_ports = Ports([Port('COM14', None), Port('COM15', None)])
+    ok(nh.candidates() == ['COM14', 'COM15'],
+       'no interface numbers to go on: every candidate, and --port decides')
+    nh.serial, nh.list_ports = saved
+
+    ps1 = read('tools', 'nexus-host', 'nexus_host.ps1')
+    ps_pick = ps1.split('function Get-HostLinkPort')[1].split('\n}\n')[0]
+    ok('Select-Object -Last 1' in ps_pick
+       and "[int][regex]::Match($_.DeviceID, 'MI_(\\d+)')" in ps1
+       and 'Sort-Object Interface' in ps1,
+       'PowerShell: the highest MI_ number, compared as a number')
+    ok('else { @(Get-HostLinkPort) }' in ps1
+       and '(Get-NexusPorts).Port }' not in ps1,
+       'and only that port is opened, unless -Port says otherwise')
 
     class Quiet:
         def read(self):

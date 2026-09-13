@@ -52,7 +52,11 @@ able to (Section 32).
   reassign it like any other (Section 97). It is *not* a runtime-invented
   behavior, which Studio could not handle.
 - **The UI does not fight for the USB link.** Studio RPC runs on ZMK's CDC-ACM
-  endpoint; NEXUS never opens a USB endpoint.
+  endpoint, and NEXUS never touches it. The optional
+  [host link](host-link.md) adds a *second* serial interface of its own when
+  `CONFIG_NEXUS_HOST_LINK=y`; the companion writes only to that one - the
+  higher-numbered of the two - so Studio's port stays free for Studio even
+  with the companion running.
 - **Nothing blocks the RPC thread.** Every NEXUS work item is short and runs on
   the display queue. There is no game loop and no NEXUS thread (Section 35).
 

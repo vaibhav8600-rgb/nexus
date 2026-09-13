@@ -21,6 +21,7 @@ import argparse
 import datetime
 import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -45,24 +46,41 @@ EPOCH = datetime.date(1970, 1, 1)
 
 # ---- ports ------------------------------------------------------------------
 
-def candidates():
-    """Every serial port that looks like the dongle.
+def interface_of(name):
+    """The USB interface number in a port's location or by-id name, or None.
+    pyserial writes it as '1-1.2:1.3' or '1-1:x.3'; udev as '...-if03'."""
+    m = re.search(r'(?:-if|:(?:x|\d+)\.)(\d+)$', name or '')
+    return int(m.group(1)) if m else None
 
-    All of them, not the first: the dongle has two serial interfaces - one is
-    ZMK Studio's, one is the host link - and which comes first depends on
-    the order the USB stack registered them. The one that is not ours
-    ignores a line it cannot parse.
+
+def candidates():
+    """The host link port: the dongle's highest-numbered serial interface.
+
+    With ZMK Studio built in the dongle has two, and only one is ours. The
+    other is Studio's RPC channel, and writing these lines into it is not
+    harmless while Studio is connected. The dongle cannot say which is which
+    - the link is one way - but ZMK fixes the order: Studio's interface is
+    ZMK's own and registers first, the host link comes from the config's
+    overlay and registers after. On real hardware, Studio is interface 0 and
+    the host link 3. If the numbers cannot be read, every candidate is
+    returned and --port is the way to choose.
     """
     if serial:
-        return sorted(p.device for p in list_ports.comports()
-                      if p.vid == ZMK_VID)
-    if sys.platform.startswith('linux'):
+        ports = [(interface_of(p.location), p.device)
+                 for p in list_ports.comports() if p.vid == ZMK_VID]
+    elif sys.platform.startswith('linux'):
         # udev names these after the USB manufacturer string, which ZMK
-        # sets. Stable across replugs, unlike ttyACM numbers.
-        return sorted(glob.glob('/dev/serial/by-id/usb-ZMK_Project_*'))
-    # macOS without pyserial: cu.usbmodem* is every CDC device on the
-    # machine, and writing to an Arduino is not a guess worth making.
-    return []
+        # sets, and ends them with the interface. Stable across replugs,
+        # unlike ttyACM numbers.
+        ports = [(interface_of(p), p)
+                 for p in glob.glob('/dev/serial/by-id/usb-ZMK_Project_*')]
+    else:
+        # macOS without pyserial: cu.usbmodem* is every CDC device on the
+        # machine, and writing to an Arduino is not a guess worth making.
+        return []
+    if ports and all(i is not None for i, _ in ports):
+        return [max(ports)[1]]
+    return sorted(p for _, p in ports)
 
 
 def open_port(path):

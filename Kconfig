@@ -121,16 +121,20 @@ config NEXUS_HOST_LINK
 	select RING_BUFFER
 	help
 	  A small program on the machine the dongle is plugged into pushes what
-	  only that machine knows - the time, CPU and memory load, what it is
-	  playing - down a USB serial port, and the HOST screen shows it.
+	  only that machine knows - the time and date, CPU and memory load,
+	  the track and artist playing - down a USB serial port. The HOST
+	  screen shows it, and the home plate shows the time and date beside
+	  the name. With no companion at all, HOST still shows how long the
+	  host has been connected.
 
 	  One way. The dongle never writes back, so the companion cannot be
 	  used to drive the keyboard.
 
-	  Off by default, and it needs one more step than the symbol: the
-	  nexus_host_cdc devicetree node ships disabled so that nobody who does
-	  not want this gets a second serial port appearing on their machine.
-	  docs/host-link.md has the two lines and the companion.
+	  Off by default, and it needs one more step than the symbol: a
+	  nexus_host_cdc node in your config's devicetree overlay. The module
+	  does not add one, so nobody who does not want this gets a second
+	  serial port appearing on their machine. docs/host-link.md has the
+	  lines and the companion.
 
 config NEXUS_HOST_CLOCK_24H
 	bool "Show the host clock as 24 hour"
@@ -138,7 +142,7 @@ config NEXUS_HOST_CLOCK_24H
 	depends on NEXUS_HOST_LINK
 	help
 	  Off means 12 hour with AM or PM, which is what most desk clocks show.
-	  On means 14:32 rather than 2:32 PM.
+	  On means 14:32 rather than 2:32 PM, on HOST and on the home plate.
 
 	  The companion always sends seconds since local midnight either way -
 	  this is only how it is drawn, so changing it needs no companion
@@ -150,8 +154,9 @@ config NEXUS_HOST_STALE_S
 	depends on NEXUS_HOST_LINK
 	help
 	  The companion sends about once a second. After this long with
-	  nothing, the screen goes back to showing dashes rather than numbers
-	  that stopped being true when the cable came out.
+	  nothing, CPU, RAM and the track go back to dashes rather than numbers
+	  that stopped being true when the cable came out. The clock and date
+	  keep counting: they drift, slowly, but they do not go stale.
 
 config NEXUS_BACKLIGHT_TIMEOUT_S
 	int "Blank the display after N idle seconds (0 = never)"
