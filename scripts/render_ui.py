@@ -513,35 +513,69 @@ HOME = defines(read('src/ui/home.c'),
                ['BRAND_Y', 'BRAND_H', 'ROW1_Y', 'ROW1_H', 'ROW2_Y', 'ROW2_H',
                 'BAT_Y', 'BAT_H', 'INNER', 'COL_L', 'COL_W', 'COL_R', 'COL_RW',
                 'TR_W', 'TR_H', 'TR_SCALE', 'ST_W', 'ST_H', 'ST_SCALE',
-                'MOD_GLYPH_W', 'MOD_GLYPH_H', 'MOD_SCALE', 'PLATE_Y1',
-                'PLATE_Y2'])
+                'MOD_GLYPH_W', 'MOD_GLYPH_H', 'MOD_SCALE'])
 G = home_glyphs()
 
 
+def numerals_w(s, scale):
+    """nexus_host_numerals_w()."""
+    w = sum(4 * scale if ch == ':' else face_w('0', scale) + scale for ch in s)
+    return w - scale if w else 0
+
+
+def numerals(cv, x, y, s, scale, c):
+    """nexus_host_numerals(): the display face, with ':' and '-' drawn."""
+    for ch in s:
+        if ch == ':':
+            cv.rect(x + scale, y + 4 * scale, 2 * scale, 2 * scale, c)
+            cv.rect(x + scale, y + 9 * scale, 2 * scale, 2 * scale, c)
+            x += 4 * scale
+            continue
+        if ch == '-':
+            cv.rect(x + 2 * scale, y + 6 * scale, 6 * scale, 2 * scale, c)
+        else:
+            cv.glyph(x, y, F10[ord(ch) - 32], FACE_W, FACE_H, scale, c)
+        x += face_w('0', scale) + scale
+    return x
+
+
+def face_text(cv, x, y, s, scale, c):
+    for ch in s:
+        cv.glyph(x, y, F10[ord(ch) - 32], FACE_W, FACE_H, scale, c)
+        x += (FACE_W + 1) * scale
+
+
 def home_plate_clock(cv, t, clock, suffix, date):
-    """draw_host_clock() in home.c: time and date either side of the name.
-    @p date is (weekday, day-month) or None."""
+    """draw_host_clock() in home.c: time and date either side of the name,
+    in the display face at 1x. @p date is (weekday, "13 SEP") or None."""
     K = HOME
-    mark_l = W // 2 - face_w('NEXUS', 2) // 2 - 4
-    left = K['COL_L'] + K['INNER'] + 1
-    right = K['COL_L'] + CONTENT_W - K['INNER'] - 1
-    if left + text_w('00 MMM', CAPTION) + 4 > mark_l:
-        return
-    y1, y2 = K['PLATE_Y1'], K['PLATE_Y2']
-    cv.text(left, y1 if suffix else (y1 + y2) // 2, clock, CAPTION, t['value'])
+    row1, row2 = K['BRAND_Y'] + 10, K['BRAND_Y'] + 28
+    half = face_w('NEXUS', 2) // 2 + 4
+    l0, l1 = K['COL_L'], W // 2 - half
+    r0, r1 = W // 2 + half, K['COL_L'] + CONTENT_W
+
+    def centred(a, b, w):
+        return (a + b) // 2 - w // 2
+
+    numerals(cv, centred(l0, l1, numerals_w(clock, 1)), row1, clock, 1,
+             t['value'])
     if suffix:
-        cv.text(left, y2, suffix, CAPTION, t['caption'])
+        face_text(cv, centred(l0, l1, face_w(suffix, 1)), row2, suffix, 1,
+                  t['caption'])
     if date:
         wd, dm = date
-        cv.text(right - text_w(wd, CAPTION), y1, wd, CAPTION, t['caption'])
-        cv.text(right - text_w(dm, CAPTION), y2, dm, CAPTION, t['value'])
+        day, mon = dm.split(' ')
+        dw = numerals_w(day, 1) + 4 + text_w(mon, CAPTION)
+        face_text(cv, centred(r0, r1, face_w(wd, 1)), row1, wd, 1, t['accent'])
+        x = numerals(cv, centred(r0, r1, dw), row2, day, 1, t['value'])
+        cv.text(x + 3, row2 + FACE_H - 7, mon, CAPTION, t['caption'])
 
 
 def home(cv, t, st, clock=None, suffix=None, date=None):
     u, K = UI(cv, t), HOME
     u.ground()
 
-    # brand plate
+    # brand plate, and the host's clock beside the name once there is one
     u.card(K['COL_L'], K['BRAND_Y'], CONTENT_W, K['BRAND_H'])
     u.wordmark(W // 2,
                K['BRAND_Y'] + (K['BRAND_H'] - wordmark_h(2)) // 2, 'NEXUS', 2)
@@ -671,7 +705,7 @@ def menu(cv, t, title, rows, cursor=0):
 HOST_SRC = read('src/ui/host_screen.c')
 HOST = defines(HOST_SRC, ['HDR_Y', 'PILL_H', 'CLOCK_Y', 'CLOCK_H', 'METER_Y',
                           'METER_H', 'NP_Y', 'NP_H', 'STAT_W', 'TILE', 'ART',
-                          'EQ_ROOM', 'BIG', 'COLON_W', 'MON_W', 'MON_H',
+                          'EQ_ROOM', 'BIG', 'MON_W', 'MON_H',
                           'ICON_H', 'CHIP_W', 'RAM_W', 'NOTE_W'])
 HOST_ICONS = {m.group(1): [int(v, 16) for v in
                            re.findall(r'0x([0-9A-Fa-f]+)', m.group(2))]
@@ -708,11 +742,7 @@ def host_runs(cv, t, y, runs, big_c, unit_c):
 
     def run_w(r):
         s, is_big = r
-        if not is_big:
-            return face_w(s, 1)
-        w = sum(K['COLON_W'] if ch == ':' else face_w('0', big) + big
-                for ch in s)
-        return w - big if w else 0
+        return numerals_w(s, big) if is_big else face_w(s, 1)
 
     def gap(r):
         return 10 if r[1] else 4
@@ -729,19 +759,7 @@ def host_runs(cv, t, y, runs, big_c, unit_c):
                          F10[ord(ch) - 32], FACE_W, FACE_H, 1, unit_c)
             x += run_w(r)
             continue
-        pen = x
-        for ch in s:
-            if ch == ':':
-                cv.rect(pen + 3, y + 12, 6, 6, big_c)
-                cv.rect(pen + 3, y + 27, 6, 6, big_c)
-                pen += K['COLON_W']
-                continue
-            if ch == '-':
-                cv.rect(pen + 6, y + 18, 18, 6, big_c)
-                pen += face_w('0', big) + big
-                continue
-            cv.glyph(pen, y, F10[ord(ch) - 32], FACE_W, FACE_H, big, big_c)
-            pen += face_w('0', big) + big
+        numerals(cv, x, y, s, big, big_c)
         x += run_w(r)
 
 

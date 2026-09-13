@@ -528,7 +528,7 @@ def layout(s):
         total = 0
         for i, (txt, big) in enumerate(runs):
             if big:
-                rw = sum(K['COLON_W'] if ch == ':' else big_adv
+                rw = sum(4 * K['BIG'] if ch == ':' else big_adv
                          for ch in txt) - K['BIG']
             else:
                 rw = len(txt) * 11 - 1
@@ -563,9 +563,13 @@ def layout(s):
     face = [[int(v, 16) for v in re.findall(r'0x([0-9A-Fa-f]+)', b)]
             for _, b in re.findall(r'/\*\s*(\S+)\s*\*/\s*\{([^}]*)\}',
                                    read('src', 'ui', 'font10x14.h'))]
-    runs = body(s, 'static void draw_runs(int y, const struct run *runs, '
-                   'int n, gfx_color big_c,')
-    drawn = set(re.findall(r"\*p == '(.)'", runs))
+    runs = body(s, 'int nexus_host_numerals(int x, int y, const char *s, '
+                   'int scale, gfx_color c)\n{')
+    drawn = set(re.findall(r"\*s == '(.)'", runs))
+    ok('nexus_host_numerals(x, y, r->s, BIG, big_c)'
+       in body(s, 'static void draw_runs(int y, const struct run *runs, '
+                  'int n, gfx_color big_c,'),
+       'HOST draws its numerals with the shared helper')
     for ch in '0123456789:-AMPH':
         ok(ch in drawn or any(face[ord(ch) - 32]),
            "'%s' is %s" % (ch, 'drawn by hand' if ch in drawn
@@ -669,49 +673,104 @@ def companions():
 def home_plate():
     print('\nThe home screen\'s plate clock')
     home = read('src', 'ui', 'home.c')
-    K = {k: int(v) for k, v in re.findall(r'^#define (\w+) (\d+)', home, re.M)}
     ok(re.search(r'^#define BRAND_Y NEXUS_PAD\b', home, re.M) is not None,
        'the plate starts at NEXUS_PAD (9)')
-    K['BRAND_Y'] = 9
-    y1 = K['BRAND_Y'] + int(re.search(r'#define PLATE_Y1 \(BRAND_Y \+ (\d+)\)',
-                                      home).group(1))
-    y2 = K['BRAND_Y'] + int(re.search(r'#define PLATE_Y2 \(BRAND_Y \+ (\d+)\)',
-                                      home).group(1))
-    pad, inner, brand_h = 9, K['INNER'], K['BRAND_H']
+    brand_y, brand_h = 9, int(re.search(r'#define BRAND_H (\d+)', home).group(1))
+    row1 = brand_y + int(re.search(r'#define PLATE_ROW1 \(BRAND_Y \+ (\d+)\)',
+                                   home).group(1))
+    row2 = brand_y + int(re.search(r'#define PLATE_ROW2 \(BRAND_Y \+ (\d+)\)',
+                                   home).group(1))
 
-    draw = body(home, 'static void draw_host_clock(void)\n{')
-    ok('if (!nexus_host_time_text(hm, sizeof(hm), &suffix))' in draw
-       and draw.index('return;') < draw.index('gfx_text('),
-       'drawn only once a host has sent a time - until then the plate is '
-       'exactly what it was')
-    ok('nexus_host_date_text(day, wd, dm, yy)' in draw,
-       'with the same text helpers as HOST, so the two cannot disagree')
-    ok('mark_l' in draw and '"00 MMM"' in draw,
-       'and only where the name leaves room for it')
     hd = body(home, 'static void home_draw(void)\n{')
-    brand = hd.split('gfx_hits(BRAND_Y, BRAND_H)')[1].split('}')[0]
-    ok(brand.index('draw_brand()') < brand.index('draw_host_clock()')
-       < brand.index('draw_flags(st)'),
-       'over the plate, under the jiggler dot')
+    brand = hd.split('gfx_hits(BRAND_Y, BRAND_H)')[1].split('if (gfx_hits')[0]
+    ok('\t\tdraw_brand();\n#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)\n'
+       '\t\tdraw_host_clock();\n#endif' in brand,
+       'the NEXUS name is always drawn; the clock only joins it')
+    ok(brand.index('draw_host_clock()') < brand.index('draw_flags(st)'),
+       'and the jiggler dot still draws last')
+    draw = body(home, 'static void draw_host_clock(void)\n{')
+    ok('if (!plate_clock_shown() ||' in draw
+       and draw.index('return;') < draw.index('nexus_host_numerals('),
+       'nothing is drawn before a host has sent a time, or if the name '
+       'leaves no room')
+    ok('nexus_host_numerals(centred(l0, l1, nexus_host_numerals_w(hm, 1))'
+       in draw and 'nexus_host_date_text(day, wd, dm, yy)' in draw,
+       'with the helpers HOST uses, so the two screens cannot disagree')
     ok('.tick = home_tick' in home and
        'nexus_screen_invalidate_rows(BRAND_Y, BRAND_Y + BRAND_H)'
        in body(home, 'static void home_tick(void)\n{'),
        'and it repaints the plate when the minute or day turns')
 
-    # The numbers: NEXUS at display face 2x is 108px, centred, with a glow
-    # two letter-pixels wide. The widest column is "00 MMM".
-    mark_l = 120 - (5 * 22 - 2) // 2 - 4
-    left = pad + inner + 1
-    col = text_w('00 MMM', 1)
-    ok(left + col + 4 <= mark_l,
-       'the columns clear the wordmark: %d + %d + 4 <= %d' % (left, col, mark_l))
-    dot_bottom = K['BRAND_Y'] + 9 + 4 + 3      # draw_flags: y, r, halo
-    ok(y1 > dot_bottom, 'the weekday (y %d) clears the jiggler dot\'s halo '
-       '(ends %d)' % (y1, dot_bottom))
-    ok(y2 + 7 <= K['BRAND_Y'] + brand_h - 4,
-       'and the second line ends inside the plate (%d)' % (y2 + 7))
-    ok(text_w('12:59', 1) <= col and text_w('WED', 1) <= col,
-       'every string it draws is no wider than the column it was checked for')
+    print('\nReadable from further away')
+    # About 23.4mm of panel over 240px. Normal acuity recognises a letter
+    # that subtends 5 arcminutes.
+    mm_per_px = 23.4 / 240
+
+    def arcmin(px, mm):
+        return px * mm_per_px / mm * (180 / 3.141592653589793) * 60
+
+    flat = re.sub(r'\s+', ' ', draw)
+    ok('PLATE_ROW1, hm, 1, t->value)' in flat
+       and 'PLATE_ROW1, wd, 1,' in flat and 'PLATE_ROW2, suffix, 1,' in flat
+       and 'PLATE_ROW2, dm, 1, t->value)' in flat,
+       'time, weekday, AM/PM and the day are the display face at 1x: 14px, '
+       'bold')
+    ok(arcmin(14, 914) >= 5,
+       '14px is %.1fmm: %.1f arcmin at three feet, readable (was %.1f)'
+       % (14 * mm_per_px, arcmin(14, 914), arcmin(7, 914)))
+    print('        at four feet it is %.1f arcmin - borderline, and the most '
+          'that fits beside the name' % arcmin(14, 1219))
+
+    print('\nIt fits beside the name')
+    # NEXUS at display face 2x: 108px, centred, glow two letter-pixels out.
+    half = (5 * 22 - 2) // 2 + 4
+    l0, l1, r0, r1 = 9, 120 - half, 120 + half, 231
+
+    def centred(a, b, w):
+        return (a + b) // 2 - w // 2
+
+    def num_w(s):
+        return sum(4 if ch == ':' else 11 for ch in s) - 1
+
+    for s in ('12:59', '23:59', '0:00'):
+        w = num_w(s)
+        x = centred(l0, l1, w)
+        ok(x >= l0 + 3 and x + w <= l1 - 3,
+           '"%s" spans %d-%d, between the plate edge (%d) and the glow (%d)'
+           % (s, x, x + w, l0, l1))
+    dw = num_w('30') + 4 + text_w('SEP', 1)
+    for w, what in ((num_w('WED'), 'WED'), (dw, '30 SEP')):
+        x = centred(r0, r1, w)
+        ok(x >= r0 + 3 and x + w <= r1 - 3,
+           '"%s" spans %d-%d, between the glow (%d) and the plate edge (%d)'
+           % (what, x, x + w, r0, r1))
+    ok(row1 >= brand_y + 8 and row2 + 14 <= brand_y + brand_h - 6
+       and row2 >= row1 + 14 + 3,
+       'rows at y %d and %d, inside the plate and clear of each other'
+       % (row1, row2))
+    ok(abs((row1 + row2 + 14) / 2 - (brand_y + brand_h / 2)) <= 1,
+       'and centred on it, as the name is')
+
+    print('\nThe jiggler dot')
+    flags = body(home, 'static void draw_flags(const struct nexus_status *st)'
+                       '\n{')
+    ok('if (plate_clock_shown()) {' in flags
+       and flags.index('#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)')
+       < flags.index('plate_clock_shown()'),
+       'moves only while the clock is on the plate, and only in host builds')
+    x, y, r = 231 - 7, brand_y + 5, 3 + 1
+    wd_right = centred(r0, r1, num_w('WED')) + num_w('WED')
+    ok(y + r < row1,
+       'tucked above the weekday: the dot ends at y %d, the weekday starts '
+       'at %d' % (y + r, row1))
+    ok(x - r >= wd_right,
+       'and right of it: the dot starts at x %d, the weekday ends at %d'
+       % (x - r, wd_right))
+    for radius in (7, 9):
+        ccx, ccy = 231 - radius, brand_y + radius
+        far = ((x + r * 0.7 - ccx) ** 2 + (y - r * 0.7 - ccy) ** 2) ** 0.5
+        ok(far <= radius,
+           'inside the card\'s rounded corner at radius %d' % radius)
 
 
 def without_host_link():

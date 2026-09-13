@@ -49,17 +49,8 @@
 #define ART 38     /* the now-playing art tile */
 #define EQ_ROOM 26 /* what the level bars take from the title */
 
-/*
- * The clock numerals: the display face at 3x. It has digits and letters and
- * nothing else - every punctuation glyph in it is blank, because the wordmark
- * never needed one - so the two this line uses are drawn. The colon is two
- * squares in a narrower cell, which is also what a clock face wants: a
- * full-width colon cell pushes the hours and minutes apart until they read as
- * two numbers. The dash is a bar in a digit's cell, so "--:--" holds the same
- * width as the time it stands in for.
- */
+/* The clock numerals on this screen: the display face at 3x. */
 #define BIG 3
-#define COLON_W 12
 
 /* ---- icons: 1-bit, row-major, bit N = column N, for gfx_glyph() ---------- */
 
@@ -86,6 +77,53 @@ static const uint16_t ic_note[ICON_H] = {
 	0x1F8, 0x1F8, 0x108, 0x108, 0x108, 0x1CE, 0x1EF, 0x1EF, 0x0C6,
 };
 
+/* ---- numerals ----------------------------------------------------------- */
+
+/*
+ * Clock numerals in the display face. The face has digits and letters and
+ * nothing else - every punctuation glyph in it is blank, because the wordmark
+ * never needed one - so the two a clock uses are drawn, in face pixels, at any
+ * scale. The colon is two squares in a four-pixel cell, which is also what a
+ * clock face wants: a full-width colon cell pushes the hours and minutes apart
+ * until they read as two numbers. The dash is a bar in a digit's cell, so
+ * "--:--" holds the width of the time it stands in for.
+ */
+int nexus_host_numerals_w(const char *s, int scale)
+{
+	int w = 0;
+
+	for (; *s; s++) {
+		w += *s == ':' ? 4 * scale : gfx_face_w("0", scale) + scale;
+	}
+	return w > 0 ? w - scale : 0;
+}
+
+int nexus_host_numerals(int x, int y, const char *s, int scale, gfx_color c)
+{
+	char one[2] = { 0, 0 };
+
+	for (; *s; s++) {
+		if (*s == ':') {
+			gfx_rect(x + scale, y + 4 * scale, 2 * scale, 2 * scale, c,
+				 GFX_OPAQUE);
+			gfx_rect(x + scale, y + 9 * scale, 2 * scale, 2 * scale, c,
+				 GFX_OPAQUE);
+			x += 4 * scale;
+			continue;
+		}
+		if (*s == '-') {
+			gfx_rect(x + 2 * scale, y + 6 * scale, 6 * scale, 2 * scale,
+				 c, GFX_OPAQUE);
+			x += gfx_face_w("0", scale) + scale;
+			continue;
+		}
+		one[0] = *s;
+		gfx_face_text(x, y, one, scale, c, GFX_OPAQUE);
+		x += gfx_face_w(one, scale) + scale;
+	}
+	return x;
+}
+
 /* ---- the clock card ----------------------------------------------------- */
 
 /* One stretch of the clock line: numerals at BIG, or a unit beside them. */
@@ -96,16 +134,7 @@ struct run {
 
 static int run_w(const struct run *r)
 {
-	if (!r->big) {
-		return gfx_face_w(r->s, 1);
-	}
-
-	int w = 0;
-
-	for (const char *p = r->s; *p; p++) {
-		w += *p == ':' ? COLON_W : gfx_face_w("0", BIG) + BIG;
-	}
-	return w > 0 ? w - BIG : 0;
+	return r->big ? nexus_host_numerals_w(r->s, BIG) : gfx_face_w(r->s, 1);
 }
 
 /* Tight before a unit, so "PM" and "H" belong to their number; wide after
@@ -140,25 +169,7 @@ static void draw_runs(int y, const struct run *runs, int n, gfx_color big_c,
 			continue;
 		}
 
-		int pen = x;
-		char one[2] = { 0, 0 };
-
-		for (const char *p = r->s; *p; p++) {
-			if (*p == ':') {
-				gfx_rect(pen + 3, y + 12, 6, 6, big_c, GFX_OPAQUE);
-				gfx_rect(pen + 3, y + 27, 6, 6, big_c, GFX_OPAQUE);
-				pen += COLON_W;
-				continue;
-			}
-			if (*p == '-') {
-				gfx_rect(pen + 6, y + 18, 18, 6, big_c, GFX_OPAQUE);
-				pen += gfx_face_w("0", BIG) + BIG;
-				continue;
-			}
-			one[0] = *p;
-			gfx_face_text(pen, y, one, BIG, big_c, GFX_OPAQUE);
-			pen += gfx_face_w(one, BIG) + BIG;
-		}
+		nexus_host_numerals(x, y, r->s, BIG, big_c);
 		x += run_w(r);
 	}
 }

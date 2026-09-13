@@ -75,12 +75,14 @@ the word; nothing sits under it, deliberately.
 <img src="images/screens/home-host.png" width="170" alt="Home, with the host's time and date on the plate">
 
 With the [host link](host-link.md) on, once a companion has sent the time the
-plate also carries it, in caption type either side of the name: the time over
-AM/PM on the left, the weekday over the date on the right. Nothing else on the
-screen moves. Before a time arrives, and in every build without the host
-link, the plate is exactly as above. The clock stays when the companion stops,
-and it is left off entirely if a long `CONFIG_NEXUS_PRODUCT` leaves no room
-beside the name.
+plate carries it either side of the name: the time over AM/PM on the left, the
+weekday over the date on the right. They are the display face at 1x -- 14px,
+bold, the largest that fits beside the name, and readable from about three
+feet -- with only the month small. The name and everything else on the screen
+stay exactly where they are; before a time arrives, and in every build without
+the host link, the plate is the name alone. The clock stays when the companion
+stops. With the jiggler built in, its dot tucks into the plate's top corner
+while the weekday is under it.
 
 Gutters are 5px rather than the usual 7, which is what buys the link row the
 height for a readable transport cluster.

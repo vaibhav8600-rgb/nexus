@@ -2,6 +2,7 @@
 #ifndef NEXUS_PRIV_H_
 #define NEXUS_PRIV_H_
 
+#include <nexus/gfx.h>   /* gfx_color, for the host text helpers below */
 #include <zephyr/kernel.h>
 #include <stdint.h>
 
@@ -84,5 +85,11 @@ bool nexus_host_time_text(char *buf, int len, const char **suffix);
 
 /** Days since 1970-01-01 to "SUN" (4 bytes), "13 SEP" (7), "2026" (5). */
 void nexus_host_date_text(uint32_t days, char *wday, char *dmon, char *yyyy);
+
+/** Clock numerals - digits, ':' and '-' - in the display face at @p scale.
+ *  Returns the pen position after the last glyph. */
+int nexus_host_numerals(int x, int y, const char *s, int scale, gfx_color c);
+/** Their width, without the trailing gap. */
+int nexus_host_numerals_w(const char *s, int scale);
 
 #endif /* NEXUS_PRIV_H_ */
