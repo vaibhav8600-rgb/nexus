@@ -118,6 +118,7 @@ config NEXUS_HOST_LINK
 	select SERIAL
 	select UART_INTERRUPT_DRIVEN
 	select USB_CDC_ACM
+	select RING_BUFFER
 	help
 	  A small program on the machine the dongle is plugged into pushes what
 	  only that machine knows - the time, CPU and memory load, what it is

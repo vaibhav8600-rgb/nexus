@@ -159,8 +159,20 @@ function Wait-WinRt($operation, $type) {
     $task.Result
 }
 
+function ConvertTo-Panel([string]$text) {
+    # Fold to what the panel's font covers: ASCII 32..90, upper case only.
+    # The firmware does this too and does not trust us to - but doing it
+    # here keeps the wire carrying only what can be drawn, and means a title
+    # reads correctly on firmware built before that fold existed.
+    $s = -join ($text.Trim().ToUpper().ToCharArray() |
+        Where-Object { [int]$_ -ge 32 -and [int]$_ -le 90 })
+    if ($s.Length -gt $TEXT_MAX) { $s = $s.Substring(0, $TEXT_MAX) }
+    $s
+}
+
+# Title and artist, each already folded, or two empty strings.
 function Get-NowPlaying {
-    if (-not $script:npReady) { return '' }
+    if (-not $script:npReady) { return @('', '') }
     try {
         $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
         $mgr = Wait-WinRt ($mgrType::RequestAsync()) $mgrType
@@ -175,26 +187,19 @@ function Get-NowPlaying {
             }
         }
         if (-not $session) { $session = $mgr.GetCurrentSession() }
-        if (-not $session) { return '' }
+        if (-not $session) { return @('', '') }
 
         $propType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]
         $p = Wait-WinRt ($session.TryGetMediaPropertiesAsync()) $propType
 
-        $artist = "$($p.Artist)".Trim()
-        $title = "$($p.Title)".Trim()
-        $text = if ($artist -and $title) { "$artist - $title" }
-                elseif ($title) { $title } else { $artist }
-
-        # Fold to what the panel's font covers: ASCII 32..90, upper case only.
-        # The firmware does this too and does not trust us to - but doing it
-        # here keeps the wire carrying only what can be drawn, and means a
-        # title reads correctly on firmware built before that fold existed.
-        return -join ($text.ToUpper().ToCharArray() |
-            Where-Object { [int]$_ -ge 32 -and [int]$_ -le 90 })
+        # Separately, not "Artist - Title": the panel sets them on two lines,
+        # and splitting a joined string back apart breaks on every title
+        # that has a dash in it.
+        return @((ConvertTo-Panel "$($p.Title)"), (ConvertTo-Panel "$($p.Artist)"))
     } catch {
         # A session can vanish between listing it and asking about it.
         Write-Verbose "now playing: $($_.Exception.Message)"
-        return ''
+        return @('', '')
     }
 }
 
@@ -272,6 +277,9 @@ try {
         if (((Get-Date) - $lastClock).TotalSeconds -ge $CLOCK_EVERY) {
             $now = Get-Date
             $lines.Add('T ' + [int]($now - $now.Date).TotalSeconds)
+            # After T, from the same instant: the dongle files the date
+            # against the day that clock counts from.
+            $lines.Add('D ' + [int]($now.Date - [datetime]::new(1970, 1, 1)).TotalDays)
             $lastClock = $now
         }
 
@@ -287,9 +295,13 @@ try {
             $lines.Add('M ' + [int][math]::Round($used))
         } catch {}
 
-        $np = Get-NowPlaying
-        if ($np.Length -gt $TEXT_MAX) { $np = $np.Substring(0, $TEXT_MAX) }
-        if ($np -ne $lastNp) { $lines.Add("N $np"); $lastNp = $np }
+        $title, $artist = Get-NowPlaying
+        $np = "$title|$artist"
+        if ($np -ne $lastNp) {
+            $lines.Add("N $title")
+            $lines.Add("A $artist")
+            $lastNp = $np
+        }
 
         # Never nothing. The dongle drops the link after a few silent seconds,
         # so a round where every reading failed and the track did not change

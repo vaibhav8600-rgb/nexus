@@ -9,8 +9,8 @@ it will ever see is a time somebody hands it.
 
 ```
   companion (your PC)  ──USB serial──►  dongle   ──►  HOST screen
-     time, CPU, memory,                  parses,       clock, meters,
-     now playing                         forgets       now playing
+     time, date, CPU,                    parses,       clock, meters,
+     RAM, now playing                    forgets load  now playing
                                          after 5 s
 ```
 
@@ -44,16 +44,28 @@ in your repo rather than in the module because a module that references
 The firmware will not build without it -- the `#error` in `host_link.c` points
 back here rather than failing somewhere confusing.
 
-**3. The companion,** running on the machine. This is the step people miss:
-flashing the firmware gets you the HOST screen, but it draws only what
-something pushes at it, and nothing on your PC pushes by itself. No companion
-means `NO LINK`, correctly.
+**3. The companion,** on the machine -- optional, and it runs with nothing
+installed on Windows, Linux or macOS.
 
-Why it cannot be zero: USB has no way for a device to ask the host anything.
-A keyboard never learns the time, the CPU load or what is playing unless
-something on the machine tells it -- every keyboard with a clock either
-carries a coin-cell RTC or runs a companion. So the aim is the next best
-thing: set up once, then never think about it.
+What you get depends on how much of it you do, and the first row needs
+nothing at all:
+
+| On the host | HOST screen shows |
+| --- | --- |
+| Nothing | How long this host has been connected (`2H 14M`) |
+| The companion ran once since the dongle powered up | Time and date, still counting after it stops |
+| The companion running | Time and date, CPU, RAM, title and artist |
+
+Why the first row is not the whole screen: USB has no way for a device to ask
+the host anything. A keyboard never learns the time, the CPU load or what is
+playing unless something on the machine tells it -- every keyboard with a
+clock either carries a coin-cell RTC or runs a companion. How long a host has
+been connected is the one thing the dongle can know by itself, so that is what
+it shows. It resets when the host sleeps.
+
+The clock and date survive the companion stopping, because they stay true for
+as long as the dongle has power: it counts forward on its own. Load and track
+do not -- they go to dashes a few seconds after the companion goes quiet.
 
 On **Windows**, double-click **`tools\nexus-host\install.cmd`**. That is the
 whole setup. No drivers -- Windows binds its own `usbser.sys` to the dongle's
@@ -75,16 +87,25 @@ found, or `-Port COM15` to pin one -- worth doing if you use ZMK Studio at the
 same time, so the companion leaves Studio's interface alone.
 `nexus_host.ps1 -Install -Port COM15` pins it in the installed copy too.
 
-**Everywhere else**, the Python one. Same protocol, needs two packages:
+On **Linux and macOS**, the Python one. Same protocol, and nothing but the
+Python that is already there:
 
 ```sh
-pip install pyserial psutil
-python tools/nexus-host/nexus_host.py --list    # find the port
-python tools/nexus-host/nexus_host.py           # run it
+python3 tools/nexus-host/nexus_host.py --list    # the ports it will use
+python3 tools/nexus-host/nexus_host.py           # run it
 ```
 
-On Linux the port is `/dev/ttyACM*` and reading it needs group `dialout`
-(`sudo usermod -aG dialout $USER`, then log back in).
+It opens the serial port as the tty it is, reads CPU and memory from `/proc`
+on Linux, and gets now playing from `playerctl` on Linux or the Music and
+Spotify apps on macOS. `pyserial` and `psutil` are used when they happen to be
+installed and never required -- on macOS, `psutil` is what adds CPU and RAM.
+
+- **Linux:** the ports are found by name under `/dev/serial/by-id/`. Writing
+  to them needs group `dialout` (`sudo usermod -aG dialout $USER`, then log
+  back in).
+- **macOS:** without pyserial it cannot tell the dongle from any other USB
+  serial device, so pass the port: `--port /dev/cu.usbmodem...`. The first
+  now-playing read asks for permission to talk to Music or Spotify; say yes.
 
 Then open the HOST screen on the dongle: `SETTINGS -> COMPANION`, where the
 row reads `LINKED` when the companion is talking to it.
@@ -109,13 +130,24 @@ firmware without breaking it.
 | Line | Meaning |
 | --- | --- |
 | `T 48720` | Local time as seconds since midnight. `48720` is 13:32. |
+| `D 20709` | Local date as days since 1970-01-01. `20709` is Sunday 13 September 2026. Send it straight after `T`, from the same instant. |
 | `C 37` | CPU load, 0-100. |
 | `M 62` | Memory used, 0-100. Drawn as `RAM`. |
-| `N Artist - Title` | Now playing. Empty clears it. Truncated at 39 characters. |
-| `X` | The companion is quitting. Everything reads unknown again immediately. |
+| `N So What` | The track title. Empty clears it. Truncated at 39 characters. |
+| `A Miles Davis` | Its artist, the same way. |
+| `X` | The companion is quitting. Load and track read unknown again immediately; the clock and date keep counting. |
+
+`D` and `A` are newer than the rest. Firmware from before them ignores both,
+and shows the title alone. A companion from before them sends `N Artist -
+Title`, which newer firmware shows as the title, with no artist line.
 
 Out-of-range numbers are treated as unknown rather than clamped: a companion
-that sends `C 900` has a bug, and showing `100%` would hide it.
+that sends `C 900` has a bug, and showing `100%` would hide it. So is a number
+with anything after it -- `C 37abc` is a mangled line, not 37.
+
+Send lines as fast as you like, back to back in one write: the dongle queues
+bytes in a 256 byte ring and assembles lines off the interrupt, so a whole
+update in one USB packet arrives whole.
 
 You can drive it by hand, which is the main reason it is text:
 
@@ -126,7 +158,10 @@ echo "T 48720" > /dev/ttyACM1      # or a terminal on COMx
 ## Staleness
 
 `CONFIG_NEXUS_HOST_STALE_S` (default 5) is how long the dongle keeps
-believing what it was told. After that the HOST screen goes back to dashes.
+believing what it was told. After that CPU, RAM and the track go back to
+dashes, and the pill says `NO LINK`. The clock and date keep counting: they
+do not go stale, they drift - slowly, and a slow drift is not what
+staleness is for.
 
 This matters more than it looks. A CPU meter frozen at 3% because the cable
 came out is worse than an empty one -- it looks like it is working. The dongle
@@ -144,8 +179,8 @@ only how it is drawn -- the companion sends the same seconds-since-midnight
 either way, so changing it needs nothing on the host.
 
 Between updates the dongle counts forward with its kernel uptime, which drifts.
-The companion resends `T` every minute, so the drift never accumulates past
-that. Seconds are not displayed, on purpose: a seconds digit would repaint that
+The companion resends `T` and `D` every minute, so the drift never
+accumulates past that. Seconds are not displayed, on purpose: a seconds digit would repaint that
 card once a second forever, which is exactly what a screen sitting idle on a
 desk must not do.
 
@@ -155,19 +190,23 @@ desk must not do.
   screen reads `NO LINK`. That is correct, not a failure.
 - **Now playing is per-OS and best effort.** The PowerShell companion reads
   Windows' own media session -- the one the volume flyout shows -- so any app
-  that reports to it works with nothing installed. Elsewhere it is `playerctl`
-  on Linux and `nowplaying-cli` on macOS. Without one the field is empty;
-  everything else still works.
+  that reports to it works with nothing installed. On macOS the Music and
+  Spotify apps answer with nothing installed; on Linux it is `playerctl`, which
+  most desktops have. Without one the field is empty; everything else still
+  works.
 - **The panel's font is ASCII 32-90: space through Z, upper case only.** Track
   titles are folded to that on arrival -- lower case folds up, anything else is
   dropped. The firmware does it rather than the companions, because the
   constraint belongs to the font, so no companion needs to know about it.
-- **psutil is optional.** Without it the companion sends only the clock.
+- **CPU and RAM on macOS need psutil.** Linux reads `/proc` and Windows asks
+  its own performance counters; macOS has no stdlib equivalent, so without
+  psutil those two cards stay dashes there.
 - **One more USB interface.** The dongle already exposes one serial port for
   ZMK Studio; this is a second. If your machine is short of USB endpoints,
   this is the thing to turn off first.
-- **About 100 bytes of RAM** on the dongle for the model and the line buffers,
-  none of it in the compositor band that `UI STATIC` reports.
+- **About half a kilobyte of RAM** on the dongle: the 256 byte receive ring,
+  a line buffer, and the model with its title and artist. None of it is in the
+  compositor band that `UI STATIC` reports.
 
 ## Privacy
 

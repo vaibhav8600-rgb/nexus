@@ -237,6 +237,9 @@ static void refresh_endpoint(void)
 	st->bt_profile_bonded = bonded;
 	st->bt_connected = bt_conn;
 	st->host_up = up;
+	if (became) {
+		st->host_up_at = k_uptime_get();
+	}
 	nexus_status_mark(NEXUS_STATUS_ENDPOINT);
 
 	/*

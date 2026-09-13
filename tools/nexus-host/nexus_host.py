@@ -5,15 +5,22 @@ One way, one line at a time, over the USB serial the dongle exposes when
 CONFIG_NEXUS_HOST_LINK is on. The dongle never answers, so this can only ever
 tell it things - it cannot type, press keys, or read anything back.
 
-    python nexus_host.py --list          # which port is the dongle?
-    python nexus_host.py                 # guess the port and run
-    python nexus_host.py --port COM7
+    python3 nexus_host.py --list          # which ports look like the dongle?
+    python3 nexus_host.py                 # find them and run
+    python3 nexus_host.py --port /dev/ttyACM1
 
-Needs pyserial. psutil is optional and only buys CPU and memory; without it
-the clock still works, which is the part that cannot come from anywhere else.
-Now-playing is best effort and per-OS - see docs/host-link.md.
+Needs nothing but Python on Linux and macOS: the serial port is opened as
+the tty it is, CPU and memory come from /proc on Linux, and now playing from
+playerctl on Linux or the Music and Spotify apps on macOS. pyserial and
+psutil are used when they happen to be installed, and never required.
+
+On Windows use nexus_host.ps1 instead - it needs nothing at all there, and
+Python cannot open a COM port without pyserial.
 """
 import argparse
+import datetime
+import glob
+import os
 import shutil
 import subprocess
 import sys
@@ -23,7 +30,7 @@ try:
     import serial
     from serial.tools import list_ports
 except ImportError:
-    sys.exit('pyserial is required:  pip install pyserial')
+    serial = None
 
 try:
     import psutil
@@ -32,126 +39,239 @@ except ImportError:
 
 TEXT_MAX = 39          # NEXUS_HOST_TEXT - 1, the dongle truncates anyway
 CLOCK_EVERY = 60       # seconds between clock resyncs
+ZMK_VID = 0x1D50
+EPOCH = datetime.date(1970, 1, 1)
 
 
-def find_port():
-    """The dongle, or None. ZMK's USB VID is the first thing to look for."""
-    best = None
-    for p in list_ports.comports():
-        blob = ' '.join(str(x) for x in
-                        (p.description, p.manufacturer, p.product) if x)
-        if p.vid == 0x1D50:                      # ZMK / OpenMoko range
-            return p.device
-        if 'nexus' in blob.lower() or 'zmk' in blob.lower():
-            best = best or p.device
-    return best
+# ---- ports ------------------------------------------------------------------
+
+def candidates():
+    """Every serial port that looks like the dongle.
+
+    All of them, not the first: the dongle has two serial interfaces - one is
+    ZMK Studio's, one is the host link - and which comes first depends on
+    the order the USB stack registered them. The one that is not ours
+    ignores a line it cannot parse.
+    """
+    if serial:
+        return sorted(p.device for p in list_ports.comports()
+                      if p.vid == ZMK_VID)
+    if sys.platform.startswith('linux'):
+        # udev names these after the USB manufacturer string, which ZMK
+        # sets. Stable across replugs, unlike ttyACM numbers.
+        return sorted(glob.glob('/dev/serial/by-id/usb-ZMK_Project_*'))
+    # macOS without pyserial: cu.usbmodem* is every CDC device on the
+    # machine, and writing to an Arduino is not a guess worth making.
+    return []
+
+
+def open_port(path):
+    if serial:
+        return serial.Serial(path, 115200, timeout=1, write_timeout=2)
+    import tty
+    fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+    tty.setraw(fd)             # no echo, no newline translation
+    return os.fdopen(fd, 'wb', buffering=0)
+
+
+# ---- readings ----------------------------------------------------------------
+
+def parse_proc_stat(text):
+    """(busy, total) jiffies from the aggregate cpu line of /proc/stat."""
+    f = [int(x) for x in text.split('\n', 1)[0].split()[1:]]
+    idle = f[3] + (f[4] if len(f) > 4 else 0)      # idle + iowait
+    return sum(f) - idle, sum(f)
+
+
+def parse_meminfo(text):
+    """Percent used from /proc/meminfo, the way free(1) counts it."""
+    kv = {}
+    for line in text.splitlines():
+        k, _, v = line.partition(':')
+        if v.strip():
+            kv[k] = int(v.split()[0])
+    total = kv.get('MemTotal', 0)
+    if not total or 'MemAvailable' not in kv:
+        return None
+    return round(100 * (total - kv['MemAvailable']) / total)
+
+
+class Load:
+    """CPU and memory percent, or None for either this OS will not give."""
+
+    def __init__(self):
+        self.last = None
+        if psutil:
+            psutil.cpu_percent()   # the first reading is always 0.0
+
+    def read(self):
+        if psutil:
+            return (round(psutil.cpu_percent()),
+                    round(psutil.virtual_memory().percent))
+        if not os.path.exists('/proc/stat'):
+            return None, None
+        try:
+            with open('/proc/stat') as f:
+                busy, total = parse_proc_stat(f.read())
+            with open('/proc/meminfo') as f:
+                mem = parse_meminfo(f.read())
+        except (OSError, ValueError, IndexError):
+            return None, None
+        cpu = None
+        if self.last and total > self.last[1]:
+            cpu = round(100 * (busy - self.last[0]) / (total - self.last[1]))
+        self.last = (busy, total)
+        return cpu, mem
+
+
+OSASCRIPT = []
+for app in ('Spotify', 'Music'):
+    OSASCRIPT += ['-e', 'if application "%s" is running then' % app,
+                  '-e', 'tell application "%s"' % app,
+                  '-e', 'if player state is playing then return '
+                        '(name of current track) & linefeed & '
+                        '(artist of current track)',
+                  '-e', 'end tell', '-e', 'end if']
+OSASCRIPT += ['-e', 'return ""']
 
 
 def now_playing():
-    """Whatever this OS will tell us, or ''. Never raises, never hangs."""
+    """(title, artist) from whatever this OS will say, or ('', '').
+
+    Never raises, never hangs. The "is running" checks matter on macOS:
+    asking an app that is not running for its track launches it.
+    """
     try:
         if sys.platform.startswith('linux') and shutil.which('playerctl'):
-            out = subprocess.run(
-                ['playerctl', 'metadata', '--format',
-                 '{{artist}} - {{title}}'],
-                capture_output=True, text=True, timeout=1)
-            return out.stdout.strip() if out.returncode == 0 else ''
-        if sys.platform == 'darwin' and shutil.which('nowplaying-cli'):
-            out = subprocess.run(['nowplaying-cli', 'get', 'artist', 'title'],
-                                 capture_output=True, text=True, timeout=1)
-            parts = [x for x in out.stdout.split('\n') if x.strip()]
-            return ' - '.join(parts[:2]) if parts else ''
-        if sys.platform == 'win32':
-            # winsdk is a big optional dependency; only used if it is there.
-            from winsdk.windows.media.control import \
-                GlobalSystemMediaTransportControlsSessionManager as Mgr
-            import asyncio
-
-            async def get():
-                mgr = await Mgr.request_async()
-                s = mgr.get_current_session()
-                if not s:
-                    return ''
-                info = await s.try_get_media_properties_async()
-                return ' - '.join(x for x in (info.artist, info.title) if x)
-            return asyncio.run(get())
+            cmd = ['playerctl', 'metadata', '--format',
+                   '{{title}}\n{{artist}}']
+        elif sys.platform == 'darwin':
+            cmd = ['osascript'] + OSASCRIPT
+        else:
+            return '', ''
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+        if out.returncode != 0:
+            return '', ''
+        parts = out.stdout.strip('\n').split('\n') + ['', '']
+        return parts[0].strip(), parts[1].strip()
     except Exception:
-        pass
-    return ''
+        return '', ''
 
 
-def lines(last_clock, last_np):
-    """The next batch to send, plus the state that decides the batch after."""
+def fold(text):
+    """What the panel's font can draw: ASCII 32..90, upper case. The dongle
+    folds too; doing it here keeps the wire to what can be drawn."""
+    return ''.join(c for c in text.upper() if 32 <= ord(c) <= 90)[:TEXT_MAX]
+
+
+# ---- the protocol ------------------------------------------------------------
+
+def clock_lines(now=None):
+    """T then D, from the same instant - the dongle files the date against
+    the day that clock counts from."""
+    t = time.localtime(now)
+    days = (datetime.date(t.tm_year, t.tm_mon, t.tm_mday) - EPOCH).days
+    return ['T %d' % (t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec),
+            'D %d' % days]
+
+
+def batch(state, load):
+    """The next lines to send. @p state carries what was sent last."""
     out = []
     now = time.time()
 
-    if now - last_clock >= CLOCK_EVERY:
-        t = time.localtime()
-        out.append('T %d' % (t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec))
-        last_clock = now
+    if now - state['clock'] >= CLOCK_EVERY:
+        out += clock_lines(now)
+        state['clock'] = now
 
-    if psutil:
-        out.append('C %d' % round(psutil.cpu_percent()))
-        out.append('M %d' % round(psutil.virtual_memory().percent))
+    cpu, mem = load.read()
+    if cpu is not None:
+        out.append('C %d' % cpu)
+    if mem is not None:
+        out.append('M %d' % mem)
 
-    np = now_playing()[:TEXT_MAX]
-    if np != last_np:
-        out.append('N %s' % np)
-        last_np = np
+    title, artist = now_playing()
+    np = (fold(title), fold(artist))
+    if np != state['np']:
+        out += ['N %s' % np[0], 'A %s' % np[1]]
+        state['np'] = np
 
-    return out, last_clock, last_np
+    # Never nothing: the dongle drops the link after a few silent seconds,
+    # and NO LINK while this is plainly running sends you looking for a
+    # fault that is not there. The clock is the cheapest thing to say.
+    if not out:
+        out = clock_lines(now)[:1]
+    return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--port', help='serial port; guessed when omitted')
-    ap.add_argument('--list', action='store_true', help='list serial ports')
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawTextHelpFormatter)
+    ap.add_argument('--port', action='append',
+                    help='serial port; found when omitted (repeatable)')
+    ap.add_argument('--list', action='store_true', help='list candidate ports')
     ap.add_argument('--interval', type=float, default=1.0,
                     help='seconds between updates (default 1)')
     ap.add_argument('--verbose', action='store_true', help='echo every line')
     args = ap.parse_args()
 
     if args.list:
-        for p in list_ports.comports():
-            print('%-14s %s' % (p.device, p.description))
+        for p in candidates():
+            print(p)
+        if sys.platform == 'darwin' and not serial:
+            print('macOS: pass --port /dev/cu.usbmodem... (see ls /dev/cu.*)')
         return 0
 
-    port = args.port or find_port()
-    if not port:
-        print('No dongle found. Run with --list and pass --port.',
-              file=sys.stderr)
-        return 1
-    if psutil is None:
-        print('psutil not installed: sending the clock only.', file=sys.stderr)
+    if not serial and os.name != 'posix':
+        sys.exit('On Windows use nexus_host.ps1, or pip install pyserial.')
 
-    print('NEXUS companion -> %s   (ctrl-c to stop)' % port)
-    last_clock, last_np = 0.0, None
+    load = Load()
+    print('NEXUS companion running (ctrl-c to stop)')
+    open_ = {}
+    waiting = False
 
     # Reconnect rather than exit: the dongle goes away on every reflash, and
     # a companion that dies on the first unplug is a companion you stop using.
-    while True:
-        try:
-            with serial.Serial(port, 115200, timeout=1, write_timeout=2) as s:
-                last_clock, last_np = 0.0, None      # resend everything
-                while True:
-                    batch, last_clock, last_np = lines(last_clock, last_np)
-                    for line in batch:
-                        s.write((line + '\n').encode('utf-8', 'replace'))
-                        if args.verbose:
-                            print(' >', line)
-                    s.flush()
-                    time.sleep(args.interval)
-        except KeyboardInterrupt:
+    try:
+        while True:
+            if not open_:
+                for path in args.port or candidates():
+                    try:
+                        open_[path] = open_port(path)
+                        print('open', path)
+                    except OSError as e:
+                        print('%s: %s' % (path, e), file=sys.stderr)
+                if not open_:
+                    if not waiting:
+                        print('waiting for the dongle')
+                        waiting = True
+                    time.sleep(3)
+                    continue
+                waiting = False
+                state = {'clock': 0.0, 'np': None}   # a fresh link: resend
+
+            data = ''.join(line + '\n' for line in batch(state, load))
+            if args.verbose:
+                print(data, end='')
+            for path in list(open_):
+                try:
+                    open_[path].write(data.encode('ascii', 'replace'))
+                except OSError as e:
+                    print('%s lost: %s' % (path, e), file=sys.stderr)
+                    try:
+                        open_.pop(path).close()
+                    except OSError:
+                        pass
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        for s in open_.values():
             try:
-                with serial.Serial(port, 115200, timeout=1) as s:
-                    s.write(b'X\n')       # "I am going away", not stale data
-            except Exception:
+                s.write(b'X\n')    # "I am going away", not stale data
+                s.close()
+            except OSError:
                 pass
-            print('\nstopped')
-            return 0
-        except Exception as e:
-            print('link lost (%s); retrying' % e, file=sys.stderr)
-            time.sleep(3)
+        print('\nstopped')
+        return 0
 
 
 if __name__ == '__main__':

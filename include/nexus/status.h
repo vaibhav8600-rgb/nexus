@@ -96,6 +96,10 @@ struct nexus_status {
 	 * endpoint to USB in the same breath, and link_host then describes USB
 	 * instead - so the drop chirped but the return never did. */
 	bool host_up;
+	/* k_uptime_get() when host_up last became true: how long this machine
+	 * has been awake and talking to us. The one host fact the dongle can
+	 * know with nothing installed on the host at all. */
+	int64_t host_up_at;
 
 	uint8_t modifiers;       /* NEXUS_MOD_* */
 	bool caps_lock;

@@ -8,9 +8,9 @@
  * many interfaces as the endpoints allow, and this costs one.
  *
  * Parsing happens on the NEXUS work queue, never in the UART interrupt. The
- * ISR does the least it can: copy bytes into a line buffer, and when a line
- * completes, hand it over and post the work. Model updates and repaints from
- * an ISR would be a much worse bug than a few bytes of latency.
+ * ISR does the least it can: move bytes into a ring buffer and post the work.
+ * The work item assembles lines and parses them. Model updates and repaints
+ * from an ISR would be a much worse bug than a few bytes of latency.
  */
 
 #include <nexus/host.h>
@@ -19,6 +19,8 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/spinlock.h>
+#include <zephyr/sys/ring_buffer.h>
 #include <string.h>
 
 #include "../nexus_priv.h"
@@ -41,16 +43,32 @@ static struct nexus_host g_host = {
 	.cpu = NEXUS_HOST_UNKNOWN,
 	.mem = NEXUS_HOST_UNKNOWN,
 	.clock_sec = UINT32_MAX,
+	.day = UINT32_MAX,
 };
 
 /*
- * Two buffers, because the ISR fills one while the work item reads the other.
- * A single buffer would need a lock held across a parse, in an interrupt.
+ * Bytes, not lines, cross from the ISR to the work item.
+ *
+ * This used to hand over one finished line at a time and drop any line that
+ * arrived before the work item had taken the last. The reasoning was that
+ * every field is a current value and the next one is a second away - which is
+ * true of CPU and memory and false of everything else: the clock is resent
+ * once a minute and the track only when it changes. And a companion writes
+ * its lines back to back, so they arrive in one USB packet and one interrupt,
+ * before the work item can possibly have run. Every line after the first was
+ * lost, every time.
+ *
+ * A ring holds a whole burst - a full update is under 150 bytes - and the line
+ * buffer below is touched only by the work item, so there is nothing left to
+ * race. The lock is for the ring's own indices, held for a memcpy.
  */
-static char g_rx[LINE_MAX];
-static uint8_t g_rx_len;
+#define RX_RING_SIZE 256
+
+RING_BUF_DECLARE(g_rx_ring, RX_RING_SIZE);
+static struct k_spinlock g_rx_lock;
+
 static char g_line[LINE_MAX];
-static atomic_t g_line_ready;
+static uint8_t g_line_len;
 
 static void parse_work_fn(struct k_work *work);
 static K_WORK_DEFINE(g_parse, parse_work_fn);
@@ -74,6 +92,27 @@ uint32_t nexus_host_clock(void)
 	return (uint32_t)((g_host.clock_sec + since) % 86400U);
 }
 
+/* Whole days the kernel clock has run past the midnight clock_sec counts
+ * from. Zero until the first midnight after a resync. */
+static uint32_t days_since_clock(void)
+{
+	if (g_host.clock_sec == UINT32_MAX) {
+		return 0;
+	}
+
+	int64_t since = (k_uptime_get() - g_host.clock_at) / MSEC_PER_SEC;
+
+	return (uint32_t)((g_host.clock_sec + since) / 86400U);
+}
+
+uint32_t nexus_host_day(void)
+{
+	if (g_host.day == UINT32_MAX) {
+		return UINT32_MAX;
+	}
+	return g_host.day + days_since_clock();
+}
+
 /* ---- parsing ------------------------------------------------------------ */
 
 static uint32_t to_u32(const char *s, uint32_t max)
@@ -89,7 +128,10 @@ static uint32_t to_u32(const char *s, uint32_t max)
 			return UINT32_MAX;
 		}
 	}
-	return v;
+	/* The whole value or nothing. "37abc" is not 37: it is a line that
+	 * got mangled, and a mangled line is the one place a plausible wrong
+	 * number could come from. */
+	return *s == '\0' ? v : UINT32_MAX;
 }
 
 /*
@@ -162,19 +204,41 @@ static void parse_line(const char *line)
 			nexus_host_screen_dirty(NEXUS_HOST_F_LOAD);
 		}
 		break;
-	case 'T':
+	case 'T': {
 		n = to_u32(val, 86399);
 		if (n == UINT32_MAX) {
 			break;
 		}
+
+		uint32_t was = nexus_host_clock();
+		uint32_t today = nexus_host_day();
+
 		/* The minute on the face is what is drawn, so a resync that
 		 * lands in the same minute is not worth a frame. */
-		if (nexus_host_clock() / 60U != n / 60U) {
+		if (was / 60U != n / 60U) {
 			nexus_host_screen_dirty(NEXUS_HOST_F_CLOCK);
 		}
 		g_host.clock_sec = n;
 		g_host.clock_at = k_uptime_get();
+
+		/*
+		 * Carry the date across. g_host.day is filed against the day
+		 * the clock counts from, and that just moved - without this a
+		 * T on its own, after the kernel clock had passed midnight,
+		 * put the date back a day. Near midnight the two clocks can
+		 * also disagree about which day it is by a few seconds; more
+		 * than half a day apart means one has wrapped and one has not.
+		 */
+		if (today != UINT32_MAX) {
+			if (was != UINT32_MAX && was > n + 43200U) {
+				today++;        /* the host is past midnight; we were not */
+			} else if (was != UINT32_MAX && n > was + 43200U && today) {
+				today--;        /* we were past midnight; the host is not */
+			}
+			g_host.day = today;
+		}
 		break;
+	}
 	case 'N': {
 		char clean[NEXUS_HOST_TEXT];
 
@@ -188,12 +252,49 @@ static void parse_line(const char *line)
 		}
 		break;
 	}
+	case 'A': {
+		char clean[NEXUS_HOST_TEXT];
+
+		fold(clean, val, sizeof(clean));
+		if (strcmp(g_host.artist, clean)) {
+			strcpy(g_host.artist, clean);
+			nexus_host_screen_dirty(NEXUS_HOST_F_NP);
+		}
+		break;
+	}
+	case 'D': {
+		/* Up to 2517. Past that, somebody else's problem. */
+		n = to_u32(val, 200000);
+		if (n == UINT32_MAX) {
+			break;
+		}
+		if (nexus_host_day() != n) {
+			nexus_host_screen_dirty(NEXUS_HOST_F_CLOCK);
+		}
+
+		/*
+		 * Stored against the day clock_sec counts from, so the date and
+		 * the time turn over at the same midnight. Straight after a T
+		 * this subtracts zero; it matters when the kernel clock is a
+		 * few seconds past midnight and the host is not yet.
+		 */
+		uint32_t past = days_since_clock();
+
+		g_host.day = n > past ? n - past : 0U;
+		break;
+	}
 	case 'X':
 		/* The companion is going away and says so, rather than leaving
-		 * numbers on screen that stopped being true when it quit. */
+		 * numbers on screen that stopped being true when it quit.
+		 *
+		 * Not the clock or the date: those stay true for as long as
+		 * the dongle keeps power, which is what lets the companion be
+		 * something that ran once this morning rather than something
+		 * that must be running all day. */
 		g_host.cpu = NEXUS_HOST_UNKNOWN;
 		g_host.mem = NEXUS_HOST_UNKNOWN;
 		g_host.now_playing[0] = '\0';
+		g_host.artist[0] = '\0';
 		g_host.link = false;
 		nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
 		return;
@@ -213,19 +314,44 @@ static void parse_work_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
-	if (!atomic_get(&g_line_ready)) {
+	uint8_t chunk[32];
+	uint32_t got;
+	bool parsed = false;
+
+	do {
+		k_spinlock_key_t key = k_spin_lock(&g_rx_lock);
+
+		got = ring_buf_get(&g_rx_ring, chunk, sizeof(chunk));
+		k_spin_unlock(&g_rx_lock, key);
+
+		for (uint32_t i = 0; i < got; i++) {
+			char c = (char)chunk[i];
+
+			if (c == '\r') {
+				continue;
+			}
+			if (c != '\n') {
+				/* Truncate rather than wrap: the tail of an
+				 * over-long line is dropped, the next line
+				 * still parses. */
+				if (g_line_len < LINE_MAX - 1) {
+					g_line[g_line_len++] = c;
+				}
+				continue;
+			}
+			if (g_line_len == 0) {
+				continue;
+			}
+			g_line[g_line_len] = '\0';
+			g_line_len = 0;
+			parse_line(g_line);
+			parsed = true;
+		}
+	} while (got == sizeof(chunk));
+
+	if (!parsed) {
 		return;
 	}
-	parse_line(g_line);
-	/*
-	 * Cleared after the parse, not before. The ISR only writes g_line when
-	 * this flag is clear, so holding it up for the length of the parse is
-	 * what stops the ISR overwriting the line being read - clearing it
-	 * first would leave exactly the torn-line race the two buffers exist
-	 * to avoid. A line dropped in that window costs nothing; the next one
-	 * carries the same current values a second later.
-	 */
-	atomic_set(&g_line_ready, 0);
 
 	/*
 	 * Restart the staleness timer on every line. A companion that is
@@ -257,46 +383,32 @@ static void uart_cb(const struct device *dev, void *user_data)
 		return;
 	}
 
-	while (uart_irq_rx_ready(dev)) {
-		uint8_t c;
+	bool any = false;
 
-		if (uart_fifo_read(dev, &c, 1) != 1) {
+	while (uart_irq_rx_ready(dev)) {
+		uint8_t buf[16];
+		int n = uart_fifo_read(dev, buf, sizeof(buf));
+
+		if (n <= 0) {
 			break;
 		}
-		if (c == '\r') {
-			continue;
-		}
-		if (c != '\n') {
-			/* Truncate rather than wrap: the tail of an over-long
-			 * line is dropped, the next line still parses. */
-			if (g_rx_len < LINE_MAX - 1) {
-				g_rx[g_rx_len++] = (char)c;
-			}
-			continue;
-		}
-		if (g_rx_len == 0) {
-			continue;
-		}
-		g_rx[g_rx_len] = '\0';
 
 		/*
-		 * Drop this line if the work item has not taken the last one.
-		 *
-		 * Overwriting it instead would be writing g_line from an
-		 * interrupt while the parser reads it - a torn line, and a
-		 * race that would show up as an occasional nonsense value
-		 * rather than a crash, which is the worst kind. Losing a line
-		 * costs nothing here: none of these are events, they are
-		 * current values, and the next one is a second away.
+		 * The FIFO must be drained whether or not the ring has room,
+		 * or the interrupt stays asserted and fires forever. So a
+		 * full ring drops what does not fit - which takes a host
+		 * sending 256 bytes faster than the work queue runs. The
+		 * torn line that leaves is rejected whole by to_u32(), not
+		 * misread as a number.
 		 */
-		uint8_t len = g_rx_len;
+		k_spinlock_key_t key = k_spin_lock(&g_rx_lock);
 
-		g_rx_len = 0;
-		if (atomic_get(&g_line_ready)) {
-			continue;
-		}
-		memcpy(g_line, g_rx, (size_t)len + 1U);
-		atomic_set(&g_line_ready, 1);
+		ring_buf_put(&g_rx_ring, buf, (uint32_t)n);
+		k_spin_unlock(&g_rx_lock, key);
+		any = true;
+	}
+
+	if (any) {
 		k_work_submit_to_queue(nexus_workq(), &g_parse);
 	}
 }

@@ -311,23 +311,44 @@ the screen.
 ## Host
 
 <img src="images/screens/host.png" width="170" alt="HOST, linked">
-<img src="images/screens/host-nolink.png" width="170" alt="HOST, no companion">
+<img src="images/screens/host-nolink.png" width="170" alt="HOST, nothing installed on the host">
 
 Opt-in, and off by default: `CONFIG_NEXUS_HOST_LINK` plus a devicetree node you
 add yourself. A companion on the machine the dongle is plugged into pushes the
-time, CPU and memory load and what is playing down a second USB serial;
-`SETTINGS -> COMPANION` opens it, and `NEXUS_ACT_HOST` bound to a key opens
-it directly - a clock you have to walk two menus to read is not a clock.
+time and date, CPU and RAM load, and the track and artist playing, down a
+second USB serial; `SETTINGS -> COMPANION` opens it, and `NEXUS_ACT_HOST`
+bound to a key opens it directly - a clock you have to walk two menus to read
+is not a clock.
+
+Four cards. The clock is the hero, in the display face at 3x with AM/PM on its
+baseline and the date tracked beneath it in the accent. CPU and RAM each get an
+icon tile, the value, and a meter in their own accent - the theme's first and
+second - turning to the warning colour at 80%. Now playing has an art tile, the
+title with the artist under it, and still level bars. A title drops to caption
+size before it is cut, and is cut with `..` rather than run off its card. The
+header's pill says `LINKED` or `NO LINK` in words.
 
 The clock is the reason it exists -- the dongle has no RTC, so the only real
 time it will ever see is a time somebody hands it. Seconds are deliberately not
 shown: a seconds digit would repaint that card once a second forever, which is
-the one thing a screen sitting idle on a desk must not do.
+the one thing a screen sitting idle on a desk must not do. The card repaints
+when the minute turns, and at no other time.
 
-The second shot is the normal state, and it is what the screen has to be good
-at. With no companion every field reads as dashes in the muted colour, never as
-the last number it saw -- a CPU meter frozen at 3% looks like it is working.
-Full protocol and setup: [host-link.md](host-link.md).
+The screen gets less useful in steps, never all at once:
+
+| State | Clock card | CPU / RAM / now playing |
+| --- | --- | --- |
+| Companion running | time and date | live |
+| Companion ran earlier, since stopped | time and date, still counting | dashes |
+| Nothing installed on the host (second shot) | how long the host has been connected, `2H 14M` | dashes |
+| No host at all | `--:--`, `NO HOST` | dashes |
+
+The third row is the normal state for most people, and it is what the screen
+has to be good at: it needs nothing on the host, because how long a host has
+been connected is something the dongle knows by itself. It is written as hours
+and minutes rather than `2:14` so it cannot be read as a time of day. Dashes
+are in the muted colour, never the last number seen -- a CPU meter frozen at 3%
+looks like it is working. Full protocol and setup: [host-link.md](host-link.md).
 
 ## Regenerating these images
 
