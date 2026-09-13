@@ -513,11 +513,31 @@ HOME = defines(read('src/ui/home.c'),
                ['BRAND_Y', 'BRAND_H', 'ROW1_Y', 'ROW1_H', 'ROW2_Y', 'ROW2_H',
                 'BAT_Y', 'BAT_H', 'INNER', 'COL_L', 'COL_W', 'COL_R', 'COL_RW',
                 'TR_W', 'TR_H', 'TR_SCALE', 'ST_W', 'ST_H', 'ST_SCALE',
-                'MOD_GLYPH_W', 'MOD_GLYPH_H', 'MOD_SCALE'])
+                'MOD_GLYPH_W', 'MOD_GLYPH_H', 'MOD_SCALE', 'PLATE_Y1',
+                'PLATE_Y2'])
 G = home_glyphs()
 
 
-def home(cv, t, st):
+def home_plate_clock(cv, t, clock, suffix, date):
+    """draw_host_clock() in home.c: time and date either side of the name.
+    @p date is (weekday, day-month) or None."""
+    K = HOME
+    mark_l = W // 2 - face_w('NEXUS', 2) // 2 - 4
+    left = K['COL_L'] + K['INNER'] + 1
+    right = K['COL_L'] + CONTENT_W - K['INNER'] - 1
+    if left + text_w('00 MMM', CAPTION) + 4 > mark_l:
+        return
+    y1, y2 = K['PLATE_Y1'], K['PLATE_Y2']
+    cv.text(left, y1 if suffix else (y1 + y2) // 2, clock, CAPTION, t['value'])
+    if suffix:
+        cv.text(left, y2, suffix, CAPTION, t['caption'])
+    if date:
+        wd, dm = date
+        cv.text(right - text_w(wd, CAPTION), y1, wd, CAPTION, t['caption'])
+        cv.text(right - text_w(dm, CAPTION), y2, dm, CAPTION, t['value'])
+
+
+def home(cv, t, st, clock=None, suffix=None, date=None):
     u, K = UI(cv, t), HOME
     u.ground()
 
@@ -525,6 +545,8 @@ def home(cv, t, st):
     u.card(K['COL_L'], K['BRAND_Y'], CONTENT_W, K['BRAND_H'])
     u.wordmark(W // 2,
                K['BRAND_Y'] + (K['BRAND_H'] - wordmark_h(2)) // 2, 'NEXUS', 2)
+    if clock is not None:
+        home_plate_clock(cv, t, clock, suffix, date)
 
     # link cluster: usb, ble, profile number, status tile
     u.card(K['COL_L'], K['ROW1_Y'], K['COL_W'], K['ROW1_H'])
@@ -1360,6 +1382,8 @@ def main():
 
     shots = [
         ('home', lambda cv: home(cv, nx, STATUS)),
+        ('home-host', lambda cv: home(cv, nx, STATUS, clock='3:49',
+                                      suffix='PM', date=('SUN', '13 SEP'))),
         ('game-center', lambda cv: game_center(cv, nx, 0)),
         ('tetris', lambda cv: tetris(cv, nx)),
         ('snake', lambda cv: snake(cv, nx)),

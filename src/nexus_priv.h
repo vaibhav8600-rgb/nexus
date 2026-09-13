@@ -71,4 +71,18 @@ enum nexus_host_field {
 
 void nexus_host_screen_dirty(enum nexus_host_field field);
 
+/*
+ * The host clock as text, shared by HOST and the home screen's brand plate so
+ * the two can never disagree about how a time is written. Both live in
+ * host_screen.c and exist only with CONFIG_NEXUS_HOST_LINK.
+ */
+
+/** "12:59" into @p buf (8 bytes is plenty), "AM"/"PM" or NULL on a 24 hour
+ *  clock into @p suffix. False, and nothing written, if no host has sent a
+ *  time. */
+bool nexus_host_time_text(char *buf, int len, const char **suffix);
+
+/** Days since 1970-01-01 to "SUN" (4 bytes), "13 SEP" (7), "2026" (5). */
+void nexus_host_date_text(uint32_t days, char *wday, char *dmon, char *yyyy);
+
 #endif /* NEXUS_PRIV_H_ */

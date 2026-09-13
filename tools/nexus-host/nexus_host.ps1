@@ -42,19 +42,29 @@ $CLOCK_EVERY = 60       # seconds between clock resyncs
 # state. So something has to run here, and the honest thing to do about that is
 # make it run itself.
 #
-# A shortcut in the per-user Startup folder, which is the oldest and least
-# clever way Windows has of doing this: no admin, no UAC, no service, no
-# scheduled task, and you can see and delete it in Explorer. Minimised rather
-# than hidden - a companion you cannot find is a companion you cannot
-# troubleshoot, and this one has things to say when a port is busy.
-$LINK_NAME = 'NEXUS companion.lnk'
-# Installed as a copy, not a shortcut to wherever you ran it from. A repo
+# The per-user Run key: no admin, no UAC, no service, no scheduled task, and it
+# is listed under Task Manager -> Startup apps, where it can be switched off
+# like anything else. Minimised rather than hidden - a companion you cannot
+# find is a companion you cannot troubleshoot, and this one has things to say
+# when a port is busy.
+#
+# Not a shortcut in the Startup folder, which is what this first did. That
+# folder is wherever the registry says it is, and on a real machine the
+# registry said a temp directory that had since been deleted: .NET returned an
+# empty path, the shortcut could not be made, and autostart silently did not
+# happen. The Run key has no folder to go missing.
+$RUN_KEY = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$RUN_NAME = 'NEXUS companion'
+# Installed as a copy, not pointed at wherever you ran it from. A repo
 # unzipped into Downloads gets cleaned up, and an autostart pointing into it
 # dies silently the next time you log in.
 $HOME_DIR = Join-Path $env:LOCALAPPDATA 'NEXUS'
 
-function Get-StartupLink {
-    Join-Path ([Environment]::GetFolderPath('Startup')) $LINK_NAME
+# The Startup-folder shortcut an earlier version made, so -Uninstall still
+# removes it. Empty when that folder does not exist.
+function Get-OldStartupLink {
+    $dir = [Environment]::GetFolderPath('Startup')
+    if ($dir) { Join-Path $dir 'NEXUS companion.lnk' }
 }
 
 function Stop-Companions {
@@ -74,9 +84,19 @@ function Stop-Companions {
 }
 
 if ($Uninstall) {
-    $lnk = Get-StartupLink
-    if (Test-Path $lnk) { Remove-Item $lnk; Write-Output "removed $lnk" }
-    else { Write-Output 'not installed' }
+    $found = $false
+    if (Get-ItemProperty $RUN_KEY -Name $RUN_NAME -ErrorAction SilentlyContinue) {
+        Remove-ItemProperty $RUN_KEY -Name $RUN_NAME
+        Write-Output 'removed from Startup apps'
+        $found = $true
+    }
+    $lnk = Get-OldStartupLink
+    if ($lnk -and (Test-Path $lnk)) {
+        Remove-Item $lnk
+        Write-Output "removed $lnk"
+        $found = $true
+    }
+    if (-not $found) { Write-Output 'was not set to start with Windows' }
     Stop-Companions
     if (Test-Path $HOME_DIR) {
         Remove-Item $HOME_DIR -Recurse -Force -ErrorAction SilentlyContinue
@@ -86,32 +106,35 @@ if ($Uninstall) {
 }
 
 if ($Install) {
-    Stop-Companions     # so the one started below is the only one
-    $script = Join-Path $HOME_DIR 'nexus_host.ps1'
-    New-Item -ItemType Directory -Force $HOME_DIR | Out-Null
-    if ($PSCommandPath -ne $script) {
-        Copy-Item $PSCommandPath $script -Force
+    # Every step or none of them reported as done. The first version carried
+    # on past a failed step and printed "installed" under a screen of red.
+    try {
+        Stop-Companions     # so the one started below is the only one
+        $script = Join-Path $HOME_DIR 'nexus_host.ps1'
+        New-Item -ItemType Directory -Force $HOME_DIR -ErrorAction Stop | Out-Null
+        if ($PSCommandPath -ne $script) {
+            Copy-Item $PSCommandPath $script -Force -ErrorAction Stop
+        }
+
+        # $launch, not $args: $args is PowerShell's own automatic variable.
+        $launch = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized " +
+                  "-File `"$script`""
+        if ($Port) { $launch += " -Port $Port" }
+
+        $exe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+        Set-ItemProperty $RUN_KEY -Name $RUN_NAME -Value "`"$exe`" $launch" `
+            -ErrorAction Stop
+        Write-Output 'installed: starts with Windows (Task Manager -> Startup apps)'
+
+        # And start it now, because "works after you reboot" is not what
+        # anyone means when they ask for this.
+        Start-Process $exe -WindowStyle Minimized -ArgumentList $launch -ErrorAction Stop
+    } catch {
+        Write-Error "install failed: $($_.Exception.Message)"
+        exit 1
     }
-
-    # $launch, not $args: $args is PowerShell's own automatic variable.
-    $launch = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized " +
-              "-File `"$script`""
-    if ($Port) { $launch += " -Port $Port" }
-
-    $lnk = Get-StartupLink
-    $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-    $sc.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $sc.Arguments = $launch
-    $sc.WorkingDirectory = $HOME_DIR
-    $sc.Description = 'Pushes the clock, load and now playing to a NEXUS dongle.'
-    $sc.Save()
-    Write-Output "installed $lnk"
-
-    # And start it now, because "works after you reboot" is not what anyone
-    # means when they ask for this.
-    Start-Process powershell -WindowStyle Minimized -ArgumentList $launch
     Write-Output 'running. Open SETTINGS -> COMPANION on the dongle.'
-    Write-Output 'undo with -Uninstall.'
+    Write-Output 'undo with uninstall.cmd, or -Uninstall.'
     return
 }
 

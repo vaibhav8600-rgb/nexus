@@ -29,6 +29,13 @@ port to your machine unless you ask it to.
 CONFIG_NEXUS_HOST_LINK=y
 ```
 
+It is off by default, and off means none of this exists: no host link code is
+compiled, no devicetree node is needed, no second serial port appears, and
+the HOST screen, the `COMPANION` row and the clock on the home plate are all
+left out. A config that never mentions it builds and behaves exactly as NEXUS
+did before the host link existed. A test holds every call into the host link
+to that.
+
 **2. The devicetree node,** in your config's `nexus_dongle.overlay`. This lives
 in your repo rather than in the module because a module that references
 `&zephyr_udc0` would fail to build for anyone whose board does not define it:
@@ -63,6 +70,9 @@ clock either carries a coin-cell RTC or runs a companion. How long a host has
 been connected is the one thing the dongle can know by itself, so that is what
 it shows. It resets when the host sleeps.
 
+The time and date also appear on the home screen, either side of the NEXUS
+name, as soon as a companion has sent them.
+
 The clock and date survive the companion stopping, because they stay true for
 as long as the dongle has power: it counts forward on its own. Load and track
 do not -- they go to dashes a few seconds after the companion goes quiet.
@@ -70,10 +80,11 @@ do not -- they go to dashes a few seconds after the companion goes quiet.
 On **Windows**, double-click **`tools\nexus-host\install.cmd`**. That is the
 whole setup. No drivers -- Windows binds its own `usbser.sys` to the dongle's
 serial interface -- no admin prompt, and nothing to install. It copies the
-companion to `%LOCALAPPDATA%\NEXUS`, adds a shortcut to your Startup folder,
-and starts it minimised. From then on it starts when you log in and reconnects
-by itself across reflashes, reboots and unplugs. `uninstall.cmd` undoes all
-of it.
+companion to `%LOCALAPPDATA%\NEXUS`, sets it to start with Windows, and
+starts it minimised. From then on it starts when you log in and reconnects by
+itself across reflashes, reboots and unplugs. It is listed in Task Manager
+under **Startup apps** as `NEXUS companion`, where you can switch it off like
+anything else; `uninstall.cmd` removes it entirely.
 
 To run it by hand instead:
 

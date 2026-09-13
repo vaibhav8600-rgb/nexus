@@ -440,7 +440,11 @@ def screen(s, events):
     kc = read('Kconfig').split('config NEXUS_HOST_CLOCK_24H')[1]
     ok('default n' in kc.split('\nconfig ')[0],
        '12 hour with AM/PM is the default, 24 hour is opt in')
-    ok('IS_ENABLED(CONFIG_NEXUS_HOST_CLOCK_24H)' in clock,
+    tt = body(s, 'bool nexus_host_time_text(char *buf, int len, '
+                 'const char **suffix)\n{')
+    ok('nexus_host_time_text(a, sizeof(a), &suffix)' in clock,
+       'the HOST clock is written by the shared nexus_host_time_text()')
+    ok('IS_ENABLED(CONFIG_NEXUS_HOST_CLOCK_24H)' in tt,
        'and the format is a build option')
 
     def face(sec, h24):
@@ -462,17 +466,19 @@ def screen(s, events):
                                  '23:59')):
         ok(face(sec, False) == want12 and face(sec, True)[0] == want24,
            '%5ds -> %s %s, or %s' % (sec, want12[0], want12[1], want24))
-    ok('hour = 12U' in clock and 'suffix ? 0 : 2' in clock,
+    ok('hour = 12U' in tt and '*suffix ? 0 : 2' in tt,
        'midnight and noon read as 12; 24 hour is padded so the colon holds')
     ok('gfx_face_h(BIG) - gfx_face_h(1)' in s,
        'units sit on the numerals\' baseline')
 
     print('\nThe date')
-    fmt = body(s, 'static void format_date(uint32_t days, char *buf)\n{')
+    fmt = body(s, 'void nexus_host_date_text(uint32_t days, char *wday, '
+                  'char *dmon, char *yyyy)\n{')
     for const in ('719468U', '146097U', '1460U', '36524U', '146096U',
                   '153U', '(days + 4U) % 7U', 'era * 400U',
                   '(mon <= 1U ? 1U : 0U)'):
-        ok(const in fmt, 'format_date() is civil_from_days (%s)' % const)
+        ok(const in fmt, 'nexus_host_date_text() is civil_from_days (%s)'
+           % const)
     epoch = datetime.date(1970, 1, 1)
     wrong = []
     # Every day from 1970 to 2517 - the whole range D accepts - weekday, day,
@@ -634,20 +640,125 @@ def companions():
     ok("'X'" in ps, 'says X on the way out')
     ok(not re.search(r'^\s*\$args\s*\+?=', ps, re.M),
        'never assigns $args - that is PowerShell\'s automatic variable')
-    inst = ps.split('if ($Install) {')[-1]
-    ok("GetFolderPath('Startup')" in ps and 'CreateShortcut' in inst,
-       '-Install: a per-user Startup shortcut, no admin, no service')
+    inst = ps.split('if ($Install) {')[-1].split('\n}\n')[0]
+    ok("'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'" in ps
+       and 'Set-ItemProperty $RUN_KEY' in inst,
+       '-Install: the per-user Run key, no admin, listed in Startup apps')
+    ok('CreateShortcut' not in ps,
+       'not a Startup-folder shortcut - that folder is wherever the registry '
+       'says, and on a real machine it said a deleted temp directory')
     ok('Copy-Item $PSCommandPath $script' in inst
        and '-File `"$script`"' in inst,
        'pointing at an installed copy, so deleting the repo does not break it')
     ok(inst.index('Stop-Companions') < inst.index('Start-Process'),
        'an older copy is stopped before the new one starts')
-    ok('Remove-Item $lnk' in ps.split('if ($Uninstall) {')[-1],
-       '-Uninstall takes it away again')
+    ok(inst.index('try {') < inst.index('Set-ItemProperty')
+       and 'exit 1' in inst
+       and inst.index('exit 1') < inst.index("'running."),
+       'a failed step stops the install and says so, rather than printing '
+       '"installed" under the errors')
+    un = ps.split('if ($Uninstall) {')[-1].split('\n}\n')[0]
+    ok('Remove-ItemProperty $RUN_KEY' in un and 'Get-OldStartupLink' in un,
+       '-Uninstall removes the Run entry, and an old shortcut if one exists')
     for name, flag in (('install.cmd', '-Install'),
                        ('uninstall.cmd', '-Uninstall')):
         ok('"%~dp0nexus_host.ps1" ' + flag in read('tools', 'nexus-host', name),
            '%s is the double-click for %s' % (name, flag))
+
+
+def home_plate():
+    print('\nThe home screen\'s plate clock')
+    home = read('src', 'ui', 'home.c')
+    K = {k: int(v) for k, v in re.findall(r'^#define (\w+) (\d+)', home, re.M)}
+    ok(re.search(r'^#define BRAND_Y NEXUS_PAD\b', home, re.M) is not None,
+       'the plate starts at NEXUS_PAD (9)')
+    K['BRAND_Y'] = 9
+    y1 = K['BRAND_Y'] + int(re.search(r'#define PLATE_Y1 \(BRAND_Y \+ (\d+)\)',
+                                      home).group(1))
+    y2 = K['BRAND_Y'] + int(re.search(r'#define PLATE_Y2 \(BRAND_Y \+ (\d+)\)',
+                                      home).group(1))
+    pad, inner, brand_h = 9, K['INNER'], K['BRAND_H']
+
+    draw = body(home, 'static void draw_host_clock(void)\n{')
+    ok('if (!nexus_host_time_text(hm, sizeof(hm), &suffix))' in draw
+       and draw.index('return;') < draw.index('gfx_text('),
+       'drawn only once a host has sent a time - until then the plate is '
+       'exactly what it was')
+    ok('nexus_host_date_text(day, wd, dm, yy)' in draw,
+       'with the same text helpers as HOST, so the two cannot disagree')
+    ok('mark_l' in draw and '"00 MMM"' in draw,
+       'and only where the name leaves room for it')
+    hd = body(home, 'static void home_draw(void)\n{')
+    brand = hd.split('gfx_hits(BRAND_Y, BRAND_H)')[1].split('}')[0]
+    ok(brand.index('draw_brand()') < brand.index('draw_host_clock()')
+       < brand.index('draw_flags(st)'),
+       'over the plate, under the jiggler dot')
+    ok('.tick = home_tick' in home and
+       'nexus_screen_invalidate_rows(BRAND_Y, BRAND_Y + BRAND_H)'
+       in body(home, 'static void home_tick(void)\n{'),
+       'and it repaints the plate when the minute or day turns')
+
+    # The numbers: NEXUS at display face 2x is 108px, centred, with a glow
+    # two letter-pixels wide. The widest column is "00 MMM".
+    mark_l = 120 - (5 * 22 - 2) // 2 - 4
+    left = pad + inner + 1
+    col = text_w('00 MMM', 1)
+    ok(left + col + 4 <= mark_l,
+       'the columns clear the wordmark: %d + %d + 4 <= %d' % (left, col, mark_l))
+    dot_bottom = K['BRAND_Y'] + 9 + 4 + 3      # draw_flags: y, r, halo
+    ok(y1 > dot_bottom, 'the weekday (y %d) clears the jiggler dot\'s halo '
+       '(ends %d)' % (y1, dot_bottom))
+    ok(y2 + 7 <= K['BRAND_Y'] + brand_h - 4,
+       'and the second line ends inside the plate (%d)' % (y2 + 7))
+    ok(text_w('12:59', 1) <= col and text_w('WED', 1) <= col,
+       'every string it draws is no wider than the column it was checked for')
+
+
+def without_host_link():
+    print('\nA build without CONFIG_NEXUS_HOST_LINK')
+    # Off is the default, and most people who use this module never turn it
+    # on. host_link.c and host_screen.c are not compiled then, so anything
+    # that calls into them from elsewhere has to be compiled out with them -
+    # or the build fails at link time, for everyone, on a feature they never
+    # asked for.
+    kc = read('Kconfig').split('config NEXUS_HOST_LINK\n')[1].split('\nconfig ')[0]
+    ok('default n' in kc, 'the host link is off unless a config turns it on')
+    cm = read('CMakeLists.txt')
+    for f in ('src/host/host_link.c', 'src/ui/host_screen.c'):
+        ok('zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK %s)' % f in cm,
+           '%s is only compiled with it' % f)
+
+    only_there = re.compile(
+        r'\b(nexus_host|nexus_host_clock|nexus_host_day|nexus_host_time_text|'
+        r'nexus_host_date_text|nexus_host_link_init|nexus_host_screen_dirty)'
+        r'\s*\(|\bnexus_screen_host_def\b')
+    unguarded = []
+    checked = 0
+    for dirpath, _, files in os.walk(os.path.join(ROOT, 'src')):
+        for name in files:
+            rel = os.path.relpath(os.path.join(dirpath, name), ROOT)
+            rel = rel.replace(os.sep, '/')
+            host_only = ('src/host/host_link.c', 'src/ui/host_screen.c')
+            if not name.endswith('.c') or rel in host_only:
+                continue
+            stack = []           # per open #if: does it select the host link?
+            for n, line in enumerate(read(rel).splitlines(), 1):
+                d = line.strip()
+                if re.match(r'#\s*if', d):
+                    stack.append('CONFIG_NEXUS_HOST_LINK' in d
+                                 and '!' not in d)
+                elif re.match(r'#\s*(else|elif)', d) and stack:
+                    stack[-1] = False
+                elif re.match(r'#\s*endif', d) and stack:
+                    stack.pop()
+                elif only_there.search(line):
+                    checked += 1
+                    if not any(stack):
+                        unguarded.append('%s:%d' % (rel, n))
+    ok(checked > 0 and not unguarded,
+       'every one of the %d calls into them elsewhere is inside '
+       '#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK): %s'
+       % (checked, unguarded or 'none outside'))
 
 
 def main():
@@ -660,6 +771,8 @@ def main():
     link_source(c, read('Kconfig'))
     screen(s, read('src', 'status', 'zmk_events.c'))
     layout(s)
+    home_plate()
+    without_host_link()
     companions()
 
     print('\n%s' % ('FAILED (%d)' % len(bad) if bad else 'PASSED'))

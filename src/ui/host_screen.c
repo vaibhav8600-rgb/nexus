@@ -171,13 +171,43 @@ static const char *const k_month[12] = {
 	"JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 };
 
+bool nexus_host_time_text(char *buf, int len, const char **suffix)
+{
+	uint32_t sec = nexus_host_clock();
+	uint32_t hour = sec / 3600U;
+	int n = 0;
+
+	*suffix = NULL;
+	if (sec == UINT32_MAX) {
+		return false;
+	}
+
+	if (!IS_ENABLED(CONFIG_NEXUS_HOST_CLOCK_24H)) {
+		*suffix = hour < 12U ? "AM" : "PM";
+		hour %= 12U;
+		if (hour == 0U) {
+			hour = 12U; /* midnight and noon are 12, not 0 */
+		}
+	}
+
+	/* Padded on a 24 hour clock so the colon never moves; unpadded on a 12
+	 * hour one, because "01:32 PM" is not what a clock face says. */
+	gfx_utoa(hour, buf, len, *suffix ? 0 : 2);
+	while (buf[n]) {
+		n++;
+	}
+	buf[n++] = ':';
+	gfx_utoa((sec % 3600U) / 60U, &buf[n], len - n, 2);
+	return true;
+}
+
 /*
- * "SUN 13 SEP 2026" from days since 1970-01-01: Howard Hinnant's
+ * Days since 1970-01-01 to "SUN", "13 SEP" and "2026": Howard Hinnant's
  * civil_from_days. Pure integer arithmetic, correct for every Gregorian date
- * this can be handed - leap years, 2000 and 2100 included - with no table
- * and no library. @p buf needs 16 bytes.
+ * this can be handed - leap years, 2000 and 2100 included - with no table and
+ * no library.
  */
-static void format_date(uint32_t days, char *buf)
+void nexus_host_date_text(uint32_t days, char *wday, char *dmon, char *yyyy)
 {
 	uint32_t z = days + 719468U;
 	uint32_t era = z / 146097U;
@@ -190,15 +220,12 @@ static void format_date(uint32_t days, char *buf)
 	/* The algorithm's year starts in March, so January and February
 	 * belong to the next calendar year. */
 	uint32_t year = yoe + era * 400U + (mon <= 1U ? 1U : 0U);
-	char num[8];
 
-	strcpy(buf, k_wday[(days + 4U) % 7U]); /* 1970-01-01 was a Thursday */
-	strcat(buf, " ");
-	strcat(buf, gfx_utoa(mday, num, sizeof(num), 0));
-	strcat(buf, " ");
-	strcat(buf, k_month[mon]);
-	strcat(buf, " ");
-	strcat(buf, gfx_utoa(year, num, sizeof(num), 0));
+	strcpy(wday, k_wday[(days + 4U) % 7U]); /* 1970-01-01 was a Thursday */
+	gfx_utoa(mday, dmon, 3, 0);
+	strcat(dmon, " ");
+	strcat(dmon, k_month[mon]);
+	gfx_utoa(year, yyyy, 5, 0);
 }
 
 /*
@@ -229,7 +256,7 @@ static void draw_clock(void)
 
 	const struct nexus_theme *t = nexus_theme();
 	const struct nexus_status *st = nexus_status_get();
-	uint32_t sec = nexus_host_clock();
+	const char *suffix;
 	int y = CLOCK_Y + 10;
 	char a[8];
 	char b[8];
@@ -239,34 +266,12 @@ static void draw_clock(void)
 	gfx_round_frame(NEXUS_PAD, CLOCK_Y, NEXUS_CONTENT_W, CLOCK_H, t->radius,
 			t->accent, 70);
 
-	if (sec != UINT32_MAX) {
-		/*
-		 * Seconds are deliberately absent: they would repaint this card
-		 * once a second forever, which is the one thing a screen that
-		 * sits idle on a desk must not do.
-		 */
-		uint32_t hour = sec / 3600U;
-		const char *suffix = NULL;
-		int n = 0;
-
-		if (!IS_ENABLED(CONFIG_NEXUS_HOST_CLOCK_24H)) {
-			suffix = hour < 12U ? "AM" : "PM";
-			hour %= 12U;
-			if (hour == 0U) {
-				hour = 12U; /* midnight and noon are 12, not 0 */
-			}
-		}
-
-		/* Padded on a 24 hour clock so the colon never moves; unpadded
-		 * on a 12 hour one, because "01:32 PM" is not what a clock
-		 * face says. */
-		gfx_utoa(hour, a, sizeof(a), suffix ? 0 : 2);
-		while (a[n]) {
-			n++;
-		}
-		a[n++] = ':';
-		gfx_utoa((sec % 3600U) / 60U, &a[n], (int)sizeof(a) - n, 2);
-
+	/*
+	 * Seconds are deliberately absent: they would repaint this card once a
+	 * second forever, which is the one thing a screen that sits idle on a
+	 * desk must not do.
+	 */
+	if (nexus_host_time_text(a, sizeof(a), &suffix)) {
 		struct run runs[2] = { { a, true }, { suffix, false } };
 
 		draw_runs(y, runs, suffix ? 2 : 1, t->value, t->caption);
@@ -274,7 +279,16 @@ static void draw_clock(void)
 		uint32_t day = nexus_host_day();
 
 		if (day != UINT32_MAX) {
-			format_date(day, line);
+			char wd[4];
+			char dm[8];
+			char yy[5];
+
+			nexus_host_date_text(day, wd, dm, yy);
+			strcpy(line, wd);
+			strcat(line, " ");
+			strcat(line, dm);
+			strcat(line, " ");
+			strcat(line, yy);
 			nexus_draw_tracked(GFX_W / 2, CLOCK_Y + 60, line,
 					   NEXUS_TXT_CAPTION, 2, t->accent);
 		} else {
