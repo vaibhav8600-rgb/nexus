@@ -208,6 +208,12 @@ companion. Studio holding its own port does not cause this.
 **The clock is right but there is no date, or no artist.**
 An older companion that does not send `D` or `A`. Update it.
 
+**The level bars keep moving when the track is paused.**
+Also an older companion: it does not send `P`, and a track the dongle has not
+been told is paused reads as playing. Run `install.cmd` again. If it is
+current, check the player reports pausing to the system - on Windows, the
+volume flyout's media controls should show it paused.
+
 **CPU and RAM are dashes on macOS.**
 macOS has no standard-library source for them; `pip install psutil`.
 
