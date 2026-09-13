@@ -186,7 +186,8 @@ OSASCRIPT += ['-e', 'return ""']
 
 
 def now_playing():
-    """(title, artist) from whatever this OS will say, or ('', '').
+    """(title, artist, playing) from whatever this OS will say, or
+    ('', '', False).
 
     Never raises, never hangs. The "is running" checks matter on macOS:
     asking an app that is not running for its track launches it.
@@ -194,18 +195,27 @@ def now_playing():
     try:
         if sys.platform.startswith('linux') and shutil.which('playerctl'):
             cmd = ['playerctl', 'metadata', '--format',
-                   '{{title}}\n{{artist}}']
+                   '{{title}}\n{{artist}}\n{{status}}']
         elif sys.platform == 'darwin':
             cmd = ['osascript'] + OSASCRIPT
         else:
-            return '', ''
+            return '', '', False
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
         if out.returncode != 0:
-            return '', ''
-        parts = out.stdout.strip('\n').split('\n') + ['', '']
-        return parts[0].strip(), parts[1].strip()
+            return '', '', False
+        return parse_now_playing(out.stdout, cmd[0] == 'playerctl')
     except Exception:
-        return '', ''
+        return '', '', False
+
+
+def parse_now_playing(text, has_status):
+    """Title, artist and playing from 'title\\nartist[\\nstatus]'. Only the
+    trailing newline is stripped: an empty title is a leading one. playerctl
+    says Playing or Paused; the macOS script only answers while playing."""
+    parts = text.rstrip('\n').split('\n') + ['', '', '']
+    title, artist = parts[0].strip(), parts[1].strip()
+    playing = parts[2].strip() == 'Playing' if has_status else bool(title)
+    return title, artist, playing
 
 
 def fold(text):
@@ -240,10 +250,12 @@ def batch(state, load):
     if mem is not None:
         out.append('M %d' % mem)
 
-    title, artist = now_playing()
-    np = (fold(title), fold(artist))
+    title, artist, playing = now_playing()
+    np = (fold(title), fold(artist), playing)
     if np != state['np']:
-        out += ['N %s' % np[0], 'A %s' % np[1]]
+        # P: playing or paused. The dongle moves its level bars only while
+        # a track plays; firmware from before P ignores the line.
+        out += ['N %s' % np[0], 'A %s' % np[1], 'P %d' % playing]
         state['np'] = np
 
     # Never nothing: the dongle drops the link after a few silent seconds,

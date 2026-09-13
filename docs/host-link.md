@@ -153,11 +153,13 @@ firmware without breaking it.
 | `M 62` | Memory used, 0-100. Drawn as `RAM`. |
 | `N So What` | The track title. Empty clears it. Truncated at 39 characters. |
 | `A Miles Davis` | Its artist, the same way. |
+| `P 1` | Playing (`1`) or paused (`0`). The level bars move only while it plays. Never sent means playing. |
 | `X` | The companion is quitting. Load and track read unknown again immediately; the clock and date keep counting. |
 
-`D` and `A` are newer than the rest. Firmware from before them ignores both,
-and shows the title alone. A companion from before them sends `N Artist -
-Title`, which newer firmware shows as the title, with no artist line.
+`D`, `A` and `P` are newer than the rest. Firmware from before them ignores
+them, and shows the title alone. A companion from before them sends `N Artist -
+Title`, which newer firmware shows as the title, with no artist line, and
+sends no `P`, so its track reads as playing.
 
 Out-of-range numbers are treated as unknown rather than clamped: a companion
 that sends `C 900` has a bug, and showing `100%` would hide it. So is a number

@@ -338,14 +338,21 @@ second USB serial; `SETTINGS -> COMPANION` opens it, and `NEXUS_ACT_HOST`
 bound to a key opens it directly - a clock you have to walk two menus to read
 is not a clock.
 
-Four cards. The clock is the hero, in the display face at 3x with AM/PM on its
-baseline and the full date tracked beneath it in the accent -- `SUN 13 SEP
-2026`, from the host's own calendar, turning over at midnight by itself. CPU and RAM each get an
-icon tile, the value, and a meter in their own accent - the theme's first and
-second - turning to the warning colour at 80%. Now playing has an art tile, the
-title with the artist under it, and still level bars. A title drops to caption
-size before it is cut, and is cut with `..` rather than run off its card. The
-header's pill says `LINKED` or `NO LINK` in words.
+Four cards, sized to read from a few feet away. The clock is the display face
+at 2x with AM/PM on its baseline, and the full date under it at 14px --
+`SUN 13 SEP 2026`, from the host's own calendar, turning over at midnight by
+itself. CPU and RAM each get an icon tile, the value, and a meter in their own
+accent - the theme's first and second - turning to the warning colour at 80%.
+Now playing has an art tile, then the title and the artist, both at 14px. A
+title too long for one line wraps to a second, broken at a space, and the
+artist gives way to it; past two lines it is cut with `..` rather than run off
+its card. The header's pill says `LINKED` or `NO LINK` in words.
+
+The level bars beside the title move while the track plays and lie flat and
+muted while it is paused. They are the one animation on this screen, and cost
+little: five frames a second, repainting only the two 12-row bands they stand
+in, and only while this screen is up, something is playing, and the display is
+awake.
 
 The clock is the reason it exists -- the dongle has no RTC, so the only real
 time it will ever see is a time somebody hands it. Seconds are deliberately not

@@ -705,7 +705,11 @@ HOST_SRC = read('src/ui/host_screen.c')
 HOST = defines(HOST_SRC, ['HDR_Y', 'PILL_H', 'CLOCK_Y', 'CLOCK_H', 'METER_Y',
                           'METER_H', 'NP_Y', 'NP_H', 'STAT_W', 'TILE', 'ART',
                           'EQ_ROOM', 'BIG', 'MON_W', 'MON_H',
-                          'ICON_H', 'CHIP_W', 'RAM_W', 'NOTE_W'])
+                          'ICON_H', 'CHIP_W', 'RAM_W', 'NOTE_W', 'LINE_Y',
+                          'ART_Y', 'EQ_BASE', 'EQ_MAX'])
+_eq = re.search(r'k_eq\[EQ_FRAMES\]\[4\] = \{(.*?)\};', HOST_SRC, re.S)
+_eqv = [int(v) for v in re.findall(r'\d+', _eq.group(1))]
+HOST_EQ = [_eqv[i:i + 4] for i in range(0, len(_eqv), 4)]
 HOST_ICONS = {m.group(1): [int(v, 16) for v in
                            re.findall(r'0x([0-9A-Fa-f]+)', m.group(2))]
               for m in re.finditer(r'static const uint16_t (\w+)\[\w+\]\s*=\s*'
@@ -744,7 +748,7 @@ def host_runs(cv, t, y, runs, big_c, unit_c):
         return numerals_w(s, big) if is_big else face_w(s, 1)
 
     def gap(r):
-        return 10 if r[1] else 4
+        return 8 if r[1] else 4
 
     total = sum(run_w(r) + (gap(r) if i else 0) for i, r in enumerate(runs))
     x = W // 2 - total // 2
@@ -762,9 +766,23 @@ def host_runs(cv, t, y, runs, big_c, unit_c):
         x += run_w(r)
 
 
+def host_wrap(title, room):
+    """draw_now_playing()'s title: one line at body size, or two broken at a
+    space with the second cut to fit."""
+    n = (room + BODY) // (text_w('0', BODY) + BODY)
+    if len(title) <= n:
+        return [title]
+    cut = n
+    while cut > 0 and title[cut] != ' ':
+        cut -= 1
+    nxt = cut + 1 if cut > 0 else n
+    cut = cut if cut > 0 else n
+    return [title[:cut], host_fit(title[nxt:], BODY, room)]
+
+
 def host(cv, t, link=True, clock='10:12', suffix='PM', day=20709,
          host_up=True, session_min=134, cpu=64, mem=68, title='NEON NIGHTS',
-         artist='RETROSYNTH'):
+         artist='RETROSYNTH', paused=False, eq_frame=0):
     """The HOST screen. Mirrors host_screen.c. day 20709 is 2026-09-13."""
     u, K, ic = UI(cv, t), HOST, HOST_ICONS
     u.ground()
@@ -784,19 +802,20 @@ def host(cv, t, link=True, clock='10:12', suffix='PM', day=20709,
     cv.disc(px + 10, K['HDR_Y'] + 10, 3, on)
     cv.text(px + 18, K['HDR_Y'] + 7, state, CAPTION, on)
 
-    # clock
-    cy, y = K['CLOCK_Y'], K['CLOCK_Y'] + 10
+    # clock: numerals at BIG, the line under them in the face at 1x
+    cy, y = K['CLOCK_Y'], K['CLOCK_Y'] + 9
     u.card(PAD, cy, CONTENT_W, K['CLOCK_H'])
     cv.round_frame(PAD, cy, CONTENT_W, K['CLOCK_H'], t['radius'], t['accent'],
                    70)
+
+    def line(s):
+        face_text(cv, W // 2 - face_w(s, 1) // 2, K['LINE_Y'], s, 1,
+                  t['caption'])
+
     if clock is not None:
         runs = [(clock, True)] + ([(suffix, False)] if suffix else [])
         host_runs(cv, t, y, runs, t['value'], t['caption'])
-        if day is not None:
-            u.tracked(W // 2, cy + 60, host_date(day), CAPTION, 2,
-                      t['accent'])
-        else:
-            u.tracked(W // 2, cy + 60, 'HOST TIME', CAPTION, 2, t['caption'])
+        line(host_date(day) if day is not None else 'HOST TIME')
     elif host_up:
         hrs = min(session_min // 60, 999)
         if hrs:
@@ -805,11 +824,10 @@ def host(cv, t, link=True, clock='10:12', suffix='PM', day=20709,
         else:
             runs = [(str(session_min), True)]
         host_runs(cv, t, y, runs + [('M', False)], t['value'], t['caption'])
-        u.tracked(W // 2, cy + 60, 'SINCE HOST CONNECTED', CAPTION, 2,
-                  t['caption'])
+        line('SINCE CONNECTED')
     else:
         host_runs(cv, t, y, [('--:--', True)], t['muted'], t['muted'])
-        u.tracked(W // 2, cy + 60, 'NO HOST', CAPTION, 2, t['caption'])
+        line('NO HOST')
 
     # stats - values outlive the link in the model, not on screen
     for x, label, icon, iw, pct, acc in (
@@ -840,36 +858,37 @@ def host(cv, t, link=True, clock='10:12', suffix='PM', day=20709,
                 t['warning'] if hot else acc)
 
     # now playing
-    ny, art = K['NP_Y'], K['ART']
-    playing = bool(link and title)
+    ny, art, ay = K['NP_Y'], K['ART'], K['ART_Y']
+    shown = bool(link and title)
     tx = PAD + 8 + art + 10
-    room = CONTENT_W - (8 + art + 10) - 8 - (K['EQ_ROOM'] if playing else 0)
+    room = CONTENT_W - (8 + art + 10) - 8 - (K['EQ_ROOM'] if shown else 0)
     u.card(PAD, ny, CONTENT_W, K['NP_H'])
-    cv.round_rect(PAD + 8, ny + 8, art, art, 8,
-                  t['accent_alt'] if playing else t['muted'], 50)
-    if playing:
-        cv.glyph(PAD + 14, ny + 14, ic['ic_note'], K['NOTE_W'], K['ICON_H'], 3,
+    cv.round_rect(PAD + 8, ay, art, art, 8,
+                  t['accent_alt'] if shown else t['muted'], 50)
+    if shown:
+        cv.glyph(PAD + 14, ay + 6, ic['ic_note'], K['NOTE_W'], K['ICON_H'], 3,
                  t['accent_alt'], bot=t['accent'])
     else:
-        cv.glyph(PAD + 14, ny + 14, ic['ic_note'], K['NOTE_W'], K['ICON_H'], 3,
+        cv.glyph(PAD + 14, ay + 6, ic['ic_note'], K['NOTE_W'], K['ICON_H'], 3,
                  t['muted'])
-    u.caption(tx, ny + 9, 'NOW PLAYING')
+    u.caption(tx, ny + 7, 'NOW PLAYING')
     if not link:
-        cv.text(tx, ny + 21, '--', BODY, t['muted'])
+        cv.text(tx, ny + 22, '--', BODY, t['muted'])
         return
-    if not playing:
-        cv.text(tx, ny + 21, 'NOTHING', BODY, t['muted'])
+    if not shown:
+        cv.text(tx, ny + 22, 'NOTHING', BODY, t['muted'])
         return
-    sc = BODY if text_w(title, BODY) <= room else CAPTION
-    cv.text(tx, ny + 21 + (0 if sc == BODY else 4), host_fit(title, sc, room),
-            sc, t['value'])
-    if artist:
-        cv.text(tx, ny + 39, host_fit(artist, CAPTION, room), CAPTION,
-                t['caption'])
+    lines = host_wrap(title, room)
+    cv.text(tx, ny + 19, lines[0], BODY, t['value'])
+    if len(lines) == 2:
+        cv.text(tx, ny + 37, lines[1], BODY, t['value'])
+    elif artist:
+        cv.text(tx, ny + 38, host_fit(artist, BODY, room), BODY, t['caption'])
     bx = PAD + CONTENT_W - 8 - 18
-    for k, hgt in enumerate((10, 20, 14, 24)):
-        cv.round_rect(bx + k * 5, ny + 8 + art - hgt - 4, 3, hgt, 1,
-                      t['accent_alt'])
+    for k in range(4):
+        hgt = HOST_EQ[eq_frame % len(HOST_EQ)][k] if not paused else 4
+        cv.round_rect(bx + k * 5, K['EQ_BASE'] - hgt, 3, hgt, 1,
+                      t['muted'] if paused else t['accent_alt'])
 
 
 def about(cv, t):

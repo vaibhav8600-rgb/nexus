@@ -262,6 +262,21 @@ static void parse_line(const char *line)
 		}
 		break;
 	}
+	case 'P': {
+		/* 1 playing, 0 paused. Anything else is not news. */
+		n = to_u32(val, 1);
+		if (n == UINT32_MAX) {
+			break;
+		}
+
+		bool paused = n == 0U;
+
+		if (g_host.paused != paused) {
+			g_host.paused = paused;
+			nexus_host_screen_dirty(NEXUS_HOST_F_NP);
+		}
+		break;
+	}
 	case 'D': {
 		/* Up to 2517. Past that, somebody else's problem. */
 		n = to_u32(val, 200000);
@@ -295,6 +310,7 @@ static void parse_line(const char *line)
 		g_host.mem = NEXUS_HOST_UNKNOWN;
 		g_host.now_playing[0] = '\0';
 		g_host.artist[0] = '\0';
+		g_host.paused = false;
 		g_host.link = false;
 		nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
 		return;
