@@ -13,6 +13,7 @@
     once - so this exists.
 
 .EXAMPLE
+    .\nexus_host.ps1 -Install
     .\nexus_host.ps1 -List
     .\nexus_host.ps1
     .\nexus_host.ps1 -Port COM15 -Verbose
@@ -23,12 +24,96 @@ param(
     [string]$Port,
     # List candidate ports and exit.
     [switch]$List,
+    # Start with Windows from now on, and start now. Per-user, no admin.
+    [switch]$Install,
+    # Undo that.
+    [switch]$Uninstall,
     # Seconds between updates.
     [double]$Interval = 1.0
 )
 
 $TEXT_MAX = 39          # NEXUS_HOST_TEXT - 1; the dongle truncates anyway
 $CLOCK_EVERY = 60       # seconds between clock resyncs
+
+# ---- starting with Windows ------------------------------------------------
+#
+# The dongle cannot get the time out of USB. There is no request for it: a HID
+# keyboard can ask the host nothing, and the host volunteers nothing but LED
+# state. So something has to run here, and the honest thing to do about that is
+# make it run itself.
+#
+# A shortcut in the per-user Startup folder, which is the oldest and least
+# clever way Windows has of doing this: no admin, no UAC, no service, no
+# scheduled task, and you can see and delete it in Explorer. Minimised rather
+# than hidden - a companion you cannot find is a companion you cannot
+# troubleshoot, and this one has things to say when a port is busy.
+$LINK_NAME = 'NEXUS companion.lnk'
+# Installed as a copy, not a shortcut to wherever you ran it from. A repo
+# unzipped into Downloads gets cleaned up, and an autostart pointing into it
+# dies silently the next time you log in.
+$HOME_DIR = Join-Path $env:LOCALAPPDATA 'NEXUS'
+
+function Get-StartupLink {
+    Join-Path ([Environment]::GetFolderPath('Startup')) $LINK_NAME
+}
+
+function Stop-Companions {
+    <#  Any other copy of this script. Two of them fight over the port and the
+        loser reports "Access is denied", which looks like a driver problem and
+        is not. Killed rather than asked to stop: it has no way to be asked,
+        and the dongle handles a companion vanishing already - that is what the
+        staleness timer is for. #>
+    Get-CimInstance Win32_Process `
+            -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" |
+        Where-Object { $_.CommandLine -like '*nexus_host.ps1*' -and
+                       $_.ProcessId -ne $PID } |
+        ForEach-Object {
+            Write-Output "stopping the copy already running (pid $($_.ProcessId))"
+            try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {}
+        }
+}
+
+if ($Uninstall) {
+    $lnk = Get-StartupLink
+    if (Test-Path $lnk) { Remove-Item $lnk; Write-Output "removed $lnk" }
+    else { Write-Output 'not installed' }
+    Stop-Companions
+    if (Test-Path $HOME_DIR) {
+        Remove-Item $HOME_DIR -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Output "removed $HOME_DIR"
+    }
+    return
+}
+
+if ($Install) {
+    Stop-Companions     # so the one started below is the only one
+    $script = Join-Path $HOME_DIR 'nexus_host.ps1'
+    New-Item -ItemType Directory -Force $HOME_DIR | Out-Null
+    if ($PSCommandPath -ne $script) {
+        Copy-Item $PSCommandPath $script -Force
+    }
+
+    # $launch, not $args: $args is PowerShell's own automatic variable.
+    $launch = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized " +
+              "-File `"$script`""
+    if ($Port) { $launch += " -Port $Port" }
+
+    $lnk = Get-StartupLink
+    $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+    $sc.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $sc.Arguments = $launch
+    $sc.WorkingDirectory = $HOME_DIR
+    $sc.Description = 'Pushes the clock, load and now playing to a NEXUS dongle.'
+    $sc.Save()
+    Write-Output "installed $lnk"
+
+    # And start it now, because "works after you reboot" is not what anyone
+    # means when they ask for this.
+    Start-Process powershell -WindowStyle Minimized -ArgumentList $launch
+    Write-Output 'running. Open SETTINGS -> COMPANION on the dongle.'
+    Write-Output 'undo with -Uninstall.'
+    return
+}
 
 function Get-NexusPorts {
     <#  ZMK's USB id is 1D50:615E. The dongle exposes two serial interfaces -

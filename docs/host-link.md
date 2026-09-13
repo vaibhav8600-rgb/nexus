@@ -49,8 +49,21 @@ flashing the firmware gets you the HOST screen, but it draws only what
 something pushes at it, and nothing on your PC pushes by itself. No companion
 means `NO LINK`, correctly.
 
-On **Windows**, nothing to install -- Windows binds its own `usbser.sys` to the
-dongle's serial interface, so the port is there the moment it enumerates:
+Why it cannot be zero: USB has no way for a device to ask the host anything.
+A keyboard never learns the time, the CPU load or what is playing unless
+something on the machine tells it -- every keyboard with a clock either
+carries a coin-cell RTC or runs a companion. So the aim is the next best
+thing: set up once, then never think about it.
+
+On **Windows**, double-click **`tools\nexus-host\install.cmd`**. That is the
+whole setup. No drivers -- Windows binds its own `usbser.sys` to the dongle's
+serial interface -- no admin prompt, and nothing to install. It copies the
+companion to `%LOCALAPPDATA%\NEXUS`, adds a shortcut to your Startup folder,
+and starts it minimised. From then on it starts when you log in and reconnects
+by itself across reflashes, reboots and unplugs. `uninstall.cmd` undoes all
+of it.
+
+To run it by hand instead:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\nexus-host\nexus_host.ps1
@@ -60,6 +73,7 @@ powershell -ExecutionPolicy Bypass -File tools\nexus-host\nexus_host.ps1
 mark-of-the-web and will not run otherwise. Add `-List` to see the ports it
 found, or `-Port COM15` to pin one -- worth doing if you use ZMK Studio at the
 same time, so the companion leaves Studio's interface alone.
+`nexus_host.ps1 -Install -Port COM15` pins it in the installed copy too.
 
 **Everywhere else**, the Python one. Same protocol, needs two packages:
 
@@ -75,9 +89,9 @@ On Linux the port is `/dev/ttyACM*` and reading it needs group `dialout`
 Then open the HOST screen on the dongle: `SETTINGS -> COMPANION`, where the
 row reads `LINKED` when the companion is talking to it.
 
-Leave it running. It reconnects on its own across reflashes, reboots and
-unplugs, so it is worth starting with the machine -- on Windows, a shortcut to
-that command line in `shell:startup`.
+On Linux and macOS, start it with your session the usual way -- a systemd
+user unit or a launchd agent. It reconnects on its own, so it can simply be
+left running.
 
 A menu walk is no way to read a clock, so there is also a direct action,
 `NEXUS_ACT_HOST`, to bind to a key:

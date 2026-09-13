@@ -284,6 +284,29 @@ def main():
     ok('while True' in py and 'retrying' in py,
        'it reconnects rather than dying on the first reflash')
 
+    print('\nThe Windows companion installs itself')
+    ps = read('tools', 'nexus-host', 'nexus_host.ps1')
+    ok(not re.search(r'^\s*\$args\s*\+?=', ps, re.M),
+       'it never assigns $args - that is PowerShell\'s automatic variable')
+    inst = ps.split('if ($Install) {')[-1]
+    ok("GetFolderPath('Startup')" in ps and 'CreateShortcut' in inst,
+       'a per-user Startup shortcut: no admin, no service, visible in Explorer')
+    ok('Copy-Item $PSCommandPath $script' in inst
+       and '-File `"$script`"' in inst,
+       'pointing at an installed copy, so deleting the repo does not break it')
+    ok(inst.index('Stop-Companions') < inst.index('Start-Process'),
+       'an older copy is stopped before the new one starts - two fight '
+       'over the port')
+    ok('-ExecutionPolicy Bypass' in inst,
+       'and it runs from a ZIP download, mark-of-the-web and all')
+    ok('Remove-Item $lnk' in ps.split('if ($Uninstall) {')[-1],
+       'and -Uninstall takes the shortcut away again')
+    for name, flag in (('install.cmd', '-Install'),
+                       ('uninstall.cmd', '-Uninstall')):
+        cmd = read('tools', 'nexus-host', name)
+        ok('"%~dp0nexus_host.ps1" ' + flag in cmd,
+           '%s is the double-click for %s' % (name, flag))
+
     print('\n%s' % ('FAILED (%d)' % len(bad) if bad else 'PASSED'))
     return 1 if bad else 0
 
