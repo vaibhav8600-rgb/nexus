@@ -44,6 +44,9 @@ struct nexus_host {
 	/** Its artist, the same way. Empty when the host did not say - an
 	 *  older companion sends "Artist - Title" as the title alone. */
 	char artist[NEXUS_HOST_TEXT];
+	/** The track is paused. False unless a companion says so, so one that
+	 *  never sends it - an older one - reads as playing. */
+	bool paused;
 
 	/*
 	 * Wall-clock, as seconds since midnight local time, plus the uptime it

@@ -38,19 +38,31 @@
 #define HDR_Y 4
 #define PILL_H 17
 #define CLOCK_Y 31
-#define CLOCK_H 74
-#define METER_Y 112
+#define CLOCK_H 68
+#define METER_Y 106
 #define METER_H 58
-#define NP_Y 177
-#define NP_H 54
+#define NP_Y 171
+#define NP_H 60
 
 #define STAT_W 108 /* two of them and a 6px gutter fill the content width */
 #define TILE 26    /* icon tile in a stat card */
 #define ART 38     /* the now-playing art tile */
 #define EQ_ROOM 26 /* what the level bars take from the title */
 
-/* The clock numerals on this screen: the display face at 3x. */
-#define BIG 3
+/*
+ * The clock numerals: the display face at 2x, 28px. It was 3x, and from a few
+ * feet away the time was all there was - the date under it was 7px and the
+ * track 7px or 14px. Everything a glance is for is 14px or more now, and the
+ * rows the clock gave back went to the now-playing card.
+ */
+#define BIG 2
+#define LINE_Y (CLOCK_Y + 46) /* the date, or what stands in for it */
+
+/* The now-playing art tile, centred in its card, and the level bars beside
+ * the text, standing on a common baseline. */
+#define ART_Y (NP_Y + (NP_H - ART) / 2)
+#define EQ_BASE (ART_Y + ART - 4)
+#define EQ_MAX 24
 
 /* ---- icons: 1-bit, row-major, bit N = column N, for gfx_glyph() ---------- */
 
@@ -141,7 +153,7 @@ static int run_w(const struct run *r)
  * one, so "2H 14M" does not run together into a single word. */
 static int run_gap(const struct run *r)
 {
-	return r->big ? 10 : 4;
+	return r->big ? 8 : 4;
 }
 
 static void draw_runs(int y, const struct run *runs, int n, gfx_color big_c,
@@ -259,6 +271,18 @@ static uint32_t clock_key(void)
 	return 0x10000U + (uint32_t)((k_uptime_get() - st->host_up_at) / 60000);
 }
 
+/*
+ * The line under the clock, centred: the date, or what stands in for it. The
+ * display face at 1x, 14px and bold, in the caption colour - large enough to
+ * read with the time, quiet enough not to compete with it. The face has
+ * letters, digits and spaces, which is all any of these lines use.
+ */
+static void draw_line(const char *s)
+{
+	gfx_face_text(GFX_W / 2 - gfx_face_w(s, 1) / 2, LINE_Y, s, 1,
+		      nexus_theme()->caption, GFX_OPAQUE);
+}
+
 static void draw_clock(void)
 {
 	if (!gfx_hits(CLOCK_Y, CLOCK_H)) {
@@ -268,7 +292,7 @@ static void draw_clock(void)
 	const struct nexus_theme *t = nexus_theme();
 	const struct nexus_status *st = nexus_status_get();
 	const char *suffix;
-	int y = CLOCK_Y + 10;
+	int y = CLOCK_Y + 9;
 	char a[8];
 	char b[8];
 	char line[16]; /* "WED 30 SEP 2026" and its terminator, exactly */
@@ -300,12 +324,9 @@ static void draw_clock(void)
 			strcat(line, dm);
 			strcat(line, " ");
 			strcat(line, yy);
-			nexus_draw_tracked(GFX_W / 2, CLOCK_Y + 60, line,
-					   NEXUS_TXT_CAPTION, 2, t->accent);
+			draw_line(line);
 		} else {
-			/* An older companion: a time, no date. */
-			nexus_draw_tracked(GFX_W / 2, CLOCK_Y + 60, "HOST TIME",
-					   NEXUS_TXT_CAPTION, 2, t->caption);
+			draw_line("HOST TIME"); /* an older companion: no date */
 		}
 		return;
 	}
@@ -333,16 +354,14 @@ static void draw_clock(void)
 		runs[n++] = (struct run){ "M", false };
 
 		draw_runs(y, runs, n, t->value, t->caption);
-		nexus_draw_tracked(GFX_W / 2, CLOCK_Y + 60, "SINCE HOST CONNECTED",
-				   NEXUS_TXT_CAPTION, 2, t->caption);
+		draw_line("SINCE CONNECTED");
 		return;
 	}
 
 	struct run dashes = { "--:--", true };
 
 	draw_runs(y, &dashes, 1, t->muted, t->muted);
-	nexus_draw_tracked(GFX_W / 2, CLOCK_Y + 60, "NO HOST", NEXUS_TXT_CAPTION,
-			   2, t->caption);
+	draw_line("NO HOST");
 }
 
 /* ---- the rest ----------------------------------------------------------- */
@@ -433,6 +452,32 @@ static void fit_text(char *dst, const char *src, int scale, int room)
 	strcpy(&dst[n], "..");
 }
 
+/*
+ * The level bars, as frames. The host sends no levels, so this is a shape
+ * that reads as music rather than a measurement of it: eight frames, four
+ * bars, heights in pixels. Frame 0 is the still pose.
+ */
+#define EQ_FRAMES 8
+static const uint8_t k_eq[EQ_FRAMES][4] = {
+	{ 10, 20, 14, 24 }, { 16, 12, 22, 18 }, { 22, 8, 18, 12 },
+	{ 14, 18, 10, 20 }, { 8, 24, 16, 14 },  { 18, 16, 24, 8 },
+	{ 24, 10, 12, 16 }, { 12, 22, 20, 10 },
+};
+
+/*
+ * The frame the bars are on. The tick advances it; draw() only reads it. It
+ * cannot be derived from the uptime inside draw(), because draw() runs once
+ * per band - the bars span two bands, and two readings of the clock a few
+ * milliseconds apart would tear them across the boundary.
+ */
+static uint8_t g_eq_frame;
+
+/* Moving bars: a track is showing, and the host has not said it is paused. */
+static bool np_animating(const struct nexus_host *h)
+{
+	return h->link && h->now_playing[0] != '\0' && !h->paused;
+}
+
 static void draw_now_playing(const struct nexus_host *h)
 {
 	if (!gfx_hits(NP_Y, NP_H)) {
@@ -440,60 +485,86 @@ static void draw_now_playing(const struct nexus_host *h)
 	}
 
 	const struct nexus_theme *t = nexus_theme();
-	bool playing = h->link && h->now_playing[0] != '\0';
+	bool shown = h->link && h->now_playing[0] != '\0';
 	int tx = NEXUS_PAD + 8 + ART + 10;
-	int room = NEXUS_CONTENT_W - (8 + ART + 10) - 8 - (playing ? EQ_ROOM : 0);
+	int room = NEXUS_CONTENT_W - (8 + ART + 10) - 8 - (shown ? EQ_ROOM : 0);
 	char buf[NEXUS_HOST_TEXT];
 
 	nexus_draw_card(NEXUS_PAD, NP_Y, NEXUS_CONTENT_W, NP_H);
-	gfx_round_rect(NEXUS_PAD + 8, NP_Y + 8, ART, ART, 8,
-		       playing ? t->accent_alt : t->muted, 50);
-	if (playing) {
-		gfx_glyph_grad(NEXUS_PAD + 14, NP_Y + 14, ic_note, NOTE_W, ICON_H,
+	gfx_round_rect(NEXUS_PAD + 8, ART_Y, ART, ART, 8,
+		       shown ? t->accent_alt : t->muted, 50);
+	if (shown) {
+		gfx_glyph_grad(NEXUS_PAD + 14, ART_Y + 6, ic_note, NOTE_W, ICON_H,
 			       3, t->accent_alt, t->accent, GFX_OPAQUE);
 	} else {
-		gfx_glyph(NEXUS_PAD + 14, NP_Y + 14, ic_note, NOTE_W, ICON_H, 3,
+		gfx_glyph(NEXUS_PAD + 14, ART_Y + 6, ic_note, NOTE_W, ICON_H, 3,
 			  t->muted, GFX_OPAQUE);
 	}
-	nexus_draw_caption(tx, NP_Y + 9, "NOW PLAYING");
+	nexus_draw_caption(tx, NP_Y + 7, "NOW PLAYING");
 
 	if (!h->link) {
-		gfx_text(tx, NP_Y + 21, "--", NEXUS_TXT_BODY, t->muted, GFX_OPAQUE);
+		gfx_text(tx, NP_Y + 22, "--", NEXUS_TXT_BODY, t->muted, GFX_OPAQUE);
 		return;
 	}
-	if (!playing) {
-		gfx_text(tx, NP_Y + 21, "NOTHING", NEXUS_TXT_BODY, t->muted,
+	if (!shown) {
+		gfx_text(tx, NP_Y + 22, "NOTHING", NEXUS_TXT_BODY, t->muted,
 			 GFX_OPAQUE);
 		return;
 	}
 
 	/*
-	 * Drop a size before cutting, the same rule layer names follow: half a
-	 * title at body size reads worse than all of it at caption size. Only
-	 * past that does it get cut.
+	 * Body size, always. It used to drop to caption size for a long title,
+	 * which is the right trade at arm's length and unreadable from across a
+	 * desk. A title that does not fit wraps to a second line instead, broken
+	 * at a space, and the artist gives way to it - the title is what you
+	 * look up to read.
 	 */
-	int scale = gfx_text_w(h->now_playing, NEXUS_TXT_BODY) <= room
-			    ? NEXUS_TXT_BODY
-			    : NEXUS_TXT_CAPTION;
+	const char *title = h->now_playing;
+	int n = (room + NEXUS_TXT_BODY) /
+		(gfx_text_w("0", NEXUS_TXT_BODY) + NEXUS_TXT_BODY);
+	int len = (int)strlen(title);
 
-	fit_text(buf, h->now_playing, scale, room);
-	gfx_text(tx, NP_Y + 21 + (scale == NEXUS_TXT_BODY ? 0 : 4), buf, scale,
-		 t->value, GFX_OPAQUE);
-	if (h->artist[0] != '\0') {
-		fit_text(buf, h->artist, NEXUS_TXT_CAPTION, room);
-		gfx_text(tx, NP_Y + 39, buf, NEXUS_TXT_CAPTION, t->caption,
+	if (len <= n) {
+		gfx_text(tx, NP_Y + 19, title, NEXUS_TXT_BODY, t->value,
+			 GFX_OPAQUE);
+		if (h->artist[0] != '\0') {
+			fit_text(buf, h->artist, NEXUS_TXT_BODY, room);
+			gfx_text(tx, NP_Y + 38, buf, NEXUS_TXT_BODY, t->caption,
+				 GFX_OPAQUE);
+		}
+	} else {
+		int cut = n;
+
+		while (cut > 0 && title[cut] != ' ') {
+			cut--;
+		}
+
+		/* One long word: break it where the line ends. */
+		int next = cut > 0 ? cut + 1 : n;
+
+		cut = cut > 0 ? cut : n;
+		memcpy(buf, title, (size_t)cut);
+		buf[cut] = '\0';
+		gfx_text(tx, NP_Y + 19, buf, NEXUS_TXT_BODY, t->value,
+			 GFX_OPAQUE);
+		fit_text(buf, &title[next], NEXUS_TXT_BODY, room);
+		gfx_text(tx, NP_Y + 37, buf, NEXUS_TXT_BODY, t->value,
 			 GFX_OPAQUE);
 	}
 
-	/* Level bars. Still, not animated: an animation here would repaint
-	 * this card at frame rate for as long as music plays, and the host
-	 * gives us no levels to animate them with anyway. */
-	static const uint8_t eq[4] = { 10, 20, 14, 24 };
+	/*
+	 * Level bars: moving while the track plays, a flat muted line while it
+	 * is paused. Only while this screen is up and something plays does the
+	 * tick move them - see host_tick().
+	 */
+	bool live = !h->paused;
 	int bx = NEXUS_PAD + NEXUS_CONTENT_W - 8 - 18;
 
 	for (int k = 0; k < 4; k++) {
-		gfx_round_rect(bx + k * 5, NP_Y + 8 + ART - eq[k] - 4, 3, eq[k], 1,
-			       t->accent_alt, GFX_OPAQUE);
+		int bh = live ? k_eq[g_eq_frame % EQ_FRAMES][k] : 4;
+
+		gfx_round_rect(bx + k * 5, EQ_BASE - bh, 3, bh, 1,
+			       live ? t->accent_alt : t->muted, GFX_OPAQUE);
 	}
 }
 
@@ -537,6 +608,18 @@ static void host_tick(void)
 	if (key != g_clock_shown) {
 		g_clock_shown = key;
 		nexus_screen_invalidate_rows(CLOCK_Y, CLOCK_Y + CLOCK_H);
+	}
+
+	/*
+	 * The level bars, one frame per tick - five a second at NORMAL - and
+	 * only the rows they stand in: two bands. Nothing moves, and nothing is
+	 * sent to the panel, while the track is paused, while nothing plays,
+	 * on any other screen (no tick runs for this one), or while the display
+	 * is blanked (nothing renders).
+	 */
+	if (np_animating(nexus_host())) {
+		g_eq_frame++;
+		nexus_screen_invalidate_rows(EQ_BASE - EQ_MAX, EQ_BASE);
 	}
 }
 

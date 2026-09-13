@@ -53,6 +53,7 @@ class Host:
         self.mem = UNKNOWN
         self.now_playing = ''
         self.artist = ''
+        self.paused = False
         self.clock_sec = U32_MAX
         self.clock_at = 0
         self.day = U32_MAX
@@ -143,6 +144,10 @@ class Host:
             self.now_playing = self.fold(val)
         elif key == 'A':
             self.artist = self.fold(val)
+        elif key == 'P':
+            n = self.num(val, 1)
+            if n is not None:
+                self.paused = n == 0
         elif key == 'D':
             n = self.num(val, 200000)
             if n is None:
@@ -152,6 +157,7 @@ class Host:
         elif key == 'X':
             self.cpu = self.mem = UNKNOWN
             self.now_playing = self.artist = ''
+            self.paused = False
             self.link = False
             return
         else:
@@ -203,6 +209,13 @@ def protocol(text_max):
     st.line('A Miles Davis')
     ok(st.now_playing == 'SO WHAT' and st.artist == 'MILES DAVIS',
        'N is the title and A the artist, each folded to the font')
+    st.line('P 0')
+    ok(st.paused and st.now_playing == 'SO WHAT',
+       'P 0 marks it paused - the title stays')
+    st.line('P 7')
+    ok(st.paused, 'P with anything but 0 or 1 changes nothing')
+    st.line('P 1')
+    ok(not st.paused, 'P 1 plays again')
     st.line('N ')
     ok(st.now_playing == '', 'and an empty N clears it')
 
@@ -407,8 +420,56 @@ def screen(s, events):
                  '\n{')
     ok("h->link && h->now_playing[0]" in np, 'and so does the track')
     ok(np.count('fit_text(buf') == 2,
-       'title and artist are both cut to their room - text is not clipped '
-       'to its card on this panel')
+       'the artist and a wrapped title\'s second line are cut to their room '
+       '- text is not clipped to its card on this panel')
+    ok('NEXUS_TXT_CAPTION' not in np.split('"NOW PLAYING"')[1],
+       'title and artist are body size, always - caption size was unreadable '
+       'from across a desk')
+
+    print('\nThe level bars move only while something plays')
+    ok('return h->link && h->now_playing[0] != \'\\0\' && !h->paused;'
+       in body(s, 'static bool np_animating(const struct nexus_host *h)\n{'),
+       'moving means: linked, a track showing, and not paused')
+    tick = body(s, 'static void host_tick(void)\n{')
+    anim = tick.split('np_animating(nexus_host())')[-1]
+    ok('if (np_animating(nexus_host())) {' in tick
+       and 'g_eq_frame++' in anim
+       and 'nexus_screen_invalidate_rows(EQ_BASE - EQ_MAX, EQ_BASE)' in anim,
+       'the tick advances the frame and repaints only the rows the bars '
+       'stand in')
+    ok('k_eq[g_eq_frame % EQ_FRAMES][k]' in np and 'k_uptime_get' not in np,
+       'draw() reads the frame the tick set, never the clock - draw runs once '
+       'per band, and two clock readings would tear the bars across a band')
+    ok('int bh = live ? k_eq[g_eq_frame % EQ_FRAMES][k] : 4;' in np
+       and 'live ? t->accent_alt : t->muted' in np,
+       'paused: a flat muted line')
+    frames = [[int(v) for v in re.findall(r'\d+', row)] for row in
+              re.findall(r'\{ ([\d, ]+) \}',
+                         s.split('k_eq[EQ_FRAMES][4] = {')[1].split('};')[0])]
+    K = {k: int(v) for k, v in re.findall(r'^#define (\w+) (\d+)', s, re.M)}
+    art_y = K['NP_Y'] + (K['NP_H'] - K['ART']) // 2
+    eq_base = art_y + K['ART'] - 4
+    ok(len(frames) == 8 and all(len(f) == 4 for f in frames)
+       and frames[0] == [10, 20, 14, 24],
+       'eight frames of four bars; frame 0 is the still pose')
+    ok(max(max(f) for f in frames) <= K['EQ_MAX'],
+       'no bar is taller than the rows the tick repaints (%d)' % K['EQ_MAX'])
+    ok(eq_base - K['EQ_MAX'] >= K['NP_Y'] and eq_base <= K['NP_Y'] + K['NP_H'],
+       'and those rows, %d-%d, are inside the card' % (eq_base - K['EQ_MAX'],
+                                                       eq_base))
+    bands = {y // 12 for y in range(eq_base - K['EQ_MAX'], eq_base)}
+    ok(len(bands) == 2,
+       'a frame costs %d bands of the panel\'s 20' % len(bands))
+    link_c = read('src', 'host', 'host_link.c')
+    p_case = link_c.split("case 'P':")[1].split("case '")[0]
+    ok('to_u32(val, 1)' in p_case and 'NEXUS_HOST_F_NP' in p_case
+       and 'g_host.paused = false;' in link_c.split("case 'X':")[1],
+       'P 1 plays, P 0 pauses, anything else is ignored; X clears it')
+    st = Host(40)
+    st.line('N SO WHAT')
+    ok(not getattr(st, 'paused', False),
+       'a companion that never sends P reads as playing, so older ones '
+       'still get moving bars')
 
     print('\nThe clock moves on its own')
     ok('.tick = host_tick' in s and '.enter = host_enter' in s,
@@ -425,7 +486,7 @@ def screen(s, events):
     print('\nWith nothing installed on the host')
     clock = body(s, 'static void draw_clock(void)\n{')
     ok('st->host_up' in clock and 'host_up_at' in clock
-       and '"SINCE HOST CONNECTED"' in clock,
+       and 'draw_line("SINCE CONNECTED")' in clock,
        'a host with no companion still gets a clock card: how long it has '
        'been connected, which the dongle knows by itself')
     ok('"H"' in clock and '"M"' in clock,
@@ -532,29 +593,61 @@ def layout(s):
                          for ch in txt) - K['BIG']
             else:
                 rw = len(txt) * 11 - 1
-            total += rw + ((10 if big else 4) if i else 0)
+            total += rw + ((8 if big else 4) if i else 0)
         return total
 
+    ok(K['BIG'] == 2, 'the clock is the display face at 2x: 28px')
     for runs in ([('12:59', True), ('PM', False)], [('23:59', True)],
                  [('999', True), ('H', False), ('59', True), ('M', False)]):
         ok(runs_w(runs) <= content - 16,
            'the widest clock line fits its card: %s is %dpx'
            % (''.join(r[0] for r in runs), runs_w(runs)))
-    for line in ('SINCE HOST CONNECTED', 'WED 30 SEP 2026'):
-        tw = text_w(line, 1) + (len(line) - 1) * 2
-        ok(tw <= content - 16, '"%s" tracked is %dpx' % (line, tw))
-    # 9 face pixels of digit, 3 to the colon square, colon at y+12 and y+27
-    ok(12 + 6 <= 21 <= 27 and 27 + 6 <= 14 * K['BIG'],
-       'the drawn colon sits inside the numerals\' height')
+    line_y = K['CLOCK_Y'] + int(re.search(r'#define LINE_Y \(CLOCK_Y \+ (\d+)\)',
+                                          s).group(1))
+    for line in ('SINCE CONNECTED', 'WED 30 SEP 2026', 'HOST TIME'):
+        lw = len(line) * 11 - 1
+        ok(lw <= content - 16,
+           '"%s" in the face at 1x is %dpx, inside the card' % (line, lw))
+    numerals_end = K['CLOCK_Y'] + 9 + 14 * K['BIG']
+    ok(line_y - numerals_end >= 8
+       and line_y + 14 <= K['CLOCK_Y'] + K['CLOCK_H'] - 6,
+       'the date sits %dpx under the numerals and inside the card'
+       % (line_y - numerals_end))
+    sc = K['BIG']
+    ok(4 * sc + 2 * sc <= 9 * sc and 9 * sc + 2 * sc <= 14 * sc,
+       'the drawn colon sits inside the numerals\' height at any scale')
 
+    print('\nNow playing titles')
     room_playing = content - (8 + K['ART'] + 10) - 8 - K['EQ_ROOM']
-    for title in ('SO WHAT', 'PAHADO KE SHEHAR MEIN',
-                  'A' * 39, 'SUPERCALIFRAGILISTICEXPIALIDOCIOUS'):
-        sc = 2 if text_w(title, 2) <= room_playing else 1
-        got = fit_text(title, sc, room_playing)
-        ok(text_w(got, sc) <= room_playing,
-           'a %d character title fits at scale %d as "%s"'
-           % (len(title), sc, got))
+
+    def wrap(title):
+        """draw_now_playing(): one line at body size, or two broken at a
+        space, the second cut to fit."""
+        n = (room_playing + 2) // (text_w('0', 2) + 2)
+        if len(title) <= n:
+            return [title]
+        cut = n
+        while cut > 0 and title[cut] != ' ':
+            cut -= 1
+        nxt = cut + 1 if cut > 0 else n
+        cut = cut if cut > 0 else n
+        return [title[:cut], fit_text(title[nxt:], 2, room_playing)]
+
+    for title, want in (('SO WHAT', ['SO WHAT']),
+                        ('NEON NIGHTS', ['NEON NIGHTS']),
+                        ('PAHADO KE SHEHAR MEIN', ['PAHADO KE', 'SHEHAR MEIN']),
+                        ('LOKI DEATH IN DOOMSDAY? 4 MORE SPIDER-M',
+                         ['LOKI DEATH', 'IN DOOMSD..']),
+                        ('SUPERCALIFRAGILISTIC', ['SUPERCALIFR', 'AGILISTIC'])):
+        got = wrap(title)
+        ok(got == want and all(text_w(x, 2) <= room_playing for x in got),
+           '"%s" -> %s' % (title, got))
+    np_src = body(s, 'static void draw_now_playing(const struct nexus_host '
+                     '*h)\n{')
+    ok("while (cut > 0 && title[cut] != ' ')" in np_src
+       and 'int next = cut > 0 ? cut + 1 : n;' in np_src,
+       'the C breaks at the last space that fits, or mid-word for one long '
+       'word')
 
     print('\nEvery character on the clock line is drawn')
     # The display face has digits and letters only; its punctuation is
@@ -671,15 +764,28 @@ def companions():
         def read(self):
             return None, None
 
-    nh.now_playing = lambda: ('', '')
-    state = {'clock': 1e18, 'np': ('', '')}
+    nh.now_playing = lambda: ('', '', False)
+    state = {'clock': 1e18, 'np': ('', '', False)}
     ok(nh.batch(state, Quiet())[0].startswith('T '),
        'a round with nothing to say still says the clock, so the link '
        'does not go stale while it runs')
-    nh.now_playing = lambda: ('So What', 'Miles Davis')
+    nh.now_playing = lambda: ('So What', 'Miles Davis', True)
     got = nh.batch(state, Quiet())
-    ok(got == ['N SO WHAT', 'A MILES DAVIS'],
-       'title and artist go as N and A: %s' % got)
+    ok(got == ['N SO WHAT', 'A MILES DAVIS', 'P 1'],
+       'title, artist and playing go as N, A and P: %s' % got)
+    nh.now_playing = lambda: ('So What', 'Miles Davis', False)
+    got = nh.batch(state, Quiet())
+    ok(got[-1] == 'P 0', 'and pausing sends P 0: %s' % got)
+    nl = chr(10)
+    for text, has, want in (
+            ('Song' + nl + 'Band' + nl + 'Playing' + nl, True,
+             ('Song', 'Band', True)),
+            ('Song' + nl + 'Band' + nl + 'Paused' + nl, True,
+             ('Song', 'Band', False)),
+            (nl + nl + 'Stopped' + nl, True, ('', '', False)),
+            ('Song' + nl + 'Band' + nl, False, ('Song', 'Band', True))):
+        ok(nh.parse_now_playing(text, has) == want,
+           'playerctl/osascript output %r -> %r' % (text, want))
 
     print('\nThe Windows companion')
     ps = read('tools', 'nexus-host', 'nexus_host.ps1')
@@ -687,6 +793,11 @@ def companions():
     ok("$lines.Add('D '" in clock, 'sends D right after T')
     ok('$lines.Add("N $title")' in ps and '$lines.Add("A $artist")' in ps,
        'and the title and artist separately')
+    ok('$lines.Add("P $playing")' in ps
+       and "PlaybackStatus -eq 'Playing') { 1 } else { 0 }" in ps
+       and '$np = "$title|$artist|$playing"' in ps,
+       'and P, from the session\'s own playback status, resent when it '
+       'changes')
     ok("'X'" in ps, 'says X on the way out')
     ok(not re.search(r'^\s*\$args\s*\+?=', ps, re.M),
        'never assigns $args - that is PowerShell\'s automatic variable')

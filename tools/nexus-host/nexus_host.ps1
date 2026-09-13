@@ -7,10 +7,10 @@
     dongle over its host-link USB serial. One way: the dongle never writes
     back, so this cannot type, press keys or read anything out of it.
 
-    The Python companion does the same thing and runs everywhere, but it
-    needs pyserial and psutil. Windows can do all of this out of the box,
-    and a companion you have to install things for is a companion you run
-    once - so this exists.
+    The Python companion does the same thing on Linux and macOS, but on
+    Windows Python cannot open a COM port without pyserial. Windows can do
+    all of this out of the box, and a companion you have to install things
+    for is a companion you run once - so this exists.
 
 .EXAMPLE
     .\nexus_host.ps1 -Install
@@ -247,9 +247,10 @@ function ConvertTo-Panel([string]$text) {
     $s
 }
 
-# Title and artist, each already folded, or two empty strings.
+# Title, artist - each already folded - and whether it is playing (1) or
+# paused (0). Two empty strings and 0 for nothing.
 function Get-NowPlaying {
-    if (-not $script:npReady) { return @('', '') }
+    if (-not $script:npReady) { return @('', '', 0) }
     try {
         $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
         $mgr = Wait-WinRt ($mgrType::RequestAsync()) $mgrType
@@ -264,7 +265,7 @@ function Get-NowPlaying {
             }
         }
         if (-not $session) { $session = $mgr.GetCurrentSession() }
-        if (-not $session) { return @('', '') }
+        if (-not $session) { return @('', '', 0) }
 
         $propType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]
         $p = Wait-WinRt ($session.TryGetMediaPropertiesAsync()) $propType
@@ -272,11 +273,12 @@ function Get-NowPlaying {
         # Separately, not "Artist - Title": the panel sets them on two lines,
         # and splitting a joined string back apart breaks on every title
         # that has a dash in it.
-        return @((ConvertTo-Panel "$($p.Title)"), (ConvertTo-Panel "$($p.Artist)"))
+        $playing = if ($session.GetPlaybackInfo().PlaybackStatus -eq 'Playing') { 1 } else { 0 }
+        return @((ConvertTo-Panel "$($p.Title)"), (ConvertTo-Panel "$($p.Artist)"), $playing)
     } catch {
         # A session can vanish between listing it and asking about it.
         Write-Verbose "now playing: $($_.Exception.Message)"
-        return @('', '')
+        return @('', '', 0)
     }
 }
 
@@ -385,11 +387,14 @@ try {
             $lines.Add('M ' + [int][math]::Round($used))
         } catch {}
 
-        $title, $artist = Get-NowPlaying
-        $np = "$title|$artist"
+        $title, $artist, $playing = Get-NowPlaying
+        $np = "$title|$artist|$playing"
         if ($np -ne $lastNp) {
             $lines.Add("N $title")
             $lines.Add("A $artist")
+            # Playing or paused: the dongle moves its level bars only while
+            # a track plays. Firmware from before P ignores it.
+            $lines.Add("P $playing")
             $lastNp = $np
         }
 

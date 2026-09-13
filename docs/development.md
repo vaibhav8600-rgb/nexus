@@ -162,7 +162,7 @@ Run this end to end after any wiring change (Section 111).
 | 14 | Reset | Press reset *during* a game with Studio connected: MCU restarts, ZMK boots, halves reconnect |
 | 15 | Idle blanking | With `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` set, stop typing: the panel blanks after that long; a key on either half wakes it, with the screen fully repainted |
 | 16 | Host link, nothing installed | HOST reads `NO LINK` and shows how long the host has been connected; home plate is just the name |
-| 17 | Host link, companion | Run the companion: HOST shows time, date, CPU, RAM, title and artist; home plate shows the time and date beside the name; both clocks turn over on the minute |
+| 17 | Host link, companion | Run the companion: HOST shows time, date, CPU, RAM, title and artist; home plate shows the time and date beside the name; both clocks turn over on the minute. Play a track: the level bars move; pause it: they lie flat |
 | 18 | Host link and Studio together | With the companion running, Studio still connects |
 
 Step 14 is the one people skip. It is the one that matters: the reset button
