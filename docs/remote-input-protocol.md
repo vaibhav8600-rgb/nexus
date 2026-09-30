@@ -1,9 +1,9 @@
 # Remote Input protocol, version 1
 
-The wire format between the NEXUS app and the dongle. The firmware
-(`src/remote/`) and the app (`app/src/protocol/`) are both built against this
-page, and the app's unit tests check their encoders against the example bytes
-below -- change one and the tests say so.
+The wire format between the NEXUS Remote app and the dongle. The firmware
+(`src/remote/`) and the app (its `src/protocol/`) are both built against
+this page, and the app's unit tests check its encoders against the example
+bytes below -- change one and the tests say so.
 
 Setup, pairing and the keymap are in [remote-input.md](remote-input.md).
 
