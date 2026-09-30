@@ -25,9 +25,11 @@ CONFIG_NEXUS_REMOTE_INPUT=y
 Off by default, and off means none of it is compiled: no service, no second
 advertiser, no mouse in the HID descriptor.
 
-**2. Room for the phone.** If your config sets these outright - a
-`central_dongle.conf` usually does - raise them there, because a `.conf`
-beats every default the module can set:
+**2. Room for the phone.** If a shield `.conf` in your config sets these
+outright - a `central_dongle.conf` usually does - override them in the same
+file as step 1. Your `nexus_dongle.conf` is applied after the shield's, and
+only to the NEXUS build, so a dongle firmware that shares
+`central_dongle.conf` keeps its own numbers:
 
 ```conf
 CONFIG_BT_MAX_CONN=8     # was 7: +1, one phone connected at a time
