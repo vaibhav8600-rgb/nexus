@@ -16,6 +16,7 @@
 #include <nexus/gfx.h>
 #include <nexus/nexus.h>
 #include <nexus/host.h>
+#include <nexus/remote.h>
 #include <nexus/screen.h>
 #include <nexus/settings.h>
 #include <nexus/sound.h>
@@ -39,7 +40,9 @@
 #define ROW_PITCH 27
 #define VIS_ROWS 7                 /* 26 + 7*27 = 215, hint sits below */
 #define HINT_Y 220
-#define MAX_ROWS 14                /* total items; VIS_ROWS are on screen */
+/* Total items; VIS_ROWS are on screen. Settings is 14 with everything built,
+ * Remote Input's PHONE row included - one more and BACK is silently cut. */
+#define MAX_ROWS 14
 #define VAL_MAX 16
 #define INNER 8
 
@@ -446,6 +449,29 @@ static void v_host_link(char *out, size_t len)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT)
+/*
+ * One row, not two: the value cache is part of the UI's fixed RAM ceiling
+ * (docs/configuration.md), and Settings is at MAX_ROWS with it. Selecting
+ * pairs - the one thing a dongle without keymap bindings could not do
+ * otherwise. On/off is NEXUS_ACT_REMOTE_TOGGLE.
+ */
+static void v_phone(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+	uint8_t r = nexus_status_get()->remote;
+
+	put(&b, !(r & NEXUS_REMOTE_ON)    ? "OFF"
+		: (r & NEXUS_REMOTE_PHONE) ? "LINKED"
+					   : "ON");
+}
+
+static void a_phone(void)
+{
+	nexus_remote_action(NEXUS_ACTION_REMOTE_PAIR);
+}
+#endif
+
 static void v_save(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
@@ -487,6 +513,9 @@ static const struct row settings_rows[] = {
 	{ "GAMES", v_games, NULL },
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
 	{ "COMPANION", v_host_link, a_host_link },
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT)
+	{ "PHONE", v_phone, a_phone },
 #endif
 	{ "DIAG", NULL, a_diagnostics },
 	{ "ABOUT", NULL, a_about },
