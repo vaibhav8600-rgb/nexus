@@ -623,7 +623,12 @@ config NEXUS_STATUS_STALE_MS
 config NEXUS_REMOTE_INPUT
 	bool "Remote Input: type and point from a phone over Bluetooth"
 	default n
-	depends on ZMK_BLE && SETTINGS
+	# Not also `depends on SETTINGS`, though it needs settings: with
+	# ZMK_POINTING selected below, that closes a Kconfig dependency loop
+	# through Zephyr's input, POSIX and file system options. Every ZMK_BLE
+	# build has settings - bonds live there - and src/remote/remote.c
+	# asserts it at compile time.
+	depends on ZMK_BLE
 	select ZMK_POINTING
 	select BT_EXT_ADV
 	select BT_GATT_AUTHORIZATION_CUSTOM

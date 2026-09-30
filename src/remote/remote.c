@@ -42,6 +42,11 @@
 
 LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 
+/* Kconfig cannot say this without a dependency loop (see the Kconfig). */
+BUILD_ASSERT(IS_ENABLED(CONFIG_SETTINGS),
+	     "Remote Input keeps the phone's identity and bonds in settings: "
+	     "enable CONFIG_SETTINGS");
+
 #define PHONES_MAX 2
 #define PAIR_WINDOW K_SECONDS(60)
 
