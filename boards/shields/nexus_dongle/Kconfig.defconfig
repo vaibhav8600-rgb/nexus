@@ -42,12 +42,11 @@ config BT_ID_MAX
 config BT_EXT_ADV_MAX_ADV_SET
 	default 2 if NEXUS_REMOTE_INPUT
 
-# Extended advertising reroutes ZMK's own advertising through Zephyr's
-# extended path, and ZMK starts advertising from main() while settings load -
-# on the main stack, several frames deeper than the legacy path it replaces.
-# Zephyr's 1 KB default main stack does not hold that, and with no stack
-# guard on this board an overflow does not fault cleanly: it corrupts memory
-# and the dongle hangs at boot with the backlight on and nothing drawn.
+# Headroom, not a proven need. With Remote Input, main() does more during
+# settings load: ZMK's advertising goes through Zephyr's deeper extended path,
+# and Remote Input makes the phone's identity there (src/remote/remote.c).
+# This board has no stack guard, so an overflow would not fault - it would
+# corrupt memory silently. 1 KB of RAM is cheap insurance against that.
 config MAIN_STACK_SIZE
 	default 2048 if NEXUS_REMOTE_INPUT
 

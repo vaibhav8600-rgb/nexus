@@ -85,13 +85,11 @@ static void adv_fn(struct k_work *work);
 static void status_fn(struct k_work *work);
 static void pair_close_fn(struct k_work *work);
 static void zmk_fix_fn(struct k_work *work);
-static void init_fn(struct k_work *work);
 static K_WORK_DEFINE(g_adv_work, adv_fn);
 static K_WORK_DELAYABLE_DEFINE(g_adv_retry, adv_fn);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
 static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
 static K_WORK_DEFINE(g_zmk_fix, zmk_fix_fn);
-static K_WORK_DEFINE(g_init_work, init_fn);
 
 /* A reference to the phone's connection, or NULL. Caller unrefs. */
 static struct bt_conn *phone_get(void)
@@ -684,42 +682,6 @@ bool nexus_remote_action(enum nexus_action action)
 
 /* ---- bring-up ------------------------------------------------------------ */
 
-/*
- * After settings have loaded, never before: the phone's identity is itself
- * a stored setting, and creating it early would mint a new address on every
- * boot and orphan every phone's bond.
- */
-static void init_fn(struct k_work *work)
-{
-	ARG_UNUSED(work);
-
-	bt_addr_le_t addrs[CONFIG_BT_ID_MAX];
-	size_t n = ARRAY_SIZE(addrs);
-	int id;
-
-	if (g_ready) {
-		return;
-	}
-
-	bt_id_get(addrs, &n);
-	id = n > 1 ? 1 : bt_id_create(NULL, NULL);
-	if (id < 1) {
-		LOG_ERR("remote: no identity for the phone (%d)", id);
-		return;
-	}
-
-	g_id = (uint8_t)id;
-	bt_gatt_foreach_attr(0x0001, 0xFFFF, find_hids, NULL);
-	if (g_hids_start && !g_hids_end) {
-		g_hids_end = 0xFFFF;
-	}
-	g_ready = true;
-
-	LOG_INF("remote: identity %d, remote %s", g_id, g_on ? "on" : "off");
-	k_work_submit(&g_adv_work);
-	remote_status_kick();
-}
-
 static int remote_set(const char *name, size_t len, settings_read_cb read_cb,
 		      void *cb_arg)
 {
@@ -732,14 +694,66 @@ static int remote_set(const char *name, size_t len, settings_read_cb read_cb,
 	return 0;
 }
 
+/*
+ * The phone's identity, made here and only here - and why "here" is so
+ * particular is the boot hang this replaced.
+ *
+ * After settings have loaded, never before: the identity is itself a stored
+ * setting, and creating it early would mint a new address every boot and
+ * orphan every phone's bond.
+ *
+ * But not from a work item either. settings_load() holds the settings lock
+ * across every commit hook, and in Zephyr 4.1 two things share the system
+ * work queue: sending HCI commands, and saving a new identity (the save is a
+ * work item that takes that lock). A save queued during the commit stalls
+ * the queue on the lock; ZMK's own commit hook then starts advertising from
+ * main(), waits for an HCI command the stalled queue will never send, and
+ * main() never gets as far as starting the display. That was the blank
+ * screen, on every boot, because the save never landed either.
+ *
+ * So: create the identity right here on main(), which sends no HCI command,
+ * and run last (REMOTE_COMMIT_CPRIO), after ZMK's hook has already done its
+ * advertising. The identity's save queues and waits for the lock, which this
+ * very function is about to release. The advertiser, which does send HCI,
+ * goes on the queue behind that save, so it cannot run before the lock is
+ * free.
+ */
+#define REMOTE_COMMIT_CPRIO 100
+
 static int remote_commit(void)
 {
-	k_work_submit(&g_init_work);
+	bt_addr_le_t addrs[CONFIG_BT_ID_MAX];
+	size_t n = ARRAY_SIZE(addrs);
+	int id;
+
+	if (g_ready) {
+		return 0;
+	}
+
+	bt_id_get(addrs, &n);
+	id = n > 1 ? 1 : bt_id_create(NULL, NULL);
+	if (id < 1) {
+		/* Never fatal: the keyboard matters more than the phone. */
+		LOG_ERR("remote: no identity for the phone (%d)", id);
+		return 0;
+	}
+
+	g_id = (uint8_t)id;
+	bt_gatt_foreach_attr(0x0001, 0xFFFF, find_hids, NULL);
+	if (g_hids_start && !g_hids_end) {
+		g_hids_end = 0xFFFF;
+	}
+	g_ready = true;
+
+	LOG_INF("remote: identity %d, remote %s", g_id, g_on ? "on" : "off");
+	k_work_submit(&g_adv_work);
+	remote_status_kick();
 	return 0;
 }
 
-SETTINGS_STATIC_HANDLER_DEFINE(nexus_remote, "nexus/remote", NULL, remote_set,
-			       remote_commit, NULL);
+SETTINGS_STATIC_HANDLER_DEFINE_WITH_CPRIO(nexus_remote, "nexus/remote", NULL,
+					  remote_set, remote_commit, NULL,
+					  REMOTE_COMMIT_CPRIO);
 
 static int remote_init(void)
 {
