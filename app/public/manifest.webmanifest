@@ -1,0 +1,14 @@
+{
+  "name": "NEXUS Remote",
+  "short_name": "NEXUS",
+  "description": "Keyboard and trackpad for the NEXUS dongle",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#14111f",
+  "theme_color": "#14111f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -66,6 +66,35 @@ pressing a key on your keyboard. Up to two phones can be paired; forget them
 with `NEXUS_ACT_REMOTE_CLEAR` to pair a third, or to re-pair one that has
 forgotten NEXUS itself.
 
+## The app
+
+`app/` in this repo: a web app (PWA) in React, Vite and TypeScript that
+talks to NEXUS with Web Bluetooth. One build for every phone, nothing to sign
+or put in a store. CI deploys it to GitHub Pages from `main`; turn Pages on
+once under **Settings > Pages > Source: GitHub Actions**.
+
+| Phone | How |
+| --- | --- |
+| Android | Open the Pages URL in **Chrome**, tap Connect. Menu > **Add to Home screen** for a full-screen app. |
+| iPhone | Safari has no Web Bluetooth. Open the URL in **Bluefy** (free, App Store). |
+
+Screens: **Trackpad** (tap, two-finger tap, three-finger tap, two-finger
+scroll, tap-then-drag, L/M/R buttons, drag lock, quick keys), **Keyboard**
+(send box with progress and cancel, live typing, F-keys and navigation,
+sticky Ctrl/Shift/Alt/Win, shortcut chips for Windows, macOS or Linux),
+**Media**, and **Settings** (pointer speed and acceleration, scroll speed and
+direction, tap to click, typing speed, haptics, keep awake, theme, identify,
+forget).
+
+The app sends at most one mouse packet per display frame and nothing when
+idle; text is handed over only as fast as NEXUS reports room for it. When the
+phone backgrounds the app the link drops, NEXUS releases everything, and the
+app reconnects when it comes back.
+
+Develop with `npm install`, `npm run dev` (serves on your LAN - Chrome on
+Android allows Web Bluetooth from `localhost` or HTTPS only, so test on the
+phone against the Pages build or a tunnel), and `npm test`.
+
 ## Options
 
 | Option | Default | |
