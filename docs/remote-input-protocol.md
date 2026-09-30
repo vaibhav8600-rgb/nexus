@@ -53,7 +53,10 @@ app sends a packet at least every 250 ms, even with no movement.
 
 Packets are merged on the dongle. Ten packets that arrive before the dongle
 gets to them become one report with the summed movement and the latest buttons,
-so the app can send at display rate without anything queueing up.
+so the app can send at display rate without anything queueing up. A button
+pressed and released inside that window still clicks - it goes out down, then
+up - but a double click needs its two presses in separate frames, which is
+how the app sends them anyway.
 
 Example -- left button held, 5 right, 3 up, one notch of scroll up:
 

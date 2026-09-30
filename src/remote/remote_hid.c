@@ -54,7 +54,8 @@ static bool g_typing;
 /* Mouse accumulator: written on the BT thread, drained on the work queue. */
 static struct k_spinlock g_mlock;
 static int32_t g_mx, g_my, g_mwheel, g_mhwheel;
-static uint8_t g_mbtn;
+static uint8_t g_mbtn;  /* latest state */
+static uint8_t g_mseen; /* every button seen down since the last drain */
 
 static atomic_t g_drop_text;
 
@@ -320,6 +321,7 @@ static void mouse_fn(struct k_work *work)
 
 	int32_t x = 0, y = 0, wheel = 0, hwheel = 0;
 	uint8_t buttons = 0;
+	uint8_t seen = 0;
 
 	K_SPINLOCK(&g_mlock) {
 		x = g_mx;
@@ -327,10 +329,23 @@ static void mouse_fn(struct k_work *work)
 		wheel = g_mwheel;
 		hwheel = g_mhwheel;
 		buttons = g_mbtn;
+		seen = g_mseen;
 		g_mx = g_my = g_mwheel = g_mhwheel = 0;
+		g_mseen = 0;
 	}
 
-	send_mouse(buttons, x, y, wheel, hwheel);
+	/*
+	 * Merging keeps the latest button state, which on its own would eat a
+	 * click whose press and release both landed before this ran. So a
+	 * button seen down in between goes out down first, then the latest
+	 * state: the click survives as the two reports it was.
+	 */
+	uint8_t first = buttons | (seen & (uint8_t)~g_btn_sent);
+
+	send_mouse(first, x, y, wheel, hwheel);
+	if (first != buttons) {
+		send_mouse(buttons, 0, 0, 0, 0);
+	}
 }
 
 void remote_hid_mouse(const struct remote_mouse *m)
@@ -341,6 +356,7 @@ void remote_hid_mouse(const struct remote_mouse *m)
 		g_mwheel += m->wheel;
 		g_mhwheel += m->hwheel;
 		g_mbtn = m->buttons;
+		g_mseen |= m->buttons;
 	}
 	k_work_submit(&g_mouse_work);
 	remote_hid_keepalive();
@@ -359,6 +375,7 @@ static void release_holds(void)
 	K_SPINLOCK(&g_mlock) {
 		g_mx = g_my = g_mwheel = g_mhwheel = 0;
 		g_mbtn = 0;
+		g_mseen = 0;
 	}
 	if (g_btn_sent) {
 		send_mouse(0, 0, 0, 0, 0);
