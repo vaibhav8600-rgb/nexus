@@ -127,6 +127,7 @@ buzzer and two tactile switches.
 | [games.md](docs/games.md) | The seven games, difficulty, and adding your own |
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
 | [host-link.md](docs/host-link.md) | The HOST screen and its companion: clock and date, CPU, RAM, now playing |
+| [remote-input.md](docs/remote-input.md) | A phone as keyboard and mouse over Bluetooth, nothing installed on the computer |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |
