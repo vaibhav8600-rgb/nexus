@@ -217,6 +217,14 @@ void nexus_status_peripheral_battery(uint8_t source, uint8_t level)
 			  set_link(source, NEXUS_LINK_CONNECTED));
 }
 
+void nexus_status_remote(uint8_t flags)
+{
+	if (g_status.remote != flags) {
+		g_status.remote = flags;
+		nexus_status_mark(NEXUS_STATUS_REMOTE);
+	}
+}
+
 void nexus_status_half_link(int slot, bool connected)
 {
 	if (slot < 0 || slot > 1) {

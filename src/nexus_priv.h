@@ -36,6 +36,9 @@ void nexus_status_peripheral_battery(uint8_t source, uint8_t level);
  */
 void nexus_status_half_link(int slot, bool connected);
 
+/** Remote Input state changed; @p flags is NEXUS_REMOTE_*. Any thread. */
+void nexus_status_remote(uint8_t flags);
+
 /**
  * Allow nexus_status_mark() to submit work.
  *

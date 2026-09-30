@@ -19,11 +19,28 @@ config ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING
 
 # Host profiles plus the two halves. ZMK needs a connection slot per
 # peripheral on top of the host profiles, so this is profiles + 2.
+#
+# Remote Input adds one connection (one phone at a time) and two bonds (two
+# phones). ZMK derives its profile count from BT_MAX_PAIRED minus the halves,
+# so the two extra bond slots also show up as two extra - unused - host
+# profiles. There is no separate knob for the phones' share.
+#
+# A .conf that sets these outright beats every default here; see
+# docs/remote-input.md.
 config BT_MAX_CONN
+	default 8 if NEXUS_REMOTE_INPUT
 	default 7
 
 config BT_MAX_PAIRED
+	default 9 if NEXUS_REMOTE_INPUT
 	default 7
+
+# The phone's own identity and advertiser, beside ZMK's.
+config BT_ID_MAX
+	default 2 if NEXUS_REMOTE_INPUT
+
+config BT_EXT_ADV_MAX_ADV_SET
+	default 2 if NEXUS_REMOTE_INPUT
 
 # Status sources the dashboard reads. Without these the WPM card reads 000 and
 # the lock indicators never light. Defaults, so your own .conf still wins.
