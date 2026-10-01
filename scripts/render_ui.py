@@ -1402,8 +1402,8 @@ RMT = defines(read('src/remote/remote_screen.c'), ['CARD_Y', 'CARD_H', 'BIG_Y'])
 
 
 def remote(cv, t, view, number=''):
-    """draw() in remote_screen.c. @p view is WAIT, PASSKEY, PAIRED, FULL or
-    HELLO; @p number the countdown or the passkey."""
+    """draw() in remote_screen.c. @p view is WAIT, PASSKEY, PAIRED,
+    CONNECTED, FULL or HELLO; @p number the countdown or the passkey."""
     u, K = UI(cv, t), RMT
     u.ground()
     if view == 'HELLO':
@@ -1419,8 +1419,8 @@ def remote(cv, t, view, number=''):
         u.caption_c(W // 2, 140, 'FORGET A PHONE, OR FREE')
         u.caption_c(W // 2, 152, 'A BLUETOOTH PROFILE')
         return
-    if view == 'PAIRED':
-        cv.text_c(W // 2, K['BIG_Y'], 'PAIRED', VALUE, t['success'])
+    if view in ('PAIRED', 'CONNECTED'):
+        cv.text_c(W // 2, K['BIG_Y'], view, VALUE, t['success'])
         u.caption_c(W // 2, 146, 'THE PHONE IS READY')
         return
 
@@ -1501,6 +1501,7 @@ def main():
         ('remote-wait', lambda cv: remote(cv, nx, 'WAIT', '47')),
         ('remote-passkey', lambda cv: remote(cv, nx, 'PASSKEY', '482913')),
         ('remote-paired', lambda cv: remote(cv, nx, 'PAIRED')),
+        ('remote-connected', lambda cv: remote(cv, nx, 'CONNECTED')),
         ('remote-noroom', lambda cv: remote(cv, nx, 'FULL')),
         ('remote-hello', lambda cv: remote(cv, nx, 'HELLO')),
     ]

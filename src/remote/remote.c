@@ -77,6 +77,10 @@ BUILD_ASSERT(REMOTE_OUTPUT_USB == ZMK_TRANSPORT_USB &&
  * thread; this is ample. */
 #define PAIR_SETTLE K_MSEC(500)
 
+/* The app unsubscribed: drop the phone's link this long after, unless it
+ * subscribes again - a page reload is an unsubscribe and a subscribe. */
+#define APP_GONE_GRACE K_SECONDS(2)
+
 /* 15 ms, no latency, 2 s timeout: the fastest link iOS allows, and a dead
  * phone noticed in two seconds rather than the dongle-wide eight. */
 #define PHONE_CONN_PARAM BT_LE_CONN_PARAM(12, 12, 0, 200)
@@ -108,6 +112,7 @@ static struct {
 } g_phones;
 
 static int g_pair_profile = -1; /* work queue only */
+static bool g_just_paired;      /* the window is closing on a new pairing */
 static int g_prev_profile;      /* work queue only */
 static uint8_t g_last_status[STATUS_LEN];
 static atomic_t g_output; /* REMOTE_OUTPUT_* asked for, until applied */
@@ -117,12 +122,14 @@ static void pair_open_fn(struct k_work *work);
 static void pair_close_fn(struct k_work *work);
 static void clear_fn(struct k_work *work);
 static void output_fn(struct k_work *work);
+static void drop_fn(struct k_work *work);
 static void phones_save_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
 static K_WORK_DEFINE(g_pair_open_work, pair_open_fn);
 static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
 static K_WORK_DEFINE(g_clear_work, clear_fn);
 static K_WORK_DEFINE(g_output_work, output_fn);
+static K_WORK_DELAYABLE_DEFINE(g_drop_work, drop_fn);
 static K_WORK_DEFINE(g_phones_save, phones_save_fn);
 
 /* A reference to the phone being served, or NULL. Caller unrefs. */
@@ -373,6 +380,50 @@ static ssize_t read_status(struct bt_conn *conn, const struct bt_gatt_attr *attr
 }
 
 /*
+ * The app arrived: a paired phone that came back through the window - with a
+ * BLE host on the active profile, ZMK advertises only then - pairs nothing,
+ * so nothing else would close the window, and ZMK would sit on the empty
+ * profile, away from that host, for the rest of the minute. A phone that has
+ * just paired is already closing it, after its settle time.
+ */
+static void app_arrived(void)
+{
+	if (pair_open() && !g_pair_conn && !g_just_paired) {
+		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_CONNECTED, 0);
+		nexus_sound_play(NEXUS_SOUND_CONNECT);
+		k_work_reschedule(&g_pair_close, K_NO_WAIT);
+	}
+}
+
+/*
+ * Status subscriptions, per connection, are the app coming and going. iOS
+ * keeps a bonded link up after the app is closed - NEXUS listed as connected
+ * in the phone's settings, the phone glyph lit - and while it does, the
+ * phone's scan never offers NEXUS to the app again. So when the app leaves,
+ * NEXUS drops the link itself. Only the phone being served.
+ */
+static ssize_t status_ccc_write(struct bt_conn *conn,
+				const struct bt_gatt_attr *attr, uint16_t value)
+{
+	ARG_UNUSED(attr);
+
+	if (conn == g_phone) {
+		if (value) {
+			k_work_cancel_delayable(&g_drop_work);
+			app_arrived();
+		} else {
+			k_work_reschedule(&g_drop_work, APP_GONE_GRACE);
+		}
+	}
+	return sizeof(value);
+}
+
+/* _bt_gatt_ccc is Zephyr 4.1's name; later trees call it
+ * bt_gatt_ccc_managed_user_data. */
+static struct _bt_gatt_ccc g_status_ccc =
+	BT_GATT_CCC_INITIALIZER(NULL, status_ccc_write, NULL);
+
+/*
  * LESC permissions: an encrypted, MITM-protected link - which on this
  * service means a passkey read off the NEXUS screen. A phone that is merely
  * encrypted (Just Works) gets an authentication error, and pairs properly.
@@ -390,11 +441,28 @@ BT_GATT_SERVICE_DEFINE(nexus_remote_svc,
 	BT_GATT_CHARACTERISTIC(&k_status.uuid,
 			       BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
 			       BT_GATT_PERM_READ_LESC, read_status, NULL, NULL),
-	BT_GATT_CCC(NULL, BT_GATT_PERM_READ_LESC | BT_GATT_PERM_WRITE_LESC),
+	BT_GATT_CCC_MANAGED(&g_status_ccc,
+			    BT_GATT_PERM_READ_LESC | BT_GATT_PERM_WRITE_LESC),
 );
 
 /* Primary service, then two attributes per characteristic: Status is 10. */
 #define STATUS_ATTR (&nexus_remote_svc.attrs[10])
+
+static void drop_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	struct bt_conn *conn = phone_get();
+
+	if (!conn) {
+		return;
+	}
+	if (!bt_gatt_is_subscribed(conn, STATUS_ATTR, BT_GATT_CCC_NOTIFY)) {
+		LOG_INF("remote: app gone, dropping the phone's link");
+		bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	}
+	bt_conn_unref(conn);
+}
 
 static bool in_service(const struct bt_gatt_attr *attr)
 {
@@ -595,6 +663,8 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	}
 
 	bt_conn_unref(conn);
+	/* A drop pending for this phone must not land on the next one. */
+	k_work_cancel_delayable(&g_drop_work);
 	remote_hid_release_all(true);
 	remote_status_kick();
 	LOG_INF("remote: phone disconnected (0x%02x)", reason);
@@ -671,6 +741,7 @@ static void pairing_complete(struct bt_conn *conn, bool bonded)
 	serve(conn);
 	bt_conn_unref(conn); /* g_pair_conn's reference; serve() took its own */
 
+	g_just_paired = true;
 	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_PAIRED, 0);
 	nexus_sound_play(NEXUS_SOUND_CONNECT);
 
@@ -751,6 +822,7 @@ static void pair_close_fn(struct k_work *work)
 		zmk_ble_prof_select(g_prev_profile);
 	}
 	g_pair_profile = -1;
+	g_just_paired = false;
 
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_WAIT);
 	remote_status_kick();

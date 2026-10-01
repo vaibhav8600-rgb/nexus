@@ -65,7 +65,17 @@ with other firmwares can keep them.
 1. Settings > `PHONE` (or the pair key). NEXUS shows a 60-second countdown.
 2. In the app, **Connect**, and pick **NEXUS** (the dongle's keyboard name).
 3. The phone asks for a code. NEXUS shows six digits; type them in.
-4. Done. The phone reconnects by itself from now on - no window, no code.
+4. Done. No code again: from now on the phone reconnects by itself.
+
+**Coming back later.** Open the app and tap **Connect**. If NEXUS is not in
+the list, a BLE host is connected on ZMK's active profile, and ZMK does not
+advertise while it is (see Known limits). Open Settings > `PHONE` and tap
+Connect: a paired phone needs no code, NEXUS shows **CONNECTED** and switches
+straight back to the profile you were on.
+
+Closing the app drops the phone's link a couple of seconds later. iOS would
+otherwise keep it up in the background, with NEXUS shown as connected in the
+phone's settings but nowhere to be found from the app.
 
 While the window is open, NEXUS switches ZMK to a free Bluetooth profile -
 the highest one, leaving the low ones for hosts - and switches back when it
@@ -141,12 +151,15 @@ well as 4 KB would.
 
 - **Pairing**: the countdown, then the passkey, then **PAIRED**. A wrong
   passkey goes back to the countdown for another try; press the button to
-  cancel. **NO ROOM** when two phones are paired or no profile is free.
+  cancel. **CONNECTED** when a phone that is already paired comes back
+  through the window. **NO ROOM** when two phones are paired or no profile is
+  free.
 
 <p>
   <img src="images/screens/home-remote.png" width="170" alt="Home with a phone connected">
   <img src="images/screens/remote-noroom.png" width="170" alt="NO ROOM">
   <img src="images/screens/remote-hello.png" width="170" alt="The identify flash">
+  <img src="images/screens/remote-connected.png" width="170" alt="CONNECTED: a paired phone back">
 </p>
 
 - **Home**, top-left corner of the brand plate: a phone outline when Remote
@@ -259,6 +272,11 @@ hardware, 2026-10-01.
       repeats and stops on release; Back, Home, Games, Menu, Theme, Save work.
 - [x] Output switch: USB and BLE both move typing, and the app shows which.
 - [ ] Kill the app holding an arrow: the repeat stops within 1 s.
+- [ ] Close the app: within a few seconds the phone glyph goes and the
+      phone's Bluetooth settings no longer show NEXUS connected; reopen and
+      Connect finds NEXUS (no BLE host on the active profile).
+- [ ] With a BLE host on the active profile: PHONE, then Connect, shows
+      CONNECTED with no code and switches straight back to that profile.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.
@@ -280,8 +298,10 @@ bytes from the protocol page to each characteristic.
 - A Shift held on the Sofle while text is typing changes the case of what is
   typed; the HID report is shared, which is also what lets both work at once.
 - One phone connected at a time.
-- A phone reconnects through ZMK's advertising, which ZMK stops while its
-  active BLE host is connected. Over USB it always advertises; with a BLE
-  host active, connect the phone before the host, or switch to USB.
+- A phone reconnects through ZMK's advertising, and ZMK stops advertising
+  while the host on its active Bluetooth profile is connected - whether keys
+  go to USB or BLE. Then the app cannot find NEXUS: open Settings > `PHONE`
+  and tap Connect (no code for a paired phone), or select a profile with no
+  host connected.
 - `&bt BT_CLR_ALL` forgets phones too, as it does every bond; pair them again.
 - macOS usually wants F14/F15 for brightness rather than the consumer keys.
