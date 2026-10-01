@@ -15,7 +15,9 @@ Setup, pairing and the keymap are in [remote-input.md](remote-input.md).
   what triggers pairing; do that before anything else, because a Write Without
   Response on an unencrypted link is silently dropped.
 - While remote mode is **off**, every write fails and nothing reaches the
-  computer. Status still reads, so the app can say why.
+  computer, and NEXUS stops advertising to phones. A phone already
+  connected stays connected and can still read Status, so the app can say
+  why.
 - One phone is connected at a time. Two may be bonded.
 
 ## Service

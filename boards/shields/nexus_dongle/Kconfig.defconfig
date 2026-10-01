@@ -35,20 +35,11 @@ config BT_MAX_PAIRED
 	default 9 if NEXUS_REMOTE_INPUT
 	default 7
 
-# The phone's own identity and advertiser, beside ZMK's.
+# The phone's own identity, beside ZMK's. Not BT_EXT_ADV for a second
+# advertiser: on this dongle that hangs Bluetooth controller start-up before
+# USB or the display come up (see src/remote/remote.c, advertising).
 config BT_ID_MAX
 	default 2 if NEXUS_REMOTE_INPUT
-
-config BT_EXT_ADV_MAX_ADV_SET
-	default 2 if NEXUS_REMOTE_INPUT
-
-# Headroom, not a proven need. With Remote Input, main() does more during
-# settings load: ZMK's advertising goes through Zephyr's deeper extended path,
-# and Remote Input makes the phone's identity there (src/remote/remote.c).
-# This board has no stack guard, so an overflow would not fault - it would
-# corrupt memory silently. 1 KB of RAM is cheap insurance against that.
-config MAIN_STACK_SIZE
-	default 2048 if NEXUS_REMOTE_INPUT
 
 # Status sources the dashboard reads. Without these the WPM card reads 000 and
 # the lock indicators never light. Defaults, so your own .conf still wins.

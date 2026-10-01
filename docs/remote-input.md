@@ -23,7 +23,7 @@ CONFIG_NEXUS_REMOTE_INPUT=y
 ```
 
 Off by default, and off means none of it is compiled: no service, no second
-advertiser, no mouse in the HID descriptor.
+identity, no mouse in the HID descriptor.
 
 **2. Room for the phone.** If a shield `.conf` in your config sets these
 outright - a `central_dongle.conf` usually does - override them in the same
@@ -123,11 +123,23 @@ This is the part to read before touching `src/remote/`.
 **The phone is never a ZMK host.** ZMK's BLE code sends keystrokes to, and
 takes pairings for, whatever connects to its advertiser on the default
 identity. The phone connects to a second one: NEXUS creates a second
-Bluetooth identity (`BT_ID_MAX=2`) and runs a second advertiser on it
-(`BT_EXT_ADV`, two sets), named "NEXUS Remote" and carrying only this
-service's UUID. The phone's bonds are stored under that identity, which is
-also why forgetting phones (`bt_unpair(id, NULL)`) cannot touch a host's or a
-half's bond.
+Bluetooth identity (`BT_ID_MAX=2`) and advertises on it as "NEXUS Remote",
+carrying only this service's UUID. The phone's bonds are stored under that
+identity, which is also why forgetting phones (`bt_unpair(id, NULL)`) cannot
+touch a host's or a half's bond.
+
+**One advertiser, shared.** The radio has a single legacy advertiser. Turning
+on extended advertising (`BT_EXT_ADV`) for a second one was the first design,
+and it hangs this dongle in Bluetooth controller start-up, before USB or the
+display - with or without any Remote Input code, which is how it was found.
+So while Remote Input is on and no phone is connected, the phone's
+advertising holds the one advertiser; when a phone connects, ZMK's own
+`connected()` restarts ZMK's advertising as usual; when it leaves, Remote
+Input takes the advertiser back. ZMK keeps believing its own advertising is
+running and leaves it alone, and anything that makes it restart (a Studio
+rename, a profile change) is undone by Remote Input re-taking the advertiser
+every 30 s. Switching Remote Input off hands it back through
+`zmk_ble_set_device_name()`, ZMK's public way to restart its advertising.
 
 **The phone cannot see NEXUS as a keyboard.** Zephyr keeps one GATT database
 for every connection, so the phone discovers ZMK's HID service whatever
@@ -152,15 +164,15 @@ profiles up on the default identity - but the profile would read as taken.
 upstream fix is one identity check in ZMK; the workaround is marked to go
 when that lands.
 
-ZMK's `connected()` also runs for the phone and restarts its own advertising,
-which it finds already running and logs `Advertising failed to start
-(err -120)`. That line is harmless.
+ZMK may log `Advertising failed to start (err -120)` when it tries to start
+its advertising while the phone's holds the advertiser. That line is
+harmless.
 
 ## Memory and timing
 
 | | |
 | --- | --- |
-| RAM | the text queue (512), one more connection and advertising set in the Bluetooth stack, and under 100 bytes of state. `arm-zephyr-eabi-size` in CI prints the real total for the build with it on. |
+| RAM | the text queue (512), one more connection and a second identity in the Bluetooth stack, and under 100 bytes of state. `arm-zephyr-eabi-size` in CI prints the real total for the build with it on. |
 | Threads | none added. Bluetooth callbacks validate and hand off; all HID work runs on the system work queue, the same one ZMK processes the halves' keys on. |
 | Mouse | merged, not queued: packets that arrive before the work item runs become one report with summed movement and the latest buttons. |
 | Link | the phone is asked for a 15 ms interval with no latency - the fastest iOS allows, so pointer updates top out around 66 per second. |
@@ -210,4 +222,11 @@ protocol page to each characteristic.
 - A Shift held on the Sofle while text is typing changes the case of what is
   typed; the HID report is shared, which is also what lets both work at once.
 - One phone connected at a time.
+- While Remote Input is on and no phone is connected, the dongle is not
+  discoverable to new BLE hosts, and a bonded BLE host cannot reconnect: the
+  phone's advertising holds the radio's one advertiser. Over USB this makes
+  no difference; to use a BLE host, switch Remote Input off
+  (`NEXUS_ACT_REMOTE_TOGGLE`) and the advertiser goes straight back to ZMK.
+- With Remote Input off, the dongle does not advertise to phones at all, so
+  the app cannot find it until it is switched back on.
 - macOS usually wants F14/F15 for brightness rather than the consumer keys.

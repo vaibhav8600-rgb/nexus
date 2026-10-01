@@ -630,7 +630,6 @@ config NEXUS_REMOTE_INPUT
 	# asserts it at compile time.
 	depends on ZMK_BLE
 	select ZMK_POINTING
-	select BT_EXT_ADV
 	select BT_GATT_AUTHORIZATION_CUSTOM
 	select RING_BUFFER
 	help
@@ -639,10 +638,12 @@ config NEXUS_REMOTE_INPUT
 	  the computer sees the same USB keyboard and mouse it always has,
 	  with nothing installed on it.
 
-	  The phone lives on a second Bluetooth identity with its own
-	  advertiser ("NEXUS Remote"), so it is never one of ZMK's host
-	  profiles, never receives keystrokes, and cannot read the dongle's
-	  keyboard service. Pairing is LE Secure Connections with the passkey
+	  The phone lives on a second Bluetooth identity ("NEXUS Remote"),
+	  so it is never one of ZMK's host profiles, never receives
+	  keystrokes, and cannot read the dongle's keyboard service. It shares
+	  the radio's one advertiser with ZMK: while Remote Input is on and no
+	  phone is connected, the dongle is not discoverable to new BLE hosts
+	  (switch Remote Input off to pair one). Pairing is LE Secure Connections with the passkey
 	  on the NEXUS screen, and only inside a window you open from the
 	  keymap.
 

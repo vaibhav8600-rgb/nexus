@@ -4,9 +4,14 @@
  * The phone is kept apart from ZMK by three things, each covering a way it
  * could otherwise end up as one of ZMK's hosts:
  *
- *   Identity. It connects to "NEXUS Remote", an advertiser on a second
+ *   Identity. It connects to "NEXUS Remote", advertised on a second
  *   Bluetooth identity, never to ZMK's. Its bonds live under that identity,
  *   so forgetting phones can never touch a host's or a half's bond.
+ *
+ *   The radio has one advertiser (extended advertising, which would give it
+ *   two, freezes this dongle at boot - see the advertising section). So
+ *   while Remote Input is on and no phone is connected, the phone's
+ *   advertising holds it; once a phone connects ZMK has it back.
  *
  *   Authorization. Zephyr has one GATT database for every connection, so
  *   the phone can see ZMK's HID service. A custom authorization callback
@@ -72,7 +77,6 @@ static const struct bt_uuid_128 k_status = BT_UUID_INIT_128(REMOTE_UUID(6));
 static bool g_ready;       /* identity exists, advertiser may start */
 static uint8_t g_id;       /* the phone's identity; never BT_ID_DEFAULT */
 static bool g_on = true;   /* remote mode, persisted */
-static struct bt_le_ext_adv *g_adv;
 static uint16_t g_hids_start, g_hids_end;
 
 static struct k_spinlock g_lock;
@@ -82,11 +86,13 @@ static bt_addr_le_t g_paired_addr;
 static uint8_t g_last_status[6];
 
 static void adv_fn(struct k_work *work);
+static void adv_release_fn(struct k_work *work);
 static void status_fn(struct k_work *work);
 static void pair_close_fn(struct k_work *work);
 static void zmk_fix_fn(struct k_work *work);
 static K_WORK_DEFINE(g_adv_work, adv_fn);
 static K_WORK_DELAYABLE_DEFINE(g_adv_retry, adv_fn);
+static K_WORK_DEFINE(g_adv_release, adv_release_fn);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
 static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
 static K_WORK_DEFINE(g_zmk_fix, zmk_fix_fn);
@@ -391,44 +397,78 @@ static const struct bt_data k_sd[] = {
 	BT_DATA(BT_DATA_NAME_COMPLETE, "NEXUS Remote", 12),
 };
 
+/*
+ * One advertiser, shared with ZMK.
+ *
+ * Extended advertising would have given the phone its own, beside ZMK's -
+ * that was the first design - but turning BT_EXT_ADV on hangs this dongle
+ * inside Bluetooth controller start-up, before USB or the display come up,
+ * with or without any Remote Input code. So the phone uses the radio's one
+ * legacy advertiser, on its own identity:
+ *
+ *   - Remote Input on, no phone: ours holds it. New BLE hosts cannot find
+ *     the dongle meanwhile; on a dongle that talks to its computer over USB
+ *     that costs nothing, and switching Remote Input off hands it back.
+ *   - Phone connected: our advertising stopped when it connected, and ZMK's
+ *     own connected() restarts ZMK's - hosts can pair as usual.
+ *   - Phone gone: ours takes the advertiser back.
+ *
+ * ZMK cannot tell its advertising was replaced; it keeps believing its own
+ * is running and leaves it alone. The rare things that do make it restart -
+ * a rename from Studio, a profile change - are undone by re-taking every
+ * ADV_REASSERT.
+ */
+#define ADV_REASSERT K_SECONDS(30)
+
 static void adv_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
+	struct bt_le_adv_param p = BT_LE_ADV_PARAM_INIT(
+		BT_LE_ADV_OPT_CONN, ADV_INTERVAL, ADV_INTERVAL, NULL);
 	struct bt_conn *conn = phone_get();
 	int err;
 
 	if (conn) {
 		bt_conn_unref(conn);
-		return; /* one phone at a time */
+		return; /* one phone at a time, and ZMK advertises meanwhile */
 	}
-	if (!g_ready) {
+	if (!g_ready || !g_on) {
 		return;
 	}
 
-	if (!g_adv) {
-		struct bt_le_adv_param p = BT_LE_ADV_PARAM_INIT(
-			BT_LE_ADV_OPT_CONN, ADV_INTERVAL, ADV_INTERVAL, NULL);
-
-		p.id = g_id;
-		err = bt_le_ext_adv_create(&p, NULL, &g_adv);
-		if (!err) {
-			err = bt_le_ext_adv_set_data(g_adv, k_ad, ARRAY_SIZE(k_ad),
-						     k_sd, ARRAY_SIZE(k_sd));
-		}
-		if (err) {
-			LOG_ERR("remote: advertiser setup failed (%d)", err);
-			return;
-		}
-	}
-
-	err = bt_le_ext_adv_start(g_adv, BT_LE_EXT_ADV_START_DEFAULT);
-	if (err && err != -EALREADY) {
+	p.id = g_id;
+	/* Whoever holds the advertiser - ZMK, or an earlier start of ours -
+	 * lets go. Stopping when nothing runs is not an error. */
+	bt_le_adv_stop();
+	err = bt_le_adv_start(&p, k_ad, ARRAY_SIZE(k_ad), k_sd, ARRAY_SIZE(k_sd));
+	if (err) {
 		/* Usually no free connection object yet - one is released
 		 * just after a disconnect. Try again shortly. */
 		LOG_DBG("remote: advertising deferred (%d)", err);
-		k_work_schedule(&g_adv_retry, K_SECONDS(1));
+		k_work_reschedule(&g_adv_retry, K_SECONDS(1));
+		return;
 	}
+	k_work_reschedule(&g_adv_retry, ADV_REASSERT);
+}
+
+/*
+ * Remote Input switched off: the advertiser goes back to ZMK. ZMK's public
+ * way to restart its advertising from scratch is a rename - here to the name
+ * it already has. On the system work queue, where ZMK's own Bluetooth work
+ * runs, so this never races it.
+ */
+static void adv_release_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	char name[CONFIG_BT_DEVICE_NAME_MAX + 1];
+
+	k_work_cancel_delayable(&g_adv_retry);
+	bt_le_adv_stop();
+	strncpy(name, bt_get_name(), sizeof(name) - 1);
+	name[sizeof(name) - 1] = ' ';
+	zmk_ble_set_device_name(name);
 }
 
 /* ---- connections --------------------------------------------------------- */
@@ -640,8 +680,11 @@ static void set_on(bool on)
 	uint8_t v = on;
 
 	g_on = on;
-	if (!on) {
+	if (on) {
+		k_work_submit(&g_adv_work);
+	} else {
 		remote_hid_release_all(true);
+		k_work_submit(&g_adv_release);
 	}
 	/* A key press, not an encoder: one flash write per toggle is fine. */
 	settings_save_one("nexus/remote/on", &v, sizeof(v));
