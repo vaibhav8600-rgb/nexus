@@ -29,6 +29,9 @@ int remote_hid_text(const uint8_t *buf, uint16_t len);
 /** Merge a Mouse packet into the pending report. */
 void remote_hid_mouse(const struct remote_mouse *m);
 
+/** A NEXUS action from the phone, pressed or released. Validated already. */
+void remote_hid_action(uint8_t action, bool down);
+
 /** Traffic arrived: push the hold watchdog out. */
 void remote_hid_keepalive(void);
 

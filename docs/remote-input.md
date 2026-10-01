@@ -98,11 +98,21 @@ nothing else, so either side can change as long as that page holds.
   <img src="images/remote-app/trackpad-dark.png" width="200" alt="NEXUS Remote: trackpad, dark">
   <img src="images/remote-app/keys-light.png" width="200" alt="NEXUS Remote: keys panel, light">
   <img src="images/remote-app/media-dark.png" width="200" alt="NEXUS Remote: media panel, dark">
+  <img src="images/remote-app/dongle-dark.png" width="200" alt="NEXUS Remote: NEXUS controls, dark">
 </p>
 
 A full-screen trackpad with a scroll strip down the right edge; the toolbar
-under it opens the phone's own keyboard, the special keys and shortcuts, and
-media and volume. Light, dark or automatic, following the phone. More in the
+under it opens the phone's own keyboard, the special keys and shortcuts,
+media and volume, and NEXUS's own controls.
+
+**NEXUS controls** are the game layer on the phone: a D-pad with OK, Rotate
+and Drop to play the games on the dongle, Back, Home, Games, Menu and Host to
+get around its screens, the theme, Save, and an **Output** switch for USB or
+BLE, the same as `&out`. Each button presses and releases like a key, so a
+held arrow repeats and a held soft drop keeps dropping. A phone can send only
+these; it cannot switch Remote Input off, open pairing or forget phones.
+Switching to BLE moves the phone's typing too: it goes wherever the Sofle's
+does. Light, dark or automatic, following the phone. More in the
 app's own README.
 
 When the phone backgrounds the app the link drops, NEXUS releases
@@ -244,6 +254,10 @@ hardware, 2026-10-01.
       and the phone sits in the highest free profile.
 - [x] A BLE host (second laptop) still pairs and types with Remote Input on.
 - [ ] Phone only, no Sofle keys, for 3 minutes: the display stays on.
+- [ ] NEXUS controls: D-pad, OK, Rotate and Drop play Tetris; a held arrow
+      repeats and stops on release; Back, Home, Games, Menu, Theme, Save work.
+- [ ] Output switch: USB and BLE both move typing, and the app shows which.
+- [ ] Kill the app holding an arrow: the repeat stops within 1 s.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.

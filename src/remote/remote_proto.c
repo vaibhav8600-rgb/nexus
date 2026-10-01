@@ -70,6 +70,19 @@ int remote_text_check(const uint8_t *buf, size_t len)
 	return 0;
 }
 
+/* The whole Control write: opcode, action, down. */
+int remote_action_check(const uint8_t *buf, size_t len)
+{
+	if (len != 3) {
+		return REMOTE_ERR_LEN;
+	}
+	if (buf[1] < REMOTE_ACTION_FIRST || buf[1] > REMOTE_ACTION_LAST ||
+	    buf[2] > 1) {
+		return REMOTE_ERR_VALUE;
+	}
+	return 0;
+}
+
 int remote_key_parse(const uint8_t *buf, size_t len, struct remote_key *out)
 {
 	if (len != 6) {

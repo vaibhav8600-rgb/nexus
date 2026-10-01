@@ -49,7 +49,22 @@ enum remote_ctrl_op {
 	REMOTE_CTRL_CANCEL_TEXT = 0x03,
 	REMOTE_CTRL_TYPE_DELAY = 0x04,
 	REMOTE_CTRL_IDENTIFY = 0x05,
+	REMOTE_CTRL_ACTION = 0x06, /* u8 NEXUS action, u8 1 down / 0 up */
+	REMOTE_CTRL_OUTPUT = 0x07, /* u8 REMOTE_OUTPUT_* */
 };
+
+/* Output transports, numbered as ZMK's enum zmk_transport. */
+#define REMOTE_OUTPUT_USB 1
+#define REMOTE_OUTPUT_BLE 2
+
+/*
+ * The NEXUS actions a phone may send: SELECT (1) through HOST (20), the
+ * game layer's verbs. Not the Remote Input ones above them - a phone that
+ * could switch remote off, open pairing or forget phones could lock itself
+ * out or let another phone in. remote.c asserts these match dt-bindings.
+ */
+#define REMOTE_ACTION_FIRST 1
+#define REMOTE_ACTION_LAST  20
 
 #define REMOTE_TYPE_DELAY_MIN 2
 #define REMOTE_TYPE_DELAY_MAX 50
@@ -57,6 +72,9 @@ enum remote_ctrl_op {
 /** @return 0, or a REMOTE_ERR_* code. */
 int remote_key_parse(const uint8_t *buf, size_t len, struct remote_key *out);
 int remote_mouse_parse(const uint8_t *buf, size_t len, struct remote_mouse *out);
+
+/** @return 0, or a REMOTE_ERR_* code for a Control 0x06 payload. */
+int remote_action_check(const uint8_t *buf, size_t len);
 
 /** @return 0 if every byte is one the dongle can type, else REMOTE_ERR_*. */
 int remote_text_check(const uint8_t *buf, size_t len);

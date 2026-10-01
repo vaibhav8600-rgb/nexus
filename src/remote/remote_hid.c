@@ -22,6 +22,7 @@
 #include <zmk/events/keycode_state_changed.h>
 #include <zmk/hid.h>
 
+#include <nexus/action.h>
 #include <nexus/status.h>
 
 #include "remote_priv.h"
@@ -59,6 +60,10 @@ static uint8_t g_mbtn;  /* latest state */
 static uint8_t g_mseen; /* every button seen down since the last drain */
 
 static atomic_t g_drop_text;
+
+/* NEXUS actions the phone holds down, one bit per action. Any thread. */
+static atomic_t g_actions_down;
+BUILD_ASSERT(REMOTE_ACTION_LAST < 32, "g_actions_down is one word");
 
 static void step_fn(struct k_work *work);
 static void mouse_fn(struct k_work *work);
@@ -386,12 +391,44 @@ void remote_hid_mouse(const struct remote_mouse *m)
 	remote_hid_keepalive();
 }
 
+/* ---- NEXUS actions ------------------------------------------------------- */
+
+/*
+ * The game layer, from the phone. Press and release exactly as a keymap key
+ * makes them, so a held arrow repeats, a held soft drop keeps dropping, and
+ * a game cannot tell the phone from the Sofle. Straight to the dispatcher,
+ * which takes any thread: a D-pad must not wait behind a paste.
+ */
+void remote_hid_action(uint8_t action, bool down)
+{
+	note_activity();
+	remote_hid_keepalive();
+	if (down) {
+		atomic_set_bit(&g_actions_down, action);
+		nexus_action_press((enum nexus_action)action);
+	} else if (atomic_test_and_clear_bit(&g_actions_down, action)) {
+		nexus_action_release((enum nexus_action)action);
+	}
+}
+
+static void release_actions(void)
+{
+	atomic_val_t down = atomic_clear(&g_actions_down);
+
+	for (int a = REMOTE_ACTION_FIRST; a <= REMOTE_ACTION_LAST; a++) {
+		if (down & BIT(a)) {
+			nexus_action_release((enum nexus_action)a);
+		}
+	}
+}
+
 /* ---- safety -------------------------------------------------------------- */
 
 /* Keys and buttons the phone holds - not the typer's, which lets go of its
  * own key one step later whatever happens. */
 static void release_holds(void)
 {
+	release_actions();
 	while (g_nheld) {
 		unhold(g_held[g_nheld - 1]);
 	}
@@ -427,7 +464,7 @@ static void watchdog_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
-	if (g_nheld || g_btn_sent) {
+	if (g_nheld || g_btn_sent || atomic_get(&g_actions_down)) {
 		LOG_WRN("remote: no traffic for %d ms, releasing",
 			CONFIG_NEXUS_REMOTE_INPUT_HOLD_TIMEOUT_MS);
 		release_holds();

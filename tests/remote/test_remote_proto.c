@@ -133,12 +133,34 @@ static void test_mouse(void)
 	CHECK(remote_mouse_parse(pkt, 7, &m) == REMOTE_ERR_LEN);
 }
 
+/* Control 0x06: the game-layer verbs only, never the Remote Input ones. */
+static void test_action(void)
+{
+	const uint8_t up_down[] = {0x06, 13, 1};   /* UP, pressed */
+	const uint8_t sel_up[] = {0x06, 1, 0};     /* SELECT, released */
+	const uint8_t host[] = {0x06, 20, 1};      /* HOST, the last one */
+	const uint8_t none[] = {0x06, 0, 1};
+	const uint8_t toggle[] = {0x06, 21, 1};    /* REMOTE_TOGGLE */
+	const uint8_t clear[] = {0x06, 23, 1};     /* REMOTE_CLEAR */
+	const uint8_t state[] = {0x06, 13, 2};
+
+	CHECK(remote_action_check(up_down, 3) == 0);
+	CHECK(remote_action_check(sel_up, 3) == 0);
+	CHECK(remote_action_check(host, 3) == 0);
+	CHECK(remote_action_check(none, 3) == REMOTE_ERR_VALUE);
+	CHECK(remote_action_check(toggle, 3) == REMOTE_ERR_VALUE);
+	CHECK(remote_action_check(clear, 3) == REMOTE_ERR_VALUE);
+	CHECK(remote_action_check(state, 3) == REMOTE_ERR_VALUE);
+	CHECK(remote_action_check(up_down, 2) == REMOTE_ERR_LEN);
+}
+
 int main(void)
 {
 	test_ascii();
 	test_text();
 	test_key();
 	test_mouse();
+	test_action();
 
 	if (g_fail) {
 		printf("%d check(s) failed\n", g_fail);
