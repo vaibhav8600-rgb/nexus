@@ -12,6 +12,7 @@ Start at [installation](installation.md) if you want it working, or
 - [games](games.md)
 - [zmk-studio](zmk-studio.md)
 - [host-link](host-link.md)
+- [remote-input](remote-input.md) - [protocol](remote-input-protocol.md)
 - [architecture](architecture.md)
 - [development](development.md)
 - [troubleshooting](troubleshooting.md)

@@ -48,4 +48,10 @@
  * A clock you have to walk two menus to read is not a clock. */
 #define NEXUS_ACT_HOST        20
 
+/* Remote Input (CONFIG_NEXUS_REMOTE_INPUT). Harmless no-ops in a build
+ * without it, so a keymap can bind them unconditionally. */
+#define NEXUS_ACT_REMOTE_TOGGLE 21 /* phone input on / off, remembered    */
+#define NEXUS_ACT_REMOTE_PAIR   22 /* open the 60 s pairing window        */
+#define NEXUS_ACT_REMOTE_CLEAR  23 /* forget the phones - never the halves */
+
 #endif /* DT_BINDINGS_NEXUS_H_ */

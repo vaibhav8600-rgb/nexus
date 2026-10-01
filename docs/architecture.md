@@ -184,6 +184,19 @@ serial interface, no HOST screen, no clock on the home plate. A host test holds
 every call into it to an `#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)`. See
 [host-link.md](host-link.md).
 
+### Remote Input is a ZMK profile, and off by default
+
+A phone pairs into a free ZMK Bluetooth profile, through ZMK's own
+advertising, and writes to one extra GATT service. Its packets are validated
+in the Bluetooth callback and handed to the system work queue, which feeds
+ZMK's normal HID path, so the computer sees the same USB keyboard and mouse.
+GATT authorization keeps the phone out of ZMK's HID service, so it never
+becomes a keyboard host. Extended advertising and a second identity were both
+tried on the hardware and both broke the dongle; the reasons are in
+[remote-input.md](remote-input.md#how-it-stays-out-of-zmks-way).
+
+With `CONFIG_NEXUS_REMOTE_INPUT=n`, the default, none of it is compiled.
+
 ### Memory choices
 
 | Thing | Chosen | Obvious alternative | Why |
@@ -249,6 +262,7 @@ visual feature threatens anything above it, the visual feature loses.
 | `src/games/` | Manager + Tetris, Snake and Breakout. |
 | `src/hal/` | Button, buzzer, backlight. |
 | `src/host/` | The host link: USB serial receive ring, line parser, the host model. Only with `CONFIG_NEXUS_HOST_LINK`. |
+| `src/remote/` | Remote Input: the GATT service and pairing window, the packet decoder, the HID feeder, the pairing screen. Only with `CONFIG_NEXUS_REMOTE_INPUT`. |
 | `tools/nexus-host/` | The companions that feed it: PowerShell for Windows, Python for Linux and macOS, `install.cmd` / `uninstall.cmd`. |
 | `src/behaviors/` | `&nexus_action`. |
 | `scripts/png2c.py` | Splash asset pipeline. |

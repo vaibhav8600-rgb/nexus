@@ -425,6 +425,47 @@ static void draw_flags(const struct nexus_status *st)
 			gfx_disc(x, y, r, t->success, GFX_OPAQUE);
 		}
 	}
+
+	/*
+	 * The phone, in the opposite corner, by the same rule as the jiggler:
+	 * nothing when Remote Input is off and no phone is there, so a build
+	 * or a dongle that never uses it looks exactly as it did.
+	 *
+	 *   outline, caption colour   on, waiting for a phone
+	 *   filled, accent            phone connected
+	 *   filled, success           typing what the phone sent
+	 *   outline, muted            phone connected, remote switched off
+	 */
+	if (IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT) && st->remote) {
+		const struct nexus_theme *t = nexus_theme();
+		bool on = st->remote & NEXUS_REMOTE_ON;
+		bool phone = st->remote & NEXUS_REMOTE_PHONE;
+		int x = COL_L + 7;
+		int y = BRAND_Y + 7;
+		int w = 7;
+		int h = 11;
+
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK)
+		/* The clock's time sits under this corner: tuck up above it,
+		 * a size smaller, exactly as the jiggler does opposite. */
+		if (plate_clock_shown()) {
+			x = COL_L + 5;
+			y = BRAND_Y + 3;
+			w = 5;
+			h = 8;
+		}
+#endif
+		if (on && phone) {
+			gfx_color c = (st->remote & NEXUS_REMOTE_TYPING)
+					      ? t->success
+					      : t->accent;
+
+			gfx_round_rect(x, y, w, h, 2, c, GFX_OPAQUE);
+		} else {
+			gfx_round_frame(x, y, w, h, 2,
+					on ? t->caption : t->muted, GFX_OPAQUE);
+		}
+	}
 }
 
 static void draw_layer(const struct nexus_status *st)
@@ -598,10 +639,11 @@ static void on_status(const struct nexus_status *st, uint32_t changed)
 {
 	ARG_UNUSED(st);
 
-	/* Locks and the jiggler live on the brand band now, not row 1. Marking
-	 * the wrong band is not a crash, it is worse: the dot simply never
-	 * updates and the bug looks like the feature is broken. */
-	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_JIGGLE)) {
+	/* Locks, the jiggler and the phone live on the brand band, not row 1.
+	 * Marking the wrong band is not a crash, it is worse: the dot simply
+	 * never updates and the bug looks like the feature is broken. */
+	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_JIGGLE |
+		       NEXUS_STATUS_REMOTE)) {
 		nexus_screen_invalidate_rows(BRAND_Y, BRAND_Y + BRAND_H);
 	}
 	if (changed & (NEXUS_STATUS_ENDPOINT | NEXUS_STATUS_LAYER)) {

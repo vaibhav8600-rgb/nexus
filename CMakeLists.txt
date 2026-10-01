@@ -78,6 +78,14 @@ zephyr_library_sources_ifdef(CONFIG_NEXUS_BEHAVIOR_ACTION src/behaviors/behavior
 zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK src/host/host_link.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK src/ui/host_screen.c)
 
+# Remote Input: none of it exists unless asked for (docs/remote-input.md).
+zephyr_library_sources_ifdef(CONFIG_NEXUS_REMOTE_INPUT
+  src/remote/remote.c
+  src/remote/remote_hid.c
+  src/remote/remote_proto.c
+  src/remote/remote_screen.c
+)
+
 # ---------------------------------------------------------------------------
 # Splash asset pipeline (Section 20): user PNG -> RGB565 C array at build time.
 #

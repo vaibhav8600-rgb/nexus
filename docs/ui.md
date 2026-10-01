@@ -37,6 +37,7 @@ Seven screens, eight with the host link. One button drives all of them.
 | **Diagnostics** | move to the next row | activate that row | -- |
 | **About** | back | Home | -- |
 | **Host** | back | Home | -- |
+| **Pair a phone** | cancel | cancel | -- |
 | **Splash** | skip | skip | -- |
 
 The lists invert the usual pairing on purpose. With one button, moving is the
@@ -83,6 +84,14 @@ stay exactly where they are; before a time arrives, and in every build without
 the host link, the plate is the name alone. The clock stays when the companion
 stops. With the jiggler built in, its dot tucks into the plate's top corner
 while the weekday is under it.
+
+<img src="images/screens/home-remote.png" width="170" alt="Home, with a phone connected over Remote Input">
+
+With [Remote Input](remote-input.md) on, a small phone sits in the plate's
+top-left corner: an outline while it waits, filled in the accent colour with
+a phone connected (above), green while the phone's text is typing, and grey
+when a phone is connected but remote input is switched off. Off, and no phone,
+it is not drawn at all.
 
 Gutters are 5px rather than the usual 7, which is what buys the link row the
 height for a readable transport cluster.
@@ -173,6 +182,7 @@ A held slot changes three things at once -- glyph colour, slot fill and border
 | `SPLASH` | Which splash the build got. Read-only. |
 | `GAMES` | How many games are built in. Read-only. |
 | `COMPANION` | Opens the HOST screen; reads `LINKED` while a companion is talking. Only with `CONFIG_NEXUS_HOST_LINK`. |
+| `PHONE` | Opens the 60 s window to pair a phone; reads `OFF`, `ON` or `LINKED`. Only with `CONFIG_NEXUS_REMOTE_INPUT` -- see [remote-input.md](remote-input.md#on-the-screen). |
 | `DIAG` | Opens Diagnostics. |
 | `ABOUT` | Opens About. |
 | `SAVE` | Commits now rather than waiting for the autosave. |

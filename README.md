@@ -38,6 +38,11 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
   the screen still shows how long the host has been connected. The time and
   date also sit either side of the name on the dashboard.
   ([details](docs/host-link.md))
+- **Remote Input** -- a phone as keyboard and trackpad from across the room:
+  the NEXUS Remote web app pairs with a passkey shown on the screen, and its
+  input leaves through the same USB keyboard and mouse, so the computer needs
+  nothing installed. Off unless you build it in.
+  ([details](docs/remote-input.md))
 - **Display blanking** after a configurable idle time, woken by typing on
   either half -- on any backlight wiring.
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
@@ -127,6 +132,7 @@ buzzer and two tactile switches.
 | [games.md](docs/games.md) | The seven games, difficulty, and adding your own |
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
 | [host-link.md](docs/host-link.md) | The HOST screen and its companion: clock and date, CPU, RAM, now playing |
+| [remote-input.md](docs/remote-input.md) | A phone as keyboard and mouse over Bluetooth, nothing installed on the computer |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |

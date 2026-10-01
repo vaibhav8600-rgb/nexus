@@ -180,6 +180,25 @@ A companion from before this fix opened both of the dongle's serial ports, and
 Windows gives a port to one program at a time. Run `tools/nexus-host/install.cmd`
 again to replace the installed copy; the current one opens only the host link.
 
+## Remote Input
+
+**The phone will not pair, or connects and drops at once.**
+The phone remembers an earlier NEXUS under Settings > Bluetooth - an older
+attempt, a reflashed dongle, phones forgotten on the dongle. Tap NEXUS there,
+**Forget This Device**, then Settings > `PHONE` on NEXUS and Connect within
+the 60 seconds.
+
+**NEXUS says NO ROOM.** Two phones are paired already, or no Bluetooth
+profile is free. Forget phones with `NEXUS_ACT_REMOTE_CLEAR`, or clear a
+profile.
+
+**The app says this NEXUS has no Remote Input.** The firmware was built
+without `CONFIG_NEXUS_REMOTE_INPUT=y`.
+
+**NEXUS is not in the app's list at all.** iPhone: open the app in Bluefy,
+not Safari. With a BLE host active, ZMK stops advertising; switch to USB or
+connect the phone first. See [remote-input.md](remote-input.md#known-limits).
+
 ## Host link
 
 **HOST says `NO LINK`.**

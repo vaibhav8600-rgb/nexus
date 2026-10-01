@@ -58,7 +58,13 @@ enum nexus_battery_band {
 #define NEXUS_STATUS_LINKS    BIT(6)
 #define NEXUS_STATUS_JIGGLE   BIT(7)
 #define NEXUS_STATUS_ACTIVE   BIT(8)
-#define NEXUS_STATUS_ALL      0x1FF
+#define NEXUS_STATUS_REMOTE   BIT(9)
+#define NEXUS_STATUS_ALL      0x3FF
+
+/* nexus_status.remote bits (CONFIG_NEXUS_REMOTE_INPUT). */
+#define NEXUS_REMOTE_ON     BIT(0) /* phone input accepted              */
+#define NEXUS_REMOTE_PHONE  BIT(1) /* a paired phone is connected       */
+#define NEXUS_REMOTE_TYPING BIT(2) /* text from the phone is being typed */
 
 struct nexus_status {
 	const char *layer_name;
@@ -110,6 +116,10 @@ struct nexus_status {
 	 * present in the struct so widgets need no #ifdef; simply never true
 	 * without the module that reports it. */
 	bool anti_idle;
+
+	/* NEXUS_REMOTE_* flags. Like anti_idle, always present and simply
+	 * never set in a build without Remote Input. */
+	uint8_t remote;
 
 	/*
 	 * ZMK says someone is using the keyboard: its activity state is

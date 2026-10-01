@@ -8,6 +8,7 @@
  */
 
 #include <nexus/action.h>
+#include <nexus/remote.h>
 #include <nexus/settings.h>
 #include <nexus/theme.h>
 #include <nexus/sound.h>
@@ -28,6 +29,14 @@ K_MSGQ_DEFINE(g_actions, sizeof(uint8_t), 8, 1);
 
 static void handle(enum nexus_action action)
 {
+#if IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT)
+	/* Before the screen: these mean the same thing everywhere, and a game
+	 * that happened to be open must not be able to swallow "pair". */
+	if (nexus_remote_action(action)) {
+		return;
+	}
+#endif
+
 #if IS_ENABLED(CONFIG_NEXUS_DISPLAY)
 	const struct nexus_screen *cur = nexus_screen_current();
 

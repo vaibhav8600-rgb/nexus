@@ -618,6 +618,75 @@ config NEXUS_STATUS_STALE_MS
 	  than a stale number.
 
 # --------------------------------------------------------------------------
+# Remote Input: a phone as keyboard and mouse
+# --------------------------------------------------------------------------
+config NEXUS_REMOTE_INPUT
+	bool "Remote Input: type and point from a phone over Bluetooth"
+	default n
+	# Not also `depends on SETTINGS`, though it needs settings: with
+	# ZMK_POINTING selected below, that closes a Kconfig dependency loop
+	# through Zephyr's input, POSIX and file system options. Every ZMK_BLE
+	# build has settings - bonds live there - and src/remote/remote.c
+	# asserts it at compile time.
+	depends on ZMK_BLE
+	select ZMK_POINTING
+	select BT_GATT_AUTHORIZATION_CUSTOM
+	select RING_BUFFER
+	help
+	  The NEXUS app on a phone connects to the dongle over its own GATT
+	  service, and what it sends leaves through ZMK's normal HID path -
+	  the computer sees the same USB keyboard and mouse it always has,
+	  with nothing installed on it.
+
+	  The phone pairs into a free ZMK Bluetooth profile and reconnects
+	  through ZMK's own advertising, so ZMK's Bluetooth runs exactly as
+	  it does without this. A GATT authorization callback keeps every
+	  phone out of the dongle's keyboard service, so a phone never
+	  receives keystrokes or treats NEXUS as a keyboard. Pairing is LE
+	  Secure Connections with the passkey on the NEXUS screen, only
+	  inside a window you open from Settings > PHONE or the keymap.
+
+	  Off means none of it is compiled, and the firmware is the one you
+	  had without it. On adds the pointing HID descriptor, so the
+	  computer sees a mouse appear the first time.
+
+	  Needs one connection and two bond slots more than your config
+	  gives ZMK today - see docs/remote-input.md for the two lines.
+
+if NEXUS_REMOTE_INPUT
+
+config NEXUS_REMOTE_INPUT_TEXT_QUEUE_SIZE
+	int "Text queue, bytes"
+	default 512
+	range 64 4096
+	help
+	  Text and key events waiting to be typed, one byte per character.
+	  This is RAM, and it does not need to hold a whole paste: the app
+	  sends only as much as the queue has room for and tops it up as the
+	  dongle types, so a bigger queue buys nothing but slack.
+
+config NEXUS_REMOTE_INPUT_TYPE_DELAY_MS
+	int "Delay between typed key reports, ms"
+	default 8
+	range 2 50
+	help
+	  Each character is a press and a release, each followed by this
+	  delay, so the default types about 60 characters a second. The app
+	  can change it for the session (Control 0x04). Raise it if a slow
+	  host - a remote desktop, a VM - drops characters.
+
+config NEXUS_REMOTE_INPUT_HOLD_TIMEOUT_MS
+	int "Release held keys after this long without traffic, ms"
+	default 1000
+	help
+	  The app sends a packet at least every 250 ms while it holds a key
+	  or a button. A phone that is killed, backgrounded or walked out of
+	  range stops, and this is how long the dongle waits before letting
+	  go of everything it pressed on the phone's behalf.
+
+endif # NEXUS_REMOTE_INPUT
+
+# --------------------------------------------------------------------------
 # Diagnostics
 # --------------------------------------------------------------------------
 config NEXUS_DEBUG

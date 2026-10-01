@@ -581,6 +581,20 @@ def home(cv, t, st, clock=None, suffix=None, date=None):
     if clock is not None:
         home_plate_clock(cv, t, clock, suffix, date)
 
+    # draw_flags(): the Remote Input phone, top-left of the plate.
+    # st['remote'] is None (off, no phone), 'on', 'phone', 'typing' or 'muted'
+    remote = st.get('remote')
+    if remote:
+        x, y, w, h = K['COL_L'] + 7, K['BRAND_Y'] + 7, 7, 11
+        if clock is not None:
+            x, y, w, h = K['COL_L'] + 5, K['BRAND_Y'] + 3, 5, 8
+        if remote in ('phone', 'typing'):
+            cv.round_rect(x, y, w, h, 2,
+                          t['success'] if remote == 'typing' else t['accent'])
+        else:
+            cv.round_frame(x, y, w, h, 2,
+                           t['caption'] if remote == 'on' else t['muted'])
+
     # link cluster: usb, ble, profile number, status tile
     u.card(K['COL_L'], K['ROW1_Y'], K['COL_W'], K['ROW1_H'])
     y = K['ROW1_Y'] + (K['ROW1_H'] - K['TR_H'] * K['TR_SCALE']) // 2
@@ -1383,12 +1397,57 @@ def pong(cv, t, you=None, cpu=None, ball=None, sy=3, sc=2):
     u.orb(ball[0], ball[1], K['BALL_R'], t['warning'])
 
 
+# ---------------------------------------------------------- remote input
+RMT = defines(read('src/remote/remote_screen.c'), ['CARD_Y', 'CARD_H', 'BIG_Y'])
+
+
+def remote(cv, t, view, number=''):
+    """draw() in remote_screen.c. @p view is WAIT, PASSKEY, PAIRED, FULL or
+    HELLO; @p number the countdown or the passkey."""
+    u, K = UI(cv, t), RMT
+    u.ground()
+    if view == 'HELLO':
+        cv.rect(0, 0, W, H, t['accent'], 110)
+        u.wordmark(W // 2, 88, 'NEXUS', 2)
+        u.caption_c(W // 2, 150, 'REMOTE')
+        return
+
+    u.card(PAD, K['CARD_Y'], CONTENT_W, K['CARD_H'])
+    u.caption_c(W // 2, K['CARD_Y'] + 12, 'PAIR A PHONE')
+    if view == 'FULL':
+        cv.text_c(W // 2, K['BIG_Y'], 'NO ROOM', VALUE, t['warning'])
+        u.caption_c(W // 2, 140, 'FORGET A PHONE, OR FREE')
+        u.caption_c(W // 2, 152, 'A BLUETOOTH PROFILE')
+        return
+    if view == 'PAIRED':
+        cv.text_c(W // 2, K['BIG_Y'], 'PAIRED', VALUE, t['success'])
+        u.caption_c(W // 2, 146, 'THE PHONE IS READY')
+        return
+
+    # big_number(): the face font, as large as fits
+    scale = 3
+    while scale > 1 and face_w(number, scale) > CONTENT_W - 16:
+        scale -= 1
+    face_text(cv, (W - face_w(number, scale)) // 2, K['BIG_Y'], number, scale,
+              t['accent'] if view == 'PASSKEY' else t['value'])
+    if view == 'PASSKEY':
+        u.caption_c(W // 2, 146, 'TYPE THIS ON THE PHONE')
+    else:
+        u.caption_c(W // 2, 140, 'OPEN THE NEXUS APP')
+        u.caption_c(W // 2, 152, 'AND TAP CONNECT')
+    cv.text_c(W // 2, K['CARD_Y'] + K['CARD_H'] - 18, 'PRESS TO CANCEL',
+              CAPTION, t['muted'])
+
+
 # ------------------------------------------------------------------ main
 SETTINGS_ROWS = [('SOUND', 'ON'), ('BRIGHT', '80%'), ('THEME', 'NEXUS'),
                  ('ANIM', 'ON'), ('SPEED', 'NORMAL'), ('SNAKE WALL', 'OFF'),
                  ('SPLASH', 'IMAGE'), ('GAMES', str(len(GAMES))),
                  ('DIAG', ''),
                  ('ABOUT', ''), ('SAVE', 'OK'), ('BACK', '')]
+# the same list in a build with CONFIG_NEXUS_REMOTE_INPUT
+SETTINGS_REMOTE_ROWS = (SETTINGS_ROWS[:8] + [('PHONE', 'LINKED')] +
+                        SETTINGS_ROWS[8:])
 DIAG_ROWS = [('FIRMWARE', 'V1.0.0'), ('BOARD', 'NICE_NANO'),
              ('DISPLAY', 'OK'), ('BACKLIGHT', 'OK'), ('BUZZER', 'OK'),
              ('BUTTON', 'OK'), ('HOST', 'BLE 1'), ('L/R LINK', 'OK/OK'),
@@ -1436,6 +1495,14 @@ def main():
                                         suffix=None, day=None, cpu=None,
                                         mem=None, title='', artist='')),
         ('splash', lambda cv: splash(cv, nx)),
+        ('home-remote', lambda cv: home(cv, nx, dict(STATUS, remote='phone'))),
+        ('settings-remote', lambda cv: menu(cv, nx, 'SETTINGS',
+                                            SETTINGS_REMOTE_ROWS, 8)),
+        ('remote-wait', lambda cv: remote(cv, nx, 'WAIT', '47')),
+        ('remote-passkey', lambda cv: remote(cv, nx, 'PASSKEY', '482913')),
+        ('remote-paired', lambda cv: remote(cv, nx, 'PAIRED')),
+        ('remote-noroom', lambda cv: remote(cv, nx, 'FULL')),
+        ('remote-hello', lambda cv: remote(cv, nx, 'HELLO')),
     ]
     for name, fn in shots:
         cv = Canvas()
