@@ -42,6 +42,8 @@ two profiles the phones take, and every host profile you had stays free. If
 you leave both at 7 it still works while a profile is free, which on a USB
 dongle with no BLE hosts there usually is.
 
+<img src="images/screens/settings-remote.png" width="170" align="right" alt="Settings with the PHONE row">
+
 **3. Keys**, optionally. Settings has a `PHONE` row - its value is `ON`,
 `OFF` or `LINKED`, and selecting it opens the pairing window - so the
 dongle's own button is enough to pair. Turning remote input on and off, and
@@ -55,6 +57,8 @@ forgetting phones, are keymap actions; bind them anywhere:
 
 They are harmless no-ops in a build without Remote Input, so a keymap shared
 with other firmwares can keep them.
+
+<br clear="right">
 
 ## Pairing a phone
 
@@ -90,6 +94,17 @@ nothing else, so either side can change as long as that page holds.
 | Android | Open the app's URL in **Chrome**, tap Connect. Menu > **Add to Home screen** for a full-screen app. |
 | iPhone | Safari has no Web Bluetooth. Open the URL in **Bluefy** (free, App Store). |
 
+<p>
+  <img src="images/remote-app/trackpad-dark.png" width="200" alt="NEXUS Remote: trackpad, dark">
+  <img src="images/remote-app/keys-light.png" width="200" alt="NEXUS Remote: keys panel, light">
+  <img src="images/remote-app/media-dark.png" width="200" alt="NEXUS Remote: media panel, dark">
+</p>
+
+A full-screen trackpad with a scroll strip down the right edge; the toolbar
+under it opens the phone's own keyboard, the special keys and shortcuts, and
+media and volume. Light, dark or automatic, following the phone. More in the
+app's own README.
+
 When the phone backgrounds the app the link drops, NEXUS releases
 everything, and the app reconnects when it comes back.
 
@@ -108,15 +123,32 @@ well as 4 KB would.
 
 ## On the screen
 
-- **Home**, top-left corner of the brand plate: a phone outline when Remote
-  Input is on and waiting, filled in the accent colour when a phone is
-  connected, green while it is typing, and a grey outline when a phone is
-  connected but you have switched remote input off. Nothing at all when it
-  is off and no phone is there.
+<p>
+  <img src="images/screens/remote-wait.png" width="170" alt="Pairing window: the countdown">
+  <img src="images/screens/remote-passkey.png" width="170" alt="The passkey to type on the phone">
+  <img src="images/screens/remote-paired.png" width="170" alt="PAIRED">
+</p>
+
 - **Pairing**: the countdown, then the passkey, then **PAIRED**. A wrong
   passkey goes back to the countdown for another try; press the button to
   cancel. **NO ROOM** when two phones are paired or no profile is free.
+
+<p>
+  <img src="images/screens/home-remote.png" width="170" alt="Home with a phone connected">
+  <img src="images/screens/remote-noroom.png" width="170" alt="NO ROOM">
+  <img src="images/screens/remote-hello.png" width="170" alt="The identify flash">
+</p>
+
+- **Home**, top-left corner of the brand plate: a phone outline when Remote
+  Input is on and waiting, filled in the accent colour when a phone is
+  connected (above), green while it is typing, and a grey outline when a
+  phone is connected but you have switched remote input off. Nothing at all
+  when it is off and no phone is there.
 - **Identify** (from the app): the screen flashes and NEXUS beeps once.
+- **Settings** gains a `PHONE` row; see [ui.md](ui.md#settings).
+
+These are rendered from the firmware source by `scripts/render_ui.py`, like
+every screen in [ui.md](ui.md).
 
 ## Safety
 
