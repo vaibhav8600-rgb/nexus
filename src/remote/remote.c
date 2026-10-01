@@ -340,8 +340,26 @@ static bool in_service(const struct bt_gatt_attr *attr)
 	       attr < nexus_remote_svc.attrs + nexus_remote_svc.attr_count;
 }
 
+/*
+ * Service, include and characteristic declarations are the map, not the
+ * contents. Refusing them breaks discovery itself - a phone that cannot list
+ * the HID service's characteristics fails the whole connection, and a host
+ * that cannot list ours may too - while refusing only the values keeps every
+ * report, the report map and every CCC just as unreachable.
+ */
+static bool is_declaration(const struct bt_gatt_attr *attr)
+{
+	return !bt_uuid_cmp(attr->uuid, BT_UUID_GATT_PRIMARY) ||
+	       !bt_uuid_cmp(attr->uuid, BT_UUID_GATT_SECONDARY) ||
+	       !bt_uuid_cmp(attr->uuid, BT_UUID_GATT_INCLUDE) ||
+	       !bt_uuid_cmp(attr->uuid, BT_UUID_GATT_CHRC);
+}
+
 static bool authorize(struct bt_conn *conn, const struct bt_gatt_attr *attr)
 {
+	if (is_declaration(attr)) {
+		return true;
+	}
 	if (in_service(attr)) {
 		return serving(conn);
 	}
