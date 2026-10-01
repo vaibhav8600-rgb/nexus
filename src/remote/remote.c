@@ -28,6 +28,10 @@
  *   callbacks (bt_conn_auth_cb_overlay) give that one connection a passkey
  *   on the NEXUS screen; ZMK records the phone in that profile, NEXUS
  *   records its address as a phone, and the previous profile comes back.
+ *
+ *   Coming back. ZMK falls silent while its active profile's host is
+ *   connected; in that gap NEXUS advertises for a paired phone on the same
+ *   legacy advertiser, and hands it straight back when ZMK needs it.
  */
 
 #include <zephyr/bluetooth/bluetooth.h>
@@ -529,6 +533,127 @@ static uint8_t find_hids(const struct bt_gatt_attr *attr, uint16_t handle,
 	return BT_GATT_ITER_CONTINUE;
 }
 
+/* ---- advertising for a paired phone -------------------------------------- */
+
+/*
+ * A paired phone comes back only through advertising, and ZMK advertises
+ * only while its active profile is open or that profile's host is away. In
+ * the gap - a host connected on the active profile, a phone paired, none
+ * connected - NEXUS advertises instead, under the same name, so the app finds
+ * it again without a trip to Settings > PHONE.
+ *
+ * The advertiser is ZMK's the rest of the time. NEXUS lets go before its own
+ * profile switches, and on any change re-checks after ADV_SETTLE - ZMK
+ * updates its advertising first, on disconnect from its own work item. If
+ * ZMK was refused the advertiser while NEXUS held it, NEXUS stops and asks
+ * ZMK to look again: zmk_ble_set_device_name() with the name it already has
+ * writes nothing (Zephyr returns early on the same name) and runs ZMK's own
+ * update_advertising().
+ *
+ * Nothing new pairs through it: outside the window ZMK refuses pairing to a
+ * profile that is not open, and NEXUS overlays nothing.
+ */
+/* The hand-back renames to the same name, which only a dynamic name can. */
+BUILD_ASSERT(!IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV) ||
+		     IS_ENABLED(CONFIG_BT_DEVICE_NAME_DYNAMIC),
+	     "NEXUS_REMOTE_INPUT_PHONE_ADV needs CONFIG_BT_DEVICE_NAME_DYNAMIC, "
+	     "which ZMK turns on");
+
+#define ADV_SETTLE   K_MSEC(200)
+#define ADV_NAME_MAX 26 /* 31 bytes of advertising data, less flags and header */
+
+static atomic_t g_adv_ours; /* set: NEXUS is advertising, not ZMK */
+static char g_adv_name[ADV_NAME_MAX];
+static struct bt_data g_adv_ad[] = {
+	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+	BT_DATA(BT_DATA_NAME_COMPLETE, g_adv_name, 0),
+};
+static const struct bt_data k_adv_sd[] = {
+	BT_DATA_BYTES(BT_DATA_UUID128_ALL, REMOTE_UUID(1)),
+};
+
+static bool phone_waiting(void)
+{
+	return IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV) &&
+	       g_phones.n > 0 && !g_phone && !g_pair_conn && !pair_open() &&
+	       !zmk_ble_active_profile_is_open() &&
+	       zmk_ble_active_profile_is_connected();
+}
+
+/* Stop advertising for phones. @return whether NEXUS was. Work queue. */
+static bool adv_release(void)
+{
+	if (!atomic_cas(&g_adv_ours, 1, 0)) {
+		return false;
+	}
+	bt_le_adv_stop();
+	return true;
+}
+
+/* ZMK's own update_advertising(), through its public API. */
+static void adv_hand_back(const char *name)
+{
+	/* ZMK names are 16 characters at most; a longer one is left alone
+	 * rather than renamed by truncation. */
+	char again[33];
+
+	if (strlen(name) < sizeof(again)) {
+		strcpy(again, name);
+		zmk_ble_set_device_name(again);
+	}
+}
+
+static void adv_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	const char *name = bt_get_name();
+	size_t full = strlen(name);
+	size_t len = MIN(full, sizeof(g_adv_name));
+
+	if (!phone_waiting()) {
+		if (adv_release()) {
+			adv_hand_back(name);
+		}
+		return;
+	}
+	if (atomic_get(&g_adv_ours)) {
+		return;
+	}
+
+	memcpy(g_adv_name, name, len);
+	g_adv_ad[1].type = len < full ? BT_DATA_NAME_SHORTENED
+				      : BT_DATA_NAME_COMPLETE;
+	g_adv_ad[1].data_len = (uint8_t)len;
+
+	int err = bt_le_adv_start(
+		BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONN, BT_GAP_ADV_FAST_INT_MIN_2,
+				BT_GAP_ADV_FAST_INT_MAX_2, NULL),
+		g_adv_ad, ARRAY_SIZE(g_adv_ad), k_adv_sd, ARRAY_SIZE(k_adv_sd));
+
+	if (err == 0) {
+		atomic_set(&g_adv_ours, 1);
+		LOG_INF("remote: advertising for a paired phone");
+	} else if (err != -EALREADY) {
+		/* -EALREADY is ZMK advertising after all: nothing to do. */
+		LOG_WRN("remote: phone advertising failed (%d)", err);
+	}
+}
+static K_WORK_DELAYABLE_DEFINE(g_adv_work, adv_fn);
+
+static void adv_check(void)
+{
+	if (IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV)) {
+		k_work_reschedule(&g_adv_work, ADV_SETTLE);
+	}
+}
+
+/* A peripheral connection, through either advertiser, ends advertising. */
+static void adv_consumed(void)
+{
+	atomic_set(&g_adv_ours, 0);
+}
+
 /* ---- status -------------------------------------------------------------- */
 
 static void status_fn(struct k_work *work)
@@ -568,6 +693,10 @@ static void on_nexus_status(const struct nexus_status *st, uint32_t changed)
 
 	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_ENDPOINT)) {
 		remote_status_kick();
+	}
+	/* The active profile switched, or its host came or went. */
+	if (changed & NEXUS_STATUS_ENDPOINT) {
+		adv_check();
 	}
 }
 
@@ -613,7 +742,13 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 {
 	bool candidate = false;
 
-	if (err || !is_peripheral_link(conn)) {
+	if (!is_peripheral_link(conn)) {
+		return;
+	}
+	/* Whoever it was, the advertising they connected through has ended. */
+	adv_consumed();
+	adv_check();
+	if (err) {
 		return;
 	}
 	if (known_phone(bt_conn_get_dst(conn))) {
@@ -643,6 +778,10 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	bool phone = false;
 	bool pairing = false;
+
+	if (is_peripheral_link(conn)) {
+		adv_check();
+	}
 
 	K_SPINLOCK(&g_lock) {
 		if (g_phone == conn) {
@@ -800,6 +939,8 @@ static void pair_open_fn(struct k_work *work)
 
 	g_prev_profile = zmk_ble_active_profile_index();
 	g_pair_profile = free_slot;
+	/* The advertiser back to ZMK first, or ZMK's switch cannot start it. */
+	adv_release();
 	if (free_slot != g_prev_profile) {
 		zmk_ble_prof_select(free_slot);
 	}
@@ -816,6 +957,7 @@ static void pair_close_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
+	adv_release();
 	if (g_pair_profile >= 0 &&
 	    zmk_ble_active_profile_index() == g_pair_profile &&
 	    g_prev_profile != g_pair_profile) {
@@ -823,6 +965,7 @@ static void pair_close_fn(struct k_work *work)
 	}
 	g_pair_profile = -1;
 	g_just_paired = false;
+	adv_check();
 
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_WAIT);
 	remote_status_kick();
@@ -856,6 +999,7 @@ static void clear_fn(struct k_work *work)
 
 	int prev = zmk_ble_active_profile_index();
 
+	adv_release();
 	for (int i = 0; i < g_phones.n && i < PHONES_MAX; i++) {
 		int idx = zmk_ble_profile_index(&g_phones.addr[i]);
 

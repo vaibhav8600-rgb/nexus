@@ -67,11 +67,12 @@ with other firmwares can keep them.
 3. The phone asks for a code. NEXUS shows six digits; type them in.
 4. Done. No code again: from now on the phone reconnects by itself.
 
-**Coming back later.** Open the app and tap **Connect**. If NEXUS is not in
-the list, a BLE host is connected on ZMK's active profile, and ZMK does not
-advertise while it is (see Known limits). Open Settings > `PHONE` and tap
-Connect: a paired phone needs no code, NEXUS shows **CONNECTED** and switches
-straight back to the profile you were on.
+**Coming back later.** Open the app and tap **Connect to NEXUS**, pick
+NEXUS, and it connects - no code, nothing to press on the dongle, whether
+keys go to USB or to a BLE host. If NEXUS is ever missing from the list,
+open Settings > `PHONE` and tap Connect: a paired phone needs no code, and
+NEXUS shows **CONNECTED** and switches straight back to the profile you were
+on.
 
 Closing the app drops the phone's link a couple of seconds later. iOS would
 otherwise keep it up in the background, with NEXUS shown as connected in the
@@ -136,6 +137,7 @@ everything, and the app reconnects when it comes back.
 | `CONFIG_NEXUS_REMOTE_INPUT_TEXT_QUEUE_SIZE` | 512 | Text and keys waiting to be typed, bytes of RAM |
 | `CONFIG_NEXUS_REMOTE_INPUT_TYPE_DELAY_MS` | 8 | Delay after each key report; about 60 characters a second |
 | `CONFIG_NEXUS_REMOTE_INPUT_HOLD_TIMEOUT_MS` | 1000 | Release everything this long after the phone goes quiet |
+| `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV` | y | Advertise for a paired phone while ZMK is not advertising, so the app finds NEXUS with a BLE host connected |
 
 The queue does not need to hold a whole paste: the app sends only what fits
 and tops it up as NEXUS types, so 512 bytes types a 5,000-character paste as
@@ -201,6 +203,19 @@ on the hardware and both broke that:
 - A second identity on the one legacy advertiser cannot advertise while the
   dongle scans for or connects to its halves: they share one random address,
   so the phone's advertising never started and nothing was discoverable.
+
+**Advertising for a paired phone, in ZMK's gaps.** A paired phone comes back
+only through advertising, and ZMK stops advertising while the host on its
+active profile is connected. In exactly that gap - a phone paired, none
+connected - NEXUS starts ordinary legacy advertising on the one advertiser,
+same identity, same name, so the app finds it. It is ZMK's advertiser the
+rest of the time: NEXUS lets go before its own profile switches, re-checks
+200 ms after every connection or profile change, and if ZMK was refused the
+advertiser meanwhile, stops and has ZMK run its own advertising update again
+(through `zmk_ble_set_device_name()` with the name it already has, which
+writes nothing). Nothing can pair through it - outside the window ZMK refuses
+pairing to a profile that is not open. `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV=n`
+turns it off.
 
 **A phone never acts as a keyboard host.** ZMK sends reports only to the
 active profile, and a phone's profile is active only for the seconds it takes
@@ -277,6 +292,11 @@ hardware, 2026-10-01.
       Connect finds NEXUS (no BLE host on the active profile).
 - [ ] With a BLE host on the active profile: PHONE, then Connect, shows
       CONNECTED with no code and switches straight back to that profile.
+- [ ] With a BLE host on the active profile and no phone connected: the app
+      finds NEXUS and connects with no code and nothing pressed on NEXUS.
+- [ ] Phone advertising and ZMK's: with it running, the BLE host goes away
+      and comes back, `BT_SEL` to another profile and back, a new host pairs
+      to an open profile - each still works, and the halves stay connected.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.
@@ -298,10 +318,9 @@ bytes from the protocol page to each characteristic.
 - A Shift held on the Sofle while text is typing changes the case of what is
   typed; the HID report is shared, which is also what lets both work at once.
 - One phone connected at a time.
-- A phone reconnects through ZMK's advertising, and ZMK stops advertising
-  while the host on its active Bluetooth profile is connected - whether keys
-  go to USB or BLE. Then the app cannot find NEXUS: open Settings > `PHONE`
-  and tap Connect (no code for a paired phone), or select a profile with no
-  host connected.
+- With `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV=n`, a phone reconnects only
+  through ZMK's advertising, which stops while the host on the active
+  Bluetooth profile is connected - USB output or not. Then use Settings >
+  `PHONE` to bring it back (no code for a paired phone).
 - `&bt BT_CLR_ALL` forgets phones too, as it does every bond; pair them again.
 - macOS usually wants F14/F15 for brightness rather than the consumer keys.

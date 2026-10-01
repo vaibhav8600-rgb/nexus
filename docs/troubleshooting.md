@@ -200,10 +200,11 @@ Android pairing does not work yet (iPhone with Bluefy does). See
 without `CONFIG_NEXUS_REMOTE_INPUT=y`.
 
 **NEXUS is not in the app's list at all.** iPhone: open the app in Bluefy,
-not Safari. If a host is connected on ZMK's active Bluetooth profile, ZMK is
-not advertising - even with keys going to USB. Open Settings > `PHONE` on
-NEXUS and tap Connect: a paired phone needs no code, and NEXUS shows
-CONNECTED and switches straight back. See
+not Safari. A phone that has never paired needs the window: Settings >
+`PHONE`. A paired one should always find it; if it does not, open Settings >
+`PHONE` and tap Connect - no code, NEXUS shows CONNECTED and switches
+straight back - and check the build has
+`CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV` on (the default). See
 [remote-input.md](remote-input.md#known-limits).
 
 ## Host link
