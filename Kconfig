@@ -646,6 +646,10 @@ config NEXUS_REMOTE_INPUT
 	  Secure Connections with the passkey on the NEXUS screen, only
 	  inside a window you open from Settings > PHONE or the keymap.
 
+	  The app can also drive NEXUS itself - the game layer's actions and
+	  the USB/BLE output - but not Remote Input's own on/off, pairing or
+	  forgetting, which stay on the keyboard and the dongle.
+
 	  Off means none of it is compiled, and the firmware is the one you
 	  had without it. On adds the pointing HID descriptor, so the
 	  computer sees a mouse appear the first time.

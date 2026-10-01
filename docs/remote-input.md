@@ -91,7 +91,7 @@ nothing else, so either side can change as long as that page holds.
 
 | Phone | How |
 | --- | --- |
-| Android | Open the app's URL in **Chrome**, tap Connect. Menu > **Add to Home screen** for a full-screen app. |
+| Android | **Not working yet**: pairing fails in Chrome (see Known limits). Once fixed: open the URL in Chrome, tap Connect. |
 | iPhone | Safari has no Web Bluetooth. Open the URL in **Bluefy** (free, App Store). |
 
 <p>
@@ -246,17 +246,18 @@ hardware, 2026-10-01.
 - [ ] Split halves reconnect after a dongle reset while a phone is connected.
 - [ ] ZMK Studio still connects over USB.
 - [x] iPhone: pairs inside the window with the passkey from the screen.
-- [ ] Android: the same.
+- [ ] Android: the same. **Fails today**, see Known limits.
 - [ ] A write before pairing is refused.
-- [ ] iPhone and Android: after pairing, the phone's own on-screen keyboard
+- [x] iPhone: after pairing, the phone's own on-screen keyboard still appears.
+- [ ] Android: after pairing, the phone's own on-screen keyboard
       still appears (the phone did not adopt NEXUS as a keyboard).
 - [ ] After pairing, the profile that was active before is active again,
       and the phone sits in the highest free profile.
 - [x] A BLE host (second laptop) still pairs and types with Remote Input on.
 - [ ] Phone only, no Sofle keys, for 3 minutes: the display stays on.
-- [ ] NEXUS controls: D-pad, OK, Rotate and Drop play Tetris; a held arrow
+- [x] NEXUS controls: D-pad, OK, Rotate and Drop play Tetris; a held arrow
       repeats and stops on release; Back, Home, Games, Menu, Theme, Save work.
-- [ ] Output switch: USB and BLE both move typing, and the app shows which.
+- [x] Output switch: USB and BLE both move typing, and the app shows which.
 - [ ] Kill the app holding an arrow: the repeat stops within 1 s.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
@@ -270,6 +271,10 @@ bytes from the protocol page to each characteristic.
 
 ## Known limits
 
+- **Android does not pair yet.** In Chrome the first read fails at once
+  instead of waiting for pairing, so the app disconnects; and Android shows
+  its own code to type on NEXUS instead of asking for the one NEXUS shows,
+  so the codes never match. iPhone (Bluefy) is unaffected. Being worked on.
 - US keyboard layout for typed text. A host set to another layout gets the
   keys a US keyboard would press.
 - A Shift held on the Sofle while text is typing changes the case of what is

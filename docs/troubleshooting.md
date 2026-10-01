@@ -192,6 +192,10 @@ the 60 seconds.
 profile is free. Forget phones with `NEXUS_ACT_REMOTE_CLEAR`, or clear a
 profile.
 
+**Android: a pairing code pops up and fails within a second.** Known:
+Android pairing does not work yet (iPhone with Bluefy does). See
+[remote-input.md](remote-input.md#known-limits).
+
 **The app says this NEXUS has no Remote Input.** The firmware was built
 without `CONFIG_NEXUS_REMOTE_INPUT=y`.
 

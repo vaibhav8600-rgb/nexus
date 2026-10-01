@@ -144,7 +144,7 @@ refused with `0x13`: a phone cannot switch Remote Input off, open pairing or
 forget phones. A held action repeats on the dongle as a held key does, and
 counts as held for the keepalive rule below; send `02` while it is down.
 
-## Status (6 bytes, Read and Notify)
+## Status (7 bytes, Read and Notify)
 
 ```
 u8  version     1
