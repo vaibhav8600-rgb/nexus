@@ -1429,7 +1429,7 @@ def remote(cv, t, view, number=''):
     while scale > 1 and face_w(number, scale) > CONTENT_W - 16:
         scale -= 1
     face_text(cv, (W - face_w(number, scale)) // 2, K['BIG_Y'], number, scale,
-              t['value'] if view == 'WAIT' else t['accent'])
+              t['value'] if view.startswith('WAIT') else t['accent'])
     if view == 'CONFIRM':
         u.caption_c(W // 2, 140, 'SAME CODE ON THE PHONE?')
         u.caption_c(W // 2, 152, 'TAP PAIR THERE, THEN HERE')
@@ -1439,8 +1439,11 @@ def remote(cv, t, view, number=''):
     if view == 'PASSKEY':
         u.caption_c(W // 2, 146, 'TYPE THIS ON THE PHONE')
     else:
-        u.caption_c(W // 2, 140, 'OPEN THE NEXUS APP')
-        u.caption_c(W // 2, 152, 'AND TAP CONNECT')
+        again = view == 'WAIT_AGAIN'
+        u.caption_c(W // 2, 140, 'OLD PAIRING CLEARED' if again
+                    else 'OPEN THE NEXUS APP')
+        u.caption_c(W // 2, 152, 'TAP CONNECT AGAIN' if again
+                    else 'AND TAP CONNECT')
     cv.text_c(W // 2, K['CARD_Y'] + K['CARD_H'] - 18, 'PRESS TO CANCEL',
               CAPTION, t['muted'])
 
@@ -1507,6 +1510,7 @@ def main():
         ('remote-wait', lambda cv: remote(cv, nx, 'WAIT', '47')),
         ('remote-passkey', lambda cv: remote(cv, nx, 'PASSKEY', '482913')),
         ('remote-confirm', lambda cv: remote(cv, nx, 'CONFIRM', '372641')),
+        ('remote-again', lambda cv: remote(cv, nx, 'WAIT_AGAIN', '38')),
         ('remote-paired', lambda cv: remote(cv, nx, 'PAIRED')),
         ('remote-connected', lambda cv: remote(cv, nx, 'CONNECTED')),
         ('remote-noroom', lambda cv: remote(cv, nx, 'FULL')),
