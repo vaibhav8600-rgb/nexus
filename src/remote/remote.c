@@ -40,7 +40,9 @@
 #include <zephyr/settings/settings.h>
 #include <string.h>
 
+#include <dt-bindings/nexus.h>
 #include <zmk/ble.h>
+#include <zmk/endpoints.h>
 
 #include <nexus/remote.h>
 #include <nexus/sound.h>
@@ -55,6 +57,17 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 BUILD_ASSERT(IS_ENABLED(CONFIG_SETTINGS),
 	     "Remote Input keeps its paired phones in settings: "
 	     "enable CONFIG_SETTINGS");
+
+/* The phone's action range is the game layer, and nothing past it. */
+BUILD_ASSERT(REMOTE_ACTION_FIRST == NEXUS_ACT_SELECT &&
+		     REMOTE_ACTION_LAST == NEXUS_ACT_HOST &&
+		     NEXUS_ACT_REMOTE_TOGGLE > REMOTE_ACTION_LAST,
+	     "Remote Input's action range no longer matches dt-bindings/nexus.h");
+BUILD_ASSERT(REMOTE_OUTPUT_USB == ZMK_TRANSPORT_USB &&
+		     REMOTE_OUTPUT_BLE == ZMK_TRANSPORT_BLE,
+	     "Remote Input's output numbers no longer match ZMK's");
+
+#define STATUS_LEN 7
 
 #define PHONES_MAX 2
 #define PAIR_WINDOW K_SECONDS(60)
@@ -96,17 +109,20 @@ static struct {
 
 static int g_pair_profile = -1; /* work queue only */
 static int g_prev_profile;      /* work queue only */
-static uint8_t g_last_status[6];
+static uint8_t g_last_status[STATUS_LEN];
+static atomic_t g_output; /* REMOTE_OUTPUT_* asked for, until applied */
 
 static void status_fn(struct k_work *work);
 static void pair_open_fn(struct k_work *work);
 static void pair_close_fn(struct k_work *work);
 static void clear_fn(struct k_work *work);
+static void output_fn(struct k_work *work);
 static void phones_save_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
 static K_WORK_DEFINE(g_pair_open_work, pair_open_fn);
 static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
 static K_WORK_DEFINE(g_clear_work, clear_fn);
+static K_WORK_DEFINE(g_output_work, output_fn);
 static K_WORK_DEFINE(g_phones_save, phones_save_fn);
 
 /* A reference to the phone being served, or NULL. Caller unrefs. */
@@ -185,7 +201,7 @@ static void phones_save(void)
 
 /* ---- GATT ---------------------------------------------------------------- */
 
-static void status_bytes(uint8_t v[6])
+static void status_bytes(uint8_t v[STATUS_LEN])
 {
 	const struct nexus_status *st = nexus_status_get();
 	uint16_t free = remote_hid_text_free();
@@ -197,7 +213,23 @@ static void status_bytes(uint8_t v[6])
 	       (st->scroll_lock ? BIT(2) : 0);
 	v[3] = (uint8_t)free;
 	v[4] = (uint8_t)(free >> 8);
-	v[5] = BIT(0) | BIT(1) | BIT(2); /* text, consumer, hwheel */
+	/* text, consumer, hwheel, dongle controls, the HOST screen */
+	v[5] = BIT(0) | BIT(1) | BIT(2) | BIT(3) |
+	       (IS_ENABLED(CONFIG_NEXUS_HOST_LINK) ? BIT(4) : 0);
+	/* What &out would show: the preferred transport, not the fallback. */
+	v[6] = (uint8_t)zmk_endpoint_get_preferred_transport();
+}
+
+/* ZMK's endpoint calls save settings: the system work queue, as &out. */
+static void output_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	zmk_endpoint_set_preferred_transport(
+		(enum zmk_transport)atomic_get(&g_output));
+	/* A preference ZMK cannot act on yet - BLE with no host connected -
+	 * changes no endpoint and so raises nothing; tell the phone anyway. */
+	remote_status_kick();
 }
 
 /* Common to every write: whole values only, and nothing while off. */
@@ -306,6 +338,25 @@ static ssize_t write_ctrl(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 		nexus_sound_play(NEXUS_SOUND_SELECT);
 		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_HELLO, 0);
 		break;
+	case REMOTE_CTRL_ACTION: {
+		int perr = remote_action_check(b, len);
+
+		if (perr) {
+			return BT_GATT_ERR(perr);
+		}
+		remote_hid_action(b[1], b[2]);
+		break;
+	}
+	case REMOTE_CTRL_OUTPUT:
+		if (len != 2) {
+			return BT_GATT_ERR(REMOTE_ERR_LEN);
+		}
+		if (b[1] != REMOTE_OUTPUT_USB && b[1] != REMOTE_OUTPUT_BLE) {
+			return BT_GATT_ERR(REMOTE_ERR_VALUE);
+		}
+		atomic_set(&g_output, b[1]);
+		k_work_submit(&g_output_work);
+		break;
 	default:
 		return BT_GATT_ERR(REMOTE_ERR_VALUE);
 	}
@@ -315,7 +366,7 @@ static ssize_t write_ctrl(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 static ssize_t read_status(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			   void *buf, uint16_t len, uint16_t offset)
 {
-	uint8_t v[6];
+	uint8_t v[STATUS_LEN];
 
 	status_bytes(v);
 	return bt_gatt_attr_read(conn, attr, buf, len, offset, v, sizeof(v));
@@ -417,7 +468,7 @@ static void status_fn(struct k_work *work)
 	ARG_UNUSED(work);
 
 	struct bt_conn *conn = phone_get();
-	uint8_t v[6];
+	uint8_t v[STATUS_LEN];
 
 	nexus_status_remote((g_on ? NEXUS_REMOTE_ON : 0) |
 			    (conn ? NEXUS_REMOTE_PHONE : 0) |

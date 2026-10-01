@@ -29,8 +29,8 @@ Base UUID `7e4e0000-5c1a-4b2e-9d3f-8a6b4c2d1e0f`; each UUID below replaces the
 | Mouse | `7e4e0002-…` | Write Without Response | 8 |
 | Key | `7e4e0003-…` | Write | 6 |
 | Text | `7e4e0004-…` | Write | 1-244 |
-| Control | `7e4e0005-…` | Write | 1-2 |
-| Status | `7e4e0006-…` | Read, Notify | 6 |
+| Control | `7e4e0005-…` | Write | 1-3 |
+| Status | `7e4e0006-…` | Read, Notify | 7 |
 
 The dongle advertises as the keyboard it is, under ZMK's keyboard name
 (`CONFIG_ZMK_KEYBOARD_NAME`, "NEXUS" by default), without this service's
@@ -130,8 +130,19 @@ Example -- `Hi` then Enter: `48 69 0A`
 | `0x03` | | Cancel queued text (and release its key) |
 | `0x04` | `u8` ms | Typing delay, 2-50 ms, default 8. Not saved; resets on reconnect |
 | `0x05` | | Identify: show NEXUS on the screen and beep once |
+| `0x06` | `u8` action, `u8` down | A NEXUS action, pressed (`1`) or released (`0`) |
+| `0x07` | `u8` output | Send keys to USB (`1`) or BLE (`2`), as `&out` does. Saved by ZMK |
 
-Examples: `01` release all, `04 0A` typing delay 10 ms.
+Examples: `01` release all, `04 0A` typing delay 10 ms, `06 0D 01` press UP,
+`06 0D 00` release it, `07 02` output to BLE.
+
+**Actions** are the game layer's verbs from `dt-bindings/nexus.h`, `1`
+(SELECT) to `20` (HOST): UP `13`, DOWN `14`, LEFT `11`, RIGHT `12`, SELECT
+`1`, BACK `2`, HOME `5`, GAME_CENTER `6`, MENU `10`, ROTATE `15`, DROP `16`,
+SAVE `17`, THEME_NEXT `18`, THEME_PREV `19`, HOST `20`. Anything else is
+refused with `0x13`: a phone cannot switch Remote Input off, open pairing or
+forget phones. A held action repeats on the dongle as a held key does, and
+counts as held for the keepalive rule below; send `02` while it is down.
 
 ## Status (6 bytes, Read and Notify)
 
@@ -141,16 +152,22 @@ u8  state       bit0 remote enabled, bit1 USB connected,
                 bit2 typing in progress, bit3 pairing window open
 u8  host_leds   bit0 Num Lock, bit1 Caps Lock, bit2 Scroll Lock
 u16 text_free   free bytes in the text queue
-u8  features    bit0 text, bit1 consumer keys, bit2 horizontal scroll
+u8  features    bit0 text, bit1 consumer keys, bit2 horizontal scroll,
+                bit3 actions and output (Control 06, 07), bit4 HOST screen
+u8  output      the output keys go to: 1 USB, 2 BLE
 ```
 
 Notified on any change, at most every 100 ms.
 
-Example -- enabled, USB up, Caps Lock on, 512 bytes free, all features:
+Example -- enabled, USB up, Caps Lock on, 512 bytes free, everything but
+the HOST screen, output to USB:
 
 ```
-01 03 02 00 02 07
+01 03 02 00 02 0F 01
 ```
+
+Firmware before actions sent the first six bytes only; an app that sees six
+bytes has no `features` bit 3 and does not offer them.
 
 ## ATT errors
 
@@ -166,7 +183,7 @@ app treats a failed write as "read Status and look" rather than parsing codes.
 
 ## Safety
 
-- Held keys and buttons are released after 1000 ms
+- Held keys, buttons and actions are released after 1000 ms
   (`CONFIG_NEXUS_REMOTE_INPUT_HOLD_TIMEOUT_MS`) without a Mouse, Key or
   keepalive packet.
 - Everything is released, and queued text dropped, on disconnect and when
