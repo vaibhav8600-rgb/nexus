@@ -86,13 +86,11 @@ static bt_addr_le_t g_paired_addr;
 static uint8_t g_last_status[6];
 
 static void adv_fn(struct k_work *work);
-static void adv_release_fn(struct k_work *work);
 static void status_fn(struct k_work *work);
 static void pair_close_fn(struct k_work *work);
 static void zmk_fix_fn(struct k_work *work);
 static K_WORK_DEFINE(g_adv_work, adv_fn);
 static K_WORK_DELAYABLE_DEFINE(g_adv_retry, adv_fn);
-static K_WORK_DEFINE(g_adv_release, adv_release_fn);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
 static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
 static K_WORK_DEFINE(g_zmk_fix, zmk_fix_fn);
@@ -382,6 +380,11 @@ static void on_nexus_status(const struct nexus_status *st, uint32_t changed)
 	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_ENDPOINT)) {
 		remote_status_kick();
 	}
+	/* Output switched, or ZMK's Bluetooth host came or went: who holds
+	 * the advertiser may change. */
+	if (changed & NEXUS_STATUS_ENDPOINT) {
+		k_work_submit(&g_adv_work);
+	}
 }
 
 /* ---- advertising --------------------------------------------------------- */
@@ -406,9 +409,11 @@ static const struct bt_data k_sd[] = {
  * with or without any Remote Input code. So the phone uses the radio's one
  * legacy advertiser, on its own identity:
  *
- *   - Remote Input on, no phone: ours holds it. New BLE hosts cannot find
- *     the dongle meanwhile; on a dongle that talks to its computer over USB
- *     that costs nothing, and switching Remote Input off hands it back.
+ *   - Remote Input on, no phone, output on USB: ours holds it. Nothing on
+ *     the ZMK side needs it then.
+ *   - Output switched to Bluetooth with its host not connected yet: ZMK
+ *     needs it to be found, so ours steps aside until that host connects -
+ *     then ZMK stops advertising and ours takes it again.
  *   - Phone connected: our advertising stopped when it connected, and ZMK's
  *     own connected() restarts ZMK's - hosts can pair as usual.
  *   - Phone gone: ours takes the advertiser back.
@@ -419,6 +424,36 @@ static const struct bt_data k_sd[] = {
  * ADV_REASSERT.
  */
 #define ADV_REASSERT K_SECONDS(30)
+
+static bool g_adv_held; /* ours holds the advertiser; work queue only */
+
+/* ZMK is waiting to be found by its Bluetooth host. */
+static bool zmk_needs_advertiser(void)
+{
+	const struct nexus_status *st = nexus_status_get();
+
+	return st->endpoint == NEXUS_ENDPOINT_BLE && !st->bt_connected;
+}
+
+/*
+ * Hand the advertiser back to ZMK. ZMK's public way to restart its own
+ * advertising from scratch is a rename - here to the name it already has,
+ * which Zephyr does not even write to flash.
+ */
+static void adv_release(void)
+{
+	char name[CONFIG_BT_DEVICE_NAME_MAX + 1];
+
+	k_work_cancel_delayable(&g_adv_retry);
+	if (!g_adv_held) {
+		return;
+	}
+	g_adv_held = false;
+	bt_le_adv_stop();
+	strncpy(name, bt_get_name(), sizeof(name) - 1);
+	name[sizeof(name) - 1] = '\0';
+	zmk_ble_set_device_name(name);
+}
 
 static void adv_fn(struct k_work *work)
 {
@@ -433,7 +468,11 @@ static void adv_fn(struct k_work *work)
 		bt_conn_unref(conn);
 		return; /* one phone at a time, and ZMK advertises meanwhile */
 	}
-	if (!g_ready || !g_on) {
+	if (!g_ready) {
+		return;
+	}
+	if (!g_on || zmk_needs_advertiser()) {
+		adv_release();
 		return;
 	}
 
@@ -449,26 +488,8 @@ static void adv_fn(struct k_work *work)
 		k_work_reschedule(&g_adv_retry, K_SECONDS(1));
 		return;
 	}
+	g_adv_held = true;
 	k_work_reschedule(&g_adv_retry, ADV_REASSERT);
-}
-
-/*
- * Remote Input switched off: the advertiser goes back to ZMK. ZMK's public
- * way to restart its advertising from scratch is a rename - here to the name
- * it already has. On the system work queue, where ZMK's own Bluetooth work
- * runs, so this never races it.
- */
-static void adv_release_fn(struct k_work *work)
-{
-	ARG_UNUSED(work);
-
-	char name[CONFIG_BT_DEVICE_NAME_MAX + 1];
-
-	k_work_cancel_delayable(&g_adv_retry);
-	bt_le_adv_stop();
-	strncpy(name, bt_get_name(), sizeof(name) - 1);
-	name[sizeof(name) - 1] = ' ';
-	zmk_ble_set_device_name(name);
 }
 
 /* ---- connections --------------------------------------------------------- */
@@ -680,12 +701,11 @@ static void set_on(bool on)
 	uint8_t v = on;
 
 	g_on = on;
-	if (on) {
-		k_work_submit(&g_adv_work);
-	} else {
+	if (!on) {
 		remote_hid_release_all(true);
-		k_work_submit(&g_adv_release);
 	}
+	/* Take the advertiser, or give it back to ZMK. */
+	k_work_submit(&g_adv_work);
 	/* A key press, not an encoder: one flash write per toggle is fine. */
 	settings_save_one("nexus/remote/on", &v, sizeof(v));
 	remote_status_kick();
