@@ -287,16 +287,17 @@ hardware, 2026-10-01.
       repeats and stops on release; Back, Home, Games, Menu, Theme, Save work.
 - [x] Output switch: USB and BLE both move typing, and the app shows which.
 - [ ] Kill the app holding an arrow: the repeat stops within 1 s.
-- [ ] Close the app: within a few seconds the phone glyph goes and the
+- [x] Close the app: within a few seconds the phone glyph goes and the
       phone's Bluetooth settings no longer show NEXUS connected; reopen and
       Connect finds NEXUS (no BLE host on the active profile).
 - [ ] With a BLE host on the active profile: PHONE, then Connect, shows
       CONNECTED with no code and switches straight back to that profile.
-- [ ] With a BLE host on the active profile and no phone connected: the app
+- [x] With a BLE host on the active profile and no phone connected: the app
       finds NEXUS and connects with no code and nothing pressed on NEXUS.
-- [ ] Phone advertising and ZMK's: with it running, the BLE host goes away
-      and comes back, `BT_SEL` to another profile and back, a new host pairs
-      to an open profile - each still works, and the halves stay connected.
+- [x] Phone advertising and ZMK's: with it running, the BLE host goes away
+      and comes back, `BT_SEL` to another profile and back - each still
+      works, and the halves stay connected.
+- [ ] The same, and a new host pairs to an open profile.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.

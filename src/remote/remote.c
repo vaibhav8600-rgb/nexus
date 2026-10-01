@@ -617,7 +617,9 @@ static void adv_fn(struct k_work *work)
 		}
 		return;
 	}
-	if (atomic_get(&g_adv_ours)) {
+	/* Claimed before starting, not after: a connection in between clears
+	 * the flag, and must not have it set again behind its back. */
+	if (!atomic_cas(&g_adv_ours, 0, 1)) {
 		return;
 	}
 
@@ -632,9 +634,11 @@ static void adv_fn(struct k_work *work)
 		g_adv_ad, ARRAY_SIZE(g_adv_ad), k_adv_sd, ARRAY_SIZE(k_adv_sd));
 
 	if (err == 0) {
-		atomic_set(&g_adv_ours, 1);
 		LOG_INF("remote: advertising for a paired phone");
-	} else if (err != -EALREADY) {
+		return;
+	}
+	atomic_set(&g_adv_ours, 0);
+	if (err != -EALREADY) {
 		/* -EALREADY is ZMK advertising after all: nothing to do. */
 		LOG_WRN("remote: phone advertising failed (%d)", err);
 	}
