@@ -145,6 +145,8 @@ well as 4 KB would.
   phone is connected but you have switched remote input off. Nothing at all
   when it is off and no phone is there.
 - **Identify** (from the app): the screen flashes and NEXUS beeps once.
+- Using the phone counts as using the keyboard: ZMK does not go idle and
+  the display does not blank while the phone types or points.
 - **Settings** gains a `PHONE` row; see [ui.md](ui.md#settings).
 
 These are rendered from the firmware source by `scripts/render_ui.py`, like
@@ -241,6 +243,7 @@ hardware, 2026-10-01.
 - [ ] After pairing, the profile that was active before is active again,
       and the phone sits in the highest free profile.
 - [x] A BLE host (second laptop) still pairs and types with Remote Input on.
+- [ ] Phone only, no Sofle keys, for 3 minutes: the display stays on.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.

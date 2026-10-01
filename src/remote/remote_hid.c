@@ -11,6 +11,7 @@
  * to ZMK's HID and event APIs - a ZMK bump that moves them is a fix here.
  */
 
+#include <zephyr/input/input.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
@@ -239,6 +240,26 @@ static int enqueue(const uint8_t *data, uint32_t len)
 	return err;
 }
 
+/*
+ * The phone is someone using the computer. ZMK only counts keys from the
+ * halves as activity, so without this it went idle under someone typing
+ * from the phone, and the display blanked a minute and a half later. ZMK has
+ * no call for "the user is here", but its activity tracker listens to every
+ * input event from any device (ZMK_POINTING, selected), so an empty vendor
+ * event from no device is the hook; nothing else listens to those. Once a
+ * second is plenty against a 30 s idle timeout. Bluetooth thread only.
+ */
+static void note_activity(void)
+{
+	static uint32_t last;
+	uint32_t now = k_uptime_get_32();
+
+	if (now - last >= MSEC_PER_SEC) {
+		last = now;
+		input_report(NULL, INPUT_EV_VENDOR_START, 0, 0, true, K_NO_WAIT);
+	}
+}
+
 int remote_hid_key(const struct remote_key *key)
 {
 	const uint8_t rec[KEY_REC] = {
@@ -246,12 +267,14 @@ int remote_hid_key(const struct remote_key *key)
 		(uint8_t)key->usage, (uint8_t)(key->usage >> 8),
 	};
 
+	note_activity();
 	remote_hid_keepalive();
 	return enqueue(rec, sizeof(rec));
 }
 
 int remote_hid_text(const uint8_t *buf, uint16_t len)
 {
+	note_activity();
 	return enqueue(buf, len);
 }
 
@@ -359,6 +382,7 @@ void remote_hid_mouse(const struct remote_mouse *m)
 		g_mseen |= m->buttons;
 	}
 	k_work_submit(&g_mouse_work);
+	note_activity();
 	remote_hid_keepalive();
 }
 
