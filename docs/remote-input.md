@@ -36,11 +36,11 @@ CONFIG_BT_MAX_CONN=8     # was 7: +1, one phone connected at a time
 CONFIG_BT_MAX_PAIRED=9   # was 7: +2, two phones bonded
 ```
 
-ZMK counts its host profiles as `BT_MAX_PAIRED` minus the two halves, so you
-will also see two more (unused) BLE profiles. There is no separate knob for
-the phones' share. If you leave both at 7 it still works as long as there is
-a free bond slot and a free connection - which on a USB dongle with no BLE
-hosts there usually is - but pairing a phone into a full table fails.
+A phone pairs into a ZMK Bluetooth profile, and ZMK counts its profiles as
+`BT_MAX_PAIRED` minus the two halves - so the two extra bond slots are the
+two profiles the phones take, and every host profile you had stays free. If
+you leave both at 7 it still works while a profile is free, which on a USB
+dongle with no BLE hosts there usually is.
 
 **3. Keys**, optionally. Settings has a `PHONE` row - its value is `ON`,
 `OFF` or `LINKED`, and selecting it opens the pairing window - so the
@@ -59,14 +59,17 @@ with other firmwares can keep them.
 ## Pairing a phone
 
 1. Settings > `PHONE` (or the pair key). NEXUS shows a 60-second countdown.
-2. In the app, **Connect**, and pick **NEXUS Remote**.
+2. In the app, **Connect**, and pick **NEXUS** (the dongle's keyboard name).
 3. The phone asks for a code. NEXUS shows six digits; type them in.
 4. Done. The phone reconnects by itself from now on - no window, no code.
 
-Outside the window pairing is refused, so nobody in range can pair without
-pressing a key on your keyboard. Up to two phones can be paired; forget them
-with `NEXUS_ACT_REMOTE_CLEAR` to pair a third, or to re-pair one that has
-forgotten NEXUS itself.
+While the window is open, NEXUS switches ZMK to a free Bluetooth profile -
+the highest one, leaving the low ones for hosts - and switches back when it
+closes. Over USB that changes nothing you can see. Outside the window a phone
+cannot pair, so nobody in range can pair without pressing a key on your
+keyboard. Up to two phones can be paired; forget them with
+`NEXUS_ACT_REMOTE_CLEAR` to pair a third, or to re-pair one that has forgotten
+NEXUS itself. With no phone slot or no free profile, NEXUS says **NO ROOM**.
 
 ## The app
 
@@ -120,59 +123,47 @@ well as 4 KB would.
 
 This is the part to read before touching `src/remote/`.
 
-**The phone is never a ZMK host.** ZMK's BLE code sends keystrokes to, and
-takes pairings for, whatever connects to its advertiser on the default
-identity. The phone connects to a second one: NEXUS creates a second
-Bluetooth identity (`BT_ID_MAX=2`) and advertises on it as "NEXUS Remote",
-carrying only this service's UUID. The phone's bonds are stored under that
-identity, which is also why forgetting phones (`bt_unpair(id, NULL)`) cannot
-touch a host's or a half's bond.
+**The phone is a ZMK profile, and that is all the radio sees.** It finds
+NEXUS through ZMK's own advertising, pairs into a free profile slot, and
+reconnects the way any bonded host does. Nothing about ZMK's Bluetooth
+changes - no second advertiser, no second identity - so BLE hosts, the
+halves and Studio behave exactly as on `main`. Two other designs were tried
+on the hardware and both broke that:
 
-**One advertiser, shared.** The radio has a single legacy advertiser. Turning
-on extended advertising (`BT_EXT_ADV`) for a second one was the first design,
-and it hangs this dongle in Bluetooth controller start-up, before USB or the
-display - with or without any Remote Input code, which is how it was found.
-So while Remote Input is on and no phone is connected, the phone's
-advertising holds the one advertiser; when a phone connects, ZMK's own
-`connected()` restarts ZMK's advertising as usual; when it leaves, Remote
-Input takes the advertiser back. ZMK keeps believing its own advertising is
-running and leaves it alone, and anything that makes it restart (a Studio
-rename, a profile change) is undone by Remote Input re-taking the advertiser
-every 30 s. Switching Remote Input off hands it back through
-`zmk_ble_set_device_name()`, ZMK's public way to restart its advertising.
+- A second advertiser needs extended advertising (`BT_EXT_ADV`), which hangs
+  this dongle in Bluetooth controller start-up, before USB or the display -
+  with Remote Input's code compiled out entirely.
+- A second identity on the one legacy advertiser cannot advertise while the
+  dongle scans for or connects to its halves: they share one random address,
+  so the phone's advertising never started and nothing was discoverable.
 
-**The phone cannot see NEXUS as a keyboard.** Zephyr keeps one GATT database
-for every connection, so the phone discovers ZMK's HID service whatever
-identity it connected to - and a phone that bonds to something with a HID
-service may adopt it as a hardware keyboard and hide its own on-screen one.
-`BT_GATT_AUTHORIZATION_CUSTOM` closes that: on the phone's link, every read
-and write inside the HID service's handle range fails, so the phone's OS can
-never load the report map. The same callback refuses this service to every
-other connection.
+**A phone never acts as a keyboard host.** ZMK sends reports only to the
+active profile, and a phone's profile is active only for the seconds it takes
+to pair. More than that, `BT_GATT_AUTHORIZATION_CUSTOM` refuses every read
+and write in ZMK's HID service on a phone's link, so the phone's OS can
+neither subscribe to a report nor load the report map and adopt NEXUS as a
+hardware keyboard - which is what would hide its own on-screen one. The same
+callback keeps everyone but the phone out of the Remote Input service.
+
+**Which links are phones.** NEXUS keeps the addresses of paired phones in its
+settings (`nexus/remote/phones`). A connection from one of them is a phone;
+so is whichever connection arrives while the pairing window is open. A BLE
+host that connects in that same minute is taken for the phone - keep the
+window for pairing phones.
 
 **Pairing without touching ZMK's callbacks.** Zephyr allows one global set of
 pairing callbacks and ZMK owns it. `bt_conn_auth_cb_overlay()` replaces them
-for one connection, so the phone's link gets a passkey display (which makes it
-a display-only device, so LE Secure Connections uses passkey entry) and the
-pairing-window check, and every other link keeps ZMK's.
-
-**One thing ZMK still does.** ZMK's `auth_pairing_complete()` checks a new
-pairing's role but not its identity, so when the active BLE profile is open,
-ZMK records the phone's address in it. Nothing is ever sent there - ZMK looks
-profiles up on the default identity - but the profile would read as taken.
-`zmk_fix_fn()` in `remote.c` gives it back with `zmk_ble_clear_bonds()`. The
-upstream fix is one identity check in ZMK; the workaround is marked to go
-when that lands.
-
-ZMK may log `Advertising failed to start (err -120)` when it tries to start
-its advertising while the phone's holds the advertiser. That line is
-harmless.
+for the one connection that is pairing, so it gets a passkey on the NEXUS
+screen (LE Secure Connections with passkey entry) and the window check; every
+other link keeps ZMK's. ZMK's own `pairing_complete` then files the phone into
+the free profile, which is exactly what is wanted, and NEXUS switches back to
+the profile that was active before.
 
 ## Memory and timing
 
 | | |
 | --- | --- |
-| RAM | the text queue (512), one more connection and a second identity in the Bluetooth stack, and under 100 bytes of state. `arm-zephyr-eabi-size` in CI prints the real total for the build with it on. |
+| RAM | the text queue (512), one more connection in the Bluetooth stack, and under 100 bytes of state. `arm-zephyr-eabi-size` in CI prints the real total for the build with it on. |
 | Threads | none added. Bluetooth callbacks validate and hand off; all HID work runs on the system work queue, the same one ZMK processes the halves' keys on. |
 | Mouse | merged, not queued: packets that arrive before the work item runs become one report with summed movement and the latest buttons. |
 | Link | the phone is asked for a 15 ms interval with no latency - the fastest iOS allows, so pointer updates top out around 66 per second. |
@@ -204,15 +195,17 @@ the dongle, and is where this is actually proven:
       screen; a write before pairing is refused.
 - [ ] iPhone and Android: after pairing, the phone's own on-screen keyboard
       still appears (the phone did not adopt NEXUS as a keyboard).
-- [ ] The active BLE profile is still open after a phone pairs.
+- [ ] After pairing, the profile that was active before is active again,
+      and the phone sits in the highest free profile.
+- [ ] A BLE host (second laptop) still pairs and types with Remote Input on.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.
 - [ ] Kill the app mid-drag and mid-key-hold: everything released within 1 s.
 - [ ] Remote off: nothing from the phone reaches the computer.
 
-Before the app exists, drive it from **nRF Connect** on a phone: connect to
-NEXUS Remote, read Status (this pairs), then write the example bytes from the
+Before the app exists, drive it from **nRF Connect** on a phone: open the
+PHONE window, connect to NEXUS, read Status (this pairs), then write the example bytes from the
 protocol page to each characteristic.
 
 ## Known limits
@@ -222,11 +215,8 @@ protocol page to each characteristic.
 - A Shift held on the Sofle while text is typing changes the case of what is
   typed; the HID report is shared, which is also what lets both work at once.
 - One phone connected at a time.
-- While Remote Input is on and no phone is connected, the dongle is not
-  discoverable to new BLE hosts, and a bonded BLE host cannot reconnect: the
-  phone's advertising holds the radio's one advertiser. Over USB this makes
-  no difference; to use a BLE host, switch Remote Input off
-  (`NEXUS_ACT_REMOTE_TOGGLE`) and the advertiser goes straight back to ZMK.
-- With Remote Input off, the dongle does not advertise to phones at all, so
-  the app cannot find it until it is switched back on.
+- A phone reconnects through ZMK's advertising, which ZMK stops while its
+  active BLE host is connected. Over USB it always advertises; with a BLE
+  host active, connect the phone before the host, or switch to USB.
+- `&bt BT_CLR_ALL` forgets phones too, as it does every bond; pair them again.
 - macOS usually wants F14/F15 for brightness rather than the consumer keys.

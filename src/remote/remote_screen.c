@@ -63,6 +63,16 @@ static void draw(void)
 		return;
 	}
 
+	if (g_view == NEXUS_REMOTE_VIEW_FULL) {
+		nexus_draw_card(NEXUS_PAD, CARD_Y, NEXUS_CONTENT_W, CARD_H);
+		nexus_draw_caption_c(GFX_W / 2, CARD_Y + 12, "PAIR A PHONE");
+		gfx_text_c(GFX_W / 2, BIG_Y, "NO ROOM", NEXUS_TXT_VALUE,
+			   t->warning, GFX_OPAQUE);
+		nexus_draw_caption_c(GFX_W / 2, 140, "FORGET A PHONE, OR FREE");
+		nexus_draw_caption_c(GFX_W / 2, 152, "A BLUETOOTH PROFILE");
+		return;
+	}
+
 	nexus_draw_card(NEXUS_PAD, CARD_Y, NEXUS_CONTENT_W, CARD_H);
 	nexus_draw_caption_c(GFX_W / 2, CARD_Y + 12, "PAIR A PHONE");
 
@@ -80,9 +90,16 @@ static void draw(void)
 		   NEXUS_TXT_CAPTION, t->muted, GFX_OPAQUE);
 }
 
+/* Views that say something and go, rather than wait for an answer. */
+static bool transient(void)
+{
+	return g_view == NEXUS_REMOTE_VIEW_HELLO ||
+	       g_view == NEXUS_REMOTE_VIEW_FULL;
+}
+
 static void tick(void)
 {
-	if (g_view == NEXUS_REMOTE_VIEW_HELLO) {
+	if (transient()) {
 		if (k_uptime_get() >= g_hello_until) {
 			g_want = false;
 			nexus_screen_pop();
@@ -98,7 +115,7 @@ static bool action(enum nexus_action a)
 	if (a != NEXUS_ACTION_BACK && a != NEXUS_ACTION_SELECT) {
 		return false;
 	}
-	if (g_view != NEXUS_REMOTE_VIEW_HELLO) {
+	if (!transient()) {
 		remote_pair_cancel();
 	}
 	g_want = false;
@@ -145,7 +162,8 @@ void nexus_remote_screen_show(enum nexus_remote_view view, uint32_t passkey)
 {
 	g_view = view;
 	g_passkey = passkey;
-	g_hello_until = k_uptime_get() + HELLO_MS;
+	g_hello_until = k_uptime_get() +
+			(view == NEXUS_REMOTE_VIEW_FULL ? 3000 : HELLO_MS);
 	g_want = true;
 	k_work_submit_to_queue(nexus_workq(), &g_apply);
 }

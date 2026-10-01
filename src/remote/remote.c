@@ -1,28 +1,33 @@
 /*
  * Remote Input: the phone's side of the radio (docs/remote-input.md).
  *
- * The phone is kept apart from ZMK by three things, each covering a way it
- * could otherwise end up as one of ZMK's hosts:
+ * The phone is a ZMK Bluetooth profile, and nothing more unusual than that
+ * on the radio. It finds NEXUS through ZMK's own advertising, pairs into a
+ * free profile slot, and reconnects the way any bonded host does - so ZMK's
+ * Bluetooth runs exactly as it does without Remote Input, which is the one
+ * thing every earlier design here broke:
  *
- *   Identity. It connects to "NEXUS Remote", advertised on a second
- *   Bluetooth identity, never to ZMK's. Its bonds live under that identity,
- *   so forgetting phones can never touch a host's or a half's bond.
+ *   - a second advertiser needs BT_EXT_ADV, which hangs this dongle in
+ *     Bluetooth controller start-up;
+ *   - a second identity cannot advertise on the one legacy advertiser while
+ *     the dongle scans for and connects to its halves - they share a single
+ *     random address - so nothing advertised at all.
  *
- *   The radio has one advertiser (extended advertising, which would give it
- *   two, freezes this dongle at boot - see the advertising section). So
- *   while Remote Input is on and no phone is connected, the phone's
- *   advertising holds it; once a phone connects ZMK has it back.
+ * What keeps a phone in a profile from being a keyboard host:
  *
- *   Authorization. Zephyr has one GATT database for every connection, so
- *   the phone can see ZMK's HID service. A custom authorization callback
- *   refuses every read and write in it on the phone's link - the phone's OS
- *   cannot load the report map and so cannot adopt NEXUS as a keyboard,
- *   which is what would hide its own on-screen keyboard. The same callback
- *   keeps everyone but the phone out of this service.
+ *   Authorization. A custom GATT authorization callback refuses every read
+ *   and write in ZMK's HID service on a phone's link, so the phone's OS can
+ *   neither load the report map - and adopt NEXUS as a keyboard, hiding its
+ *   own on-screen one - nor subscribe to a single report. Reports only ever
+ *   go to the active profile anyway, and a phone's profile is only active
+ *   for the seconds it takes to pair. The same callback keeps everyone but
+ *   the phone out of the Remote Input service.
  *
- *   Pairing. Per-connection auth callbacks (bt_conn_auth_cb_overlay) give
- *   the phone's link a passkey display and a pairing window, and leave
- *   ZMK's global callbacks exactly as they are for everything else.
+ *   Pairing. Settings > PHONE opens a 60 s window and switches ZMK to a free
+ *   profile, so its own advertising lets a phone in. Per-connection auth
+ *   callbacks (bt_conn_auth_cb_overlay) give that one connection a passkey
+ *   on the NEXUS screen; ZMK records the phone in that profile, NEXUS
+ *   records its address as a phone, and the previous profile comes back.
  */
 
 #include <zephyr/bluetooth/bluetooth.h>
@@ -49,15 +54,16 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 
 /* Kconfig cannot say this without a dependency loop (see the Kconfig). */
 BUILD_ASSERT(IS_ENABLED(CONFIG_SETTINGS),
-	     "Remote Input keeps the phone's identity and bonds in settings: "
+	     "Remote Input keeps its paired phones in settings: "
 	     "enable CONFIG_SETTINGS");
 
 #define PHONES_MAX 2
 #define PAIR_WINDOW K_SECONDS(60)
 
-/* 211.25 ms: on Apple's list of intervals iOS scans for well, and about
- * five packets a second - nothing next to the halves' connection events. */
-#define ADV_INTERVAL 338
+/* ZMK's pairing_complete must have filed the phone into the pairing profile
+ * before that profile is switched away from. Both run on the Bluetooth
+ * thread; this is ample. */
+#define PAIR_SETTLE K_MSEC(500)
 
 /* 15 ms, no latency, 2 s timeout: the fastest link iOS allows, and a dead
  * phone noticed in two seconds rather than the dongle-wide eight. */
@@ -74,28 +80,35 @@ static const struct bt_uuid_128 k_text = BT_UUID_INIT_128(REMOTE_UUID(4));
 static const struct bt_uuid_128 k_ctrl = BT_UUID_INIT_128(REMOTE_UUID(5));
 static const struct bt_uuid_128 k_status = BT_UUID_INIT_128(REMOTE_UUID(6));
 
-static bool g_ready;       /* identity exists, advertiser may start */
-static uint8_t g_id;       /* the phone's identity; never BT_ID_DEFAULT */
-static bool g_on = true;   /* remote mode, persisted */
+static bool g_on = true; /* remote mode, persisted */
 static uint16_t g_hids_start, g_hids_end;
 
 static struct k_spinlock g_lock;
-static struct bt_conn *g_phone; /* guarded by g_lock */
+static struct bt_conn *g_phone;     /* the phone being served; g_lock */
+static struct bt_conn *g_pair_conn; /* the connection pairing now; g_lock */
 
-static bt_addr_le_t g_paired_addr;
+/* Paired phones, persisted. Read on the Bluetooth thread for every ATT op,
+ * written there (pairing) and on the work queue (forgetting); a torn read
+ * can only misjudge a phone for one request. */
+static struct {
+	uint8_t n;
+	bt_addr_le_t addr[PHONES_MAX];
+} g_phones;
+
+static int g_pair_profile = -1; /* work queue only */
+static int g_prev_profile;      /* work queue only */
 static uint8_t g_last_status[6];
 
-static void adv_fn(struct k_work *work);
 static void status_fn(struct k_work *work);
+static void pair_open_fn(struct k_work *work);
 static void pair_close_fn(struct k_work *work);
-static void zmk_fix_fn(struct k_work *work);
-static K_WORK_DEFINE(g_adv_work, adv_fn);
-static K_WORK_DELAYABLE_DEFINE(g_adv_retry, adv_fn);
+static void clear_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
+static K_WORK_DEFINE(g_pair_open_work, pair_open_fn);
 static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
-static K_WORK_DEFINE(g_zmk_fix, zmk_fix_fn);
+static K_WORK_DEFINE(g_clear_work, clear_fn);
 
-/* A reference to the phone's connection, or NULL. Caller unrefs. */
+/* A reference to the phone being served, or NULL. Caller unrefs. */
 static struct bt_conn *phone_get(void)
 {
 	struct bt_conn *conn = NULL;
@@ -108,12 +121,37 @@ static struct bt_conn *phone_get(void)
 	return conn;
 }
 
-static bool is_phone(struct bt_conn *conn)
+static bool is_peripheral_link(struct bt_conn *conn)
 {
 	struct bt_conn_info info;
 
-	return g_ready && bt_conn_get_info(conn, &info) == 0 &&
-	       info.id == g_id;
+	return bt_conn_get_info(conn, &info) == 0 &&
+	       info.role == BT_CONN_ROLE_PERIPHERAL;
+}
+
+static bool known_phone(const bt_addr_le_t *addr)
+{
+	for (int i = 0; i < g_phones.n && i < PHONES_MAX; i++) {
+		if (!bt_addr_le_cmp(&g_phones.addr[i], addr)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/* A phone's link: a paired phone, or the one pairing right now. Kept out
+ * of ZMK's HID service. */
+static bool is_phone(struct bt_conn *conn)
+{
+	return conn == g_pair_conn ||
+	       (is_peripheral_link(conn) && known_phone(bt_conn_get_dst(conn)));
+}
+
+/* Allowed into the Remote Input service: the phone being served, or the
+ * one pairing. One phone at a time. */
+static bool serving(struct bt_conn *conn)
+{
+	return conn == g_phone || conn == g_pair_conn;
 }
 
 /* The window is open exactly while its closing work is pending. */
@@ -127,6 +165,11 @@ uint32_t nexus_remote_pair_remaining_s(void)
 	k_ticks_t t = k_work_delayable_remaining_get(&g_pair_close);
 
 	return (k_ticks_to_ms_floor32(t) + 999) / 1000;
+}
+
+static void phones_save(void)
+{
+	settings_save_one("nexus/remote/phones", &g_phones, sizeof(g_phones));
 }
 
 /* ---- GATT ---------------------------------------------------------------- */
@@ -299,17 +342,15 @@ static bool in_service(const struct bt_gatt_attr *attr)
 
 static bool authorize(struct bt_conn *conn, const struct bt_gatt_attr *attr)
 {
-	bool phone = is_phone(conn);
-
 	if (in_service(attr)) {
-		return phone;
+		return serving(conn);
 	}
-	if (!phone || !g_hids_start) {
+	if (!g_hids_start || !is_phone(conn)) {
 		return true;
 	}
 
-	/* The handle walk is only paid on the phone's link, and the phone
-	 * has no business outside this service after discovery. */
+	/* The handle walk is only paid on a phone's link, and a phone has no
+	 * business outside this service after discovery. */
 	uint16_t h = bt_gatt_attr_get_handle(attr);
 
 	return h < g_hids_start || h > g_hids_end;
@@ -380,116 +421,6 @@ static void on_nexus_status(const struct nexus_status *st, uint32_t changed)
 	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_ENDPOINT)) {
 		remote_status_kick();
 	}
-	/* Output switched, or ZMK's Bluetooth host came or went: who holds
-	 * the advertiser may change. */
-	if (changed & NEXUS_STATUS_ENDPOINT) {
-		k_work_submit(&g_adv_work);
-	}
-}
-
-/* ---- advertising --------------------------------------------------------- */
-
-static const struct bt_data k_ad[] = {
-	BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
-	BT_DATA_BYTES(BT_DATA_UUID128_ALL, REMOTE_UUID(1)),
-};
-
-/* The name does not fit beside a 128-bit UUID in 31 bytes, so it goes in the
- * scan response, which every phone asks for. */
-static const struct bt_data k_sd[] = {
-	BT_DATA(BT_DATA_NAME_COMPLETE, "NEXUS Remote", 12),
-};
-
-/*
- * One advertiser, shared with ZMK.
- *
- * Extended advertising would have given the phone its own, beside ZMK's -
- * that was the first design - but turning BT_EXT_ADV on hangs this dongle
- * inside Bluetooth controller start-up, before USB or the display come up,
- * with or without any Remote Input code. So the phone uses the radio's one
- * legacy advertiser, on its own identity:
- *
- *   - Remote Input on, no phone, output on USB: ours holds it. Nothing on
- *     the ZMK side needs it then.
- *   - Output switched to Bluetooth with its host not connected yet: ZMK
- *     needs it to be found, so ours steps aside until that host connects -
- *     then ZMK stops advertising and ours takes it again.
- *   - Phone connected: our advertising stopped when it connected, and ZMK's
- *     own connected() restarts ZMK's - hosts can pair as usual.
- *   - Phone gone: ours takes the advertiser back.
- *
- * ZMK cannot tell its advertising was replaced; it keeps believing its own
- * is running and leaves it alone. The rare things that do make it restart -
- * a rename from Studio, a profile change - are undone by re-taking every
- * ADV_REASSERT.
- */
-#define ADV_REASSERT K_SECONDS(30)
-
-static bool g_adv_held; /* ours holds the advertiser; work queue only */
-
-/* ZMK is waiting to be found by its Bluetooth host. */
-static bool zmk_needs_advertiser(void)
-{
-	const struct nexus_status *st = nexus_status_get();
-
-	return st->endpoint == NEXUS_ENDPOINT_BLE && !st->bt_connected;
-}
-
-/*
- * Hand the advertiser back to ZMK. ZMK's public way to restart its own
- * advertising from scratch is a rename - here to the name it already has,
- * which Zephyr does not even write to flash.
- */
-static void adv_release(void)
-{
-	char name[CONFIG_BT_DEVICE_NAME_MAX + 1];
-
-	k_work_cancel_delayable(&g_adv_retry);
-	if (!g_adv_held) {
-		return;
-	}
-	g_adv_held = false;
-	bt_le_adv_stop();
-	strncpy(name, bt_get_name(), sizeof(name) - 1);
-	name[sizeof(name) - 1] = '\0';
-	zmk_ble_set_device_name(name);
-}
-
-static void adv_fn(struct k_work *work)
-{
-	ARG_UNUSED(work);
-
-	struct bt_le_adv_param p = BT_LE_ADV_PARAM_INIT(
-		BT_LE_ADV_OPT_CONN, ADV_INTERVAL, ADV_INTERVAL, NULL);
-	struct bt_conn *conn = phone_get();
-	int err;
-
-	if (conn) {
-		bt_conn_unref(conn);
-		return; /* one phone at a time, and ZMK advertises meanwhile */
-	}
-	if (!g_ready) {
-		return;
-	}
-	if (!g_on || zmk_needs_advertiser()) {
-		adv_release();
-		return;
-	}
-
-	p.id = g_id;
-	/* Whoever holds the advertiser - ZMK, or an earlier start of ours -
-	 * lets go. Stopping when nothing runs is not an error. */
-	bt_le_adv_stop();
-	err = bt_le_adv_start(&p, k_ad, ARRAY_SIZE(k_ad), k_sd, ARRAY_SIZE(k_sd));
-	if (err) {
-		/* Usually no free connection object yet - one is released
-		 * just after a disconnect. Try again shortly. */
-		LOG_DBG("remote: advertising deferred (%d)", err);
-		k_work_reschedule(&g_adv_retry, K_SECONDS(1));
-		return;
-	}
-	g_adv_held = true;
-	k_work_reschedule(&g_adv_retry, ADV_REASSERT);
 }
 
 /* ---- connections --------------------------------------------------------- */
@@ -505,105 +436,104 @@ static const struct bt_conn_auth_cb k_auth = {
 	.cancel = pairing_cancel,
 };
 
-static void on_connected(struct bt_conn *conn, uint8_t err)
+static void serve(struct bt_conn *conn)
 {
 	bool busy = false;
 
-	if (!is_phone(conn)) {
-		return;
-	}
-	if (err) {
-		k_work_submit(&g_adv_work);
-		return;
-	}
-
 	K_SPINLOCK(&g_lock) {
 		if (g_phone) {
-			busy = true;
+			busy = g_phone != conn;
 		} else {
 			g_phone = bt_conn_ref(conn);
 		}
 	}
 	if (busy) {
-		bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		/* ponytail: one phone served at a time; a second paired phone
+		 * stays connected but the service refuses it. */
 		return;
 	}
 
-	/* Before anything can start SMP on this link. */
-	bt_conn_auth_cb_overlay(conn, &k_auth);
 	bt_conn_le_param_update(conn, PHONE_CONN_PARAM);
-
 	memset(g_last_status, 0xFF, sizeof(g_last_status));
 	remote_hid_set_delay(CONFIG_NEXUS_REMOTE_INPUT_TYPE_DELAY_MS);
 	remote_status_kick();
 	LOG_INF("remote: phone connected");
 }
 
+static void on_connected(struct bt_conn *conn, uint8_t err)
+{
+	bool candidate = false;
+
+	if (err || !is_peripheral_link(conn)) {
+		return;
+	}
+	if (known_phone(bt_conn_get_dst(conn))) {
+		serve(conn);
+		return;
+	}
+	if (!pair_open()) {
+		return; /* a host, as far as NEXUS is concerned: ZMK's business */
+	}
+
+	/* The window is open, so whatever connects now is taken to be the
+	 * phone that was asked for. A host that connects in the same minute
+	 * gets the phone's treatment - documented, and the window is short. */
+	K_SPINLOCK(&g_lock) {
+		if (!g_pair_conn) {
+			g_pair_conn = bt_conn_ref(conn);
+			candidate = true;
+		}
+	}
+	if (candidate) {
+		/* Before anything can start SMP on this link. */
+		bt_conn_auth_cb_overlay(conn, &k_auth);
+	}
+}
+
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	bool ours = false;
+	bool phone = false;
+	bool pairing = false;
 
 	K_SPINLOCK(&g_lock) {
 		if (g_phone == conn) {
 			g_phone = NULL;
-			ours = true;
+			phone = true;
+		}
+		if (g_pair_conn == conn) {
+			g_pair_conn = NULL;
+			pairing = true;
 		}
 	}
-	if (!ours) {
+	if (pairing) {
+		bt_conn_unref(conn);
+		nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
+	}
+	if (!phone) {
 		return;
 	}
 
 	bt_conn_unref(conn);
 	remote_hid_release_all(true);
-	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
 	remote_status_kick();
 	LOG_INF("remote: phone disconnected (0x%02x)", reason);
-}
-
-/* A connection object came free - the phone's, or one it was waiting for. */
-static void on_recycled(void)
-{
-	k_work_submit(&g_adv_work);
 }
 
 BT_CONN_CB_DEFINE(nexus_remote_conn) = {
 	.connected = on_connected,
 	.disconnected = on_disconnected,
-	.recycled = on_recycled,
 };
 
 /* ---- pairing ------------------------------------------------------------- */
 
-struct bond_count {
-	const bt_addr_le_t *except;
-	int n;
-};
-
-static void count_bond(const struct bt_bond_info *info, void *user_data)
-{
-	struct bond_count *c = user_data;
-
-	if (bt_addr_le_cmp(&info->addr, c->except)) {
-		c->n++;
-	}
-}
-
 static enum bt_security_err pairing_accept(struct bt_conn *conn,
 					   const struct bt_conn_pairing_feat *feat)
 {
+	ARG_UNUSED(conn);
 	ARG_UNUSED(feat);
-
-	struct bond_count c = {.except = bt_conn_get_dst(conn)};
 
 	if (!pair_open()) {
 		LOG_WRN("remote: pairing refused, window closed");
-		return BT_SECURITY_ERR_PAIR_NOT_ALLOWED;
-	}
-
-	bt_foreach_bond(g_id, count_bond, &c);
-	if (c.n >= PHONES_MAX) {
-		LOG_WRN("remote: pairing refused, %d phones already paired",
-			PHONES_MAX);
 		return BT_SECURITY_ERR_PAIR_NOT_ALLOWED;
 	}
 	return BT_SECURITY_ERR_SUCCESS;
@@ -625,27 +555,46 @@ static void pairing_cancel(struct bt_conn *conn)
 
 static void pairing_complete(struct bt_conn *conn, bool bonded)
 {
-	if (!is_phone(conn)) {
+	bool ours = false;
+
+	K_SPINLOCK(&g_lock) {
+		if (conn == g_pair_conn) {
+			g_pair_conn = NULL;
+			ours = true;
+		}
+	}
+	if (!ours) {
 		return;
 	}
 
+	const bt_addr_le_t *addr = bt_conn_get_dst(conn);
+
+	if (!known_phone(addr) && g_phones.n < PHONES_MAX) {
+		bt_addr_le_copy(&g_phones.addr[g_phones.n], addr);
+		g_phones.n++;
+		phones_save();
+	}
 	LOG_INF("remote: phone paired%s", bonded ? " and bonded" : "");
-	k_work_cancel_delayable(&g_pair_close);
+
+	serve(conn);
+	bt_conn_unref(conn); /* g_pair_conn's reference; serve() took its own */
+
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_WAIT);
 	nexus_sound_play(NEXUS_SOUND_CONNECT);
 
-	bt_addr_le_copy(&g_paired_addr, bt_conn_get_dst(conn));
-	k_work_submit(&g_zmk_fix);
-	remote_status_kick();
+	/* Close the window - which switches back to the previous profile -
+	 * once ZMK has filed the phone into the pairing one. */
+	k_work_reschedule(&g_pair_close, PAIR_SETTLE);
 }
 
 static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 {
-	if (!is_phone(conn)) {
+	if (conn != g_pair_conn) {
 		return;
 	}
 
+	/* The window stays open: a mistyped passkey can be tried again. */
 	LOG_WRN("remote: pairing failed (%d)", reason);
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
 	nexus_sound_play(NEXUS_SOUND_BACK);
@@ -657,41 +606,108 @@ static struct bt_conn_auth_info_cb g_auth_info = {
 };
 
 /*
- * ponytail: ZMK's auth_pairing_complete() (app/src/ble.c) checks the role of
- * a new pairing but not its identity, so the phone's pairing is written into
- * the active host profile whenever that profile is open. Nothing is ever
- * sent to it - ZMK looks profiles up on the default identity - but the
- * profile would read as taken. Put it back. The real fix is one
- * `if (info.id != BT_ID_DEFAULT) return;` upstream; drop this when it lands.
+ * Open the window: switch ZMK to a free profile, so ZMK's own advertising
+ * and pairing rules let a phone in. The highest free slot, to leave the low
+ * ones - the ones BT_SEL reaches first - for hosts.
  */
-static void zmk_fix_fn(struct k_work *work)
+static void pair_open_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
-	if (bt_addr_le_cmp(zmk_ble_active_profile_addr(), &g_paired_addr) == 0) {
-		LOG_INF("remote: returning the host profile ZMK gave the phone");
-		zmk_ble_clear_bonds();
-	}
-}
+	int free_slot = -1;
 
-void remote_pair_cancel(void)
-{
-	struct bt_conn *conn = phone_get();
-
-	k_work_cancel_delayable(&g_pair_close);
-	if (conn) {
-		bt_conn_auth_cancel(conn); /* harmless if nothing is pending */
-		bt_conn_unref(conn);
+	if (pair_open()) {
+		/* Already open: just give it its full minute again. */
+		k_work_reschedule(&g_pair_close, PAIR_WINDOW);
+		return;
 	}
+	if (g_phones.n < PHONES_MAX) {
+		for (int i = ZMK_BLE_PROFILE_COUNT - 1; i >= 0; i--) {
+			if (zmk_ble_profile_is_open(i)) {
+				free_slot = i;
+				break;
+			}
+		}
+	}
+	if (free_slot < 0) {
+		LOG_WRN("remote: no room for a phone (%d paired)", g_phones.n);
+		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_FULL, 0);
+		nexus_sound_play(NEXUS_SOUND_BACK);
+		return;
+	}
+
+	g_prev_profile = zmk_ble_active_profile_index();
+	g_pair_profile = free_slot;
+	if (free_slot != g_prev_profile) {
+		zmk_ble_prof_select(free_slot);
+	}
+
+	k_work_reschedule(&g_pair_close, PAIR_WINDOW);
+	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, 0);
+	nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
 	remote_status_kick();
 }
 
+/* The window closes - paired, cancelled or timed out: back to the profile
+ * that was active before it opened. */
 static void pair_close_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
+	if (g_pair_profile >= 0 &&
+	    zmk_ble_active_profile_index() == g_pair_profile &&
+	    g_prev_profile != g_pair_profile) {
+		zmk_ble_prof_select(g_prev_profile);
+	}
+	g_pair_profile = -1;
+
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_WAIT);
 	remote_status_kick();
+}
+
+void remote_pair_cancel(void)
+{
+	struct bt_conn *conn = NULL;
+
+	K_SPINLOCK(&g_lock) {
+		if (g_pair_conn) {
+			conn = bt_conn_ref(g_pair_conn);
+		}
+	}
+	if (conn) {
+		bt_conn_auth_cancel(conn); /* harmless if nothing is pending */
+		bt_conn_unref(conn);
+	}
+	/* Close now rather than when the minute runs out. */
+	k_work_reschedule(&g_pair_close, K_NO_WAIT);
+}
+
+/*
+ * Forget the phones: clear each one's ZMK profile - which also deletes its
+ * bond and drops it if connected - and nothing else. ZMK clears only the
+ * active profile, so step to each phone's, clear it, and step back.
+ */
+static void clear_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	int prev = zmk_ble_active_profile_index();
+
+	for (int i = 0; i < g_phones.n && i < PHONES_MAX; i++) {
+		int idx = zmk_ble_profile_index(&g_phones.addr[i]);
+
+		if (idx >= 0) {
+			zmk_ble_prof_select(idx);
+			zmk_ble_clear_bonds();
+		}
+	}
+	if (zmk_ble_active_profile_index() != prev) {
+		zmk_ble_prof_select(prev);
+	}
+
+	memset(&g_phones, 0, sizeof(g_phones));
+	phones_save();
+	LOG_INF("remote: paired phones forgotten");
 }
 
 /* ---- on / off, and the keymap actions ------------------------------------ */
@@ -704,8 +720,6 @@ static void set_on(bool on)
 	if (!on) {
 		remote_hid_release_all(true);
 	}
-	/* Take the advertiser, or give it back to ZMK. */
-	k_work_submit(&g_adv_work);
 	/* A key press, not an encoder: one flash write per toggle is fine. */
 	settings_save_one("nexus/remote/on", &v, sizeof(v));
 	remote_status_kick();
@@ -721,20 +735,13 @@ bool nexus_remote_action(enum nexus_action action)
 		return true;
 
 	case NEXUS_ACTION_REMOTE_PAIR:
-		k_work_reschedule(&g_pair_close, PAIR_WINDOW);
-		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, 0);
-		nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
-		remote_status_kick();
+		/* ZMK's profile calls belong on the system work queue, where
+		 * ZMK's own behaviors make them. */
+		k_work_submit(&g_pair_open_work);
 		return true;
 
 	case NEXUS_ACTION_REMOTE_CLEAR:
-		if (g_ready) {
-			/* Every bond under the phone identity, and nothing
-			 * else: the halves and the hosts live on the default
-			 * one. Disconnects a connected phone too. */
-			bt_unpair(g_id, NULL);
-			LOG_INF("remote: paired phones forgotten");
-		}
+		k_work_submit(&g_clear_work);
 		nexus_sound_play(NEXUS_SOUND_BACK);
 		return true;
 
@@ -753,73 +760,29 @@ static int remote_set(const char *name, size_t len, settings_read_cb read_cb,
 	if (settings_name_steq(name, "on", NULL) && len == sizeof(v) &&
 	    read_cb(cb_arg, &v, sizeof(v)) == sizeof(v)) {
 		g_on = v != 0;
+	} else if (settings_name_steq(name, "phones", NULL) &&
+		   len == sizeof(g_phones)) {
+		if (read_cb(cb_arg, &g_phones, sizeof(g_phones)) !=
+			    sizeof(g_phones) ||
+		    g_phones.n > PHONES_MAX) {
+			memset(&g_phones, 0, sizeof(g_phones));
+		}
 	}
 	return 0;
 }
 
-/*
- * The phone's identity, made here and only here - and why "here" is so
- * particular is the boot hang this replaced.
- *
- * After settings have loaded, never before: the identity is itself a stored
- * setting, and creating it early would mint a new address every boot and
- * orphan every phone's bond.
- *
- * But not from a work item either. settings_load() holds the settings lock
- * across every commit hook, and in Zephyr 4.1 two things share the system
- * work queue: sending HCI commands, and saving a new identity (the save is a
- * work item that takes that lock). A save queued during the commit stalls
- * the queue on the lock; ZMK's own commit hook then starts advertising from
- * main(), waits for an HCI command the stalled queue will never send, and
- * main() never gets as far as starting the display. That was the blank
- * screen, on every boot, because the save never landed either.
- *
- * So: create the identity right here on main(), which sends no HCI command,
- * and run last (REMOTE_COMMIT_CPRIO), after ZMK's hook has already done its
- * advertising. The identity's save queues and waits for the lock, which this
- * very function is about to release. The advertiser, which does send HCI,
- * goes on the queue behind that save, so it cannot run before the lock is
- * free.
- */
-#define REMOTE_COMMIT_CPRIO 100
+SETTINGS_STATIC_HANDLER_DEFINE(nexus_remote, "nexus/remote", NULL, remote_set,
+			       NULL, NULL);
 
-static int remote_commit(void)
+static int remote_init(void)
 {
-	bt_addr_le_t addrs[CONFIG_BT_ID_MAX];
-	size_t n = ARRAY_SIZE(addrs);
-	int id;
-
-	if (g_ready) {
-		return 0;
-	}
-
-	bt_id_get(addrs, &n);
-	id = n > 1 ? 1 : bt_id_create(NULL, NULL);
-	if (id < 1) {
-		/* Never fatal: the keyboard matters more than the phone. */
-		LOG_ERR("remote: no identity for the phone (%d)", id);
-		return 0;
-	}
-
-	g_id = (uint8_t)id;
+	/* The GATT database is static, so ZMK's HID service sits at the same
+	 * handles from boot to power-off. */
 	bt_gatt_foreach_attr(0x0001, 0xFFFF, find_hids, NULL);
 	if (g_hids_start && !g_hids_end) {
 		g_hids_end = 0xFFFF;
 	}
-	g_ready = true;
 
-	LOG_INF("remote: identity %d, remote %s", g_id, g_on ? "on" : "off");
-	k_work_submit(&g_adv_work);
-	remote_status_kick();
-	return 0;
-}
-
-SETTINGS_STATIC_HANDLER_DEFINE_WITH_CPRIO(nexus_remote, "nexus/remote", NULL,
-					  remote_set, remote_commit, NULL,
-					  REMOTE_COMMIT_CPRIO);
-
-static int remote_init(void)
-{
 	bt_gatt_authorization_cb_register(&k_authz);
 	bt_conn_auth_info_cb_register(&g_auth_info);
 	nexus_status_subscribe(on_nexus_status);

@@ -15,9 +15,7 @@ Setup, pairing and the keymap are in [remote-input.md](remote-input.md).
   what triggers pairing; do that before anything else, because a Write Without
   Response on an unencrypted link is silently dropped.
 - While remote mode is **off**, every write fails and nothing reaches the
-  computer, and NEXUS stops advertising to phones. A phone already
-  connected stays connected and can still read Status, so the app can say
-  why.
+  computer. Status still reads, so the app can say why.
 - One phone is connected at a time. Two may be bonded.
 
 ## Service
@@ -34,8 +32,9 @@ Base UUID `7e4e0000-5c1a-4b2e-9d3f-8a6b4c2d1e0f`; each UUID below replaces the
 | Control | `7e4e0005-…` | Write | 1-2 |
 | Status | `7e4e0006-…` | Read, Notify | 6 |
 
-The dongle advertises as **NEXUS Remote** with the service UUID in the
-advertising packet, so a scan filtered by the service finds it.
+The dongle advertises as the keyboard it is, under ZMK's keyboard name
+(`CONFIG_ZMK_KEYBOARD_NAME`, "NEXUS" by default), without this service's
+UUID: filter a scan by name and ask for the service once connected.
 
 ## Mouse (8 bytes, Write Without Response)
 
