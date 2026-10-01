@@ -646,6 +646,10 @@ config NEXUS_REMOTE_INPUT
 	  Secure Connections with the passkey on the NEXUS screen, only
 	  inside a window you open from Settings > PHONE or the keymap.
 
+	  The app can also drive NEXUS itself - the game layer's actions and
+	  the USB/BLE output - but not Remote Input's own on/off, pairing or
+	  forgetting, which stay on the keyboard and the dongle.
+
 	  Off means none of it is compiled, and the firmware is the one you
 	  had without it. On adds the pointing HID descriptor, so the
 	  computer sees a mouse appear the first time.
@@ -683,6 +687,22 @@ config NEXUS_REMOTE_INPUT_HOLD_TIMEOUT_MS
 	  or a button. A phone that is killed, backgrounded or walked out of
 	  range stops, and this is how long the dongle waits before letting
 	  go of everything it pressed on the phone's behalf.
+
+config NEXUS_REMOTE_INPUT_PHONE_ADV
+	bool "Advertise for paired phones while ZMK is not advertising"
+	default y
+	help
+	  ZMK stops advertising while the host on its active Bluetooth
+	  profile is connected, and a phone can only come back through
+	  advertising - so with a BLE host connected the app never finds
+	  NEXUS without a trip to Settings > PHONE. With this, NEXUS
+	  advertises on ZMK's behalf in exactly those gaps, only while a
+	  phone is paired and none is connected, and hands the advertiser
+	  back the moment ZMK wants it.
+
+	  Nothing new can pair through it: outside the pairing window ZMK
+	  and NEXUS both refuse pairing. Turn it off to get the plain ZMK
+	  behaviour back if a ZMK update ever changes how it advertises.
 
 endif # NEXUS_REMOTE_INPUT
 

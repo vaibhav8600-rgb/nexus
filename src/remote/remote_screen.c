@@ -1,7 +1,7 @@
 /*
  * Remote Input on the NEXUS screen: the pairing window, the passkey, the
- * outcome (PAIRED, or NO ROOM), and the "this is the one" flash for Control
- * 0x05.
+ * outcome (PAIRED, CONNECTED for a paired phone back, or NO ROOM), and the
+ * "this is the one" flash for Control 0x05.
  *
  * One screen with several views rather than several screens, because they
  * are one flow - window opens, phone asks, number appears, done - and each
@@ -74,11 +74,14 @@ static void draw(void)
 		return;
 	}
 
-	if (g_view == NEXUS_REMOTE_VIEW_PAIRED) {
+	if (g_view == NEXUS_REMOTE_VIEW_PAIRED ||
+	    g_view == NEXUS_REMOTE_VIEW_CONNECTED) {
+		bool paired = g_view == NEXUS_REMOTE_VIEW_PAIRED;
+
 		nexus_draw_card(NEXUS_PAD, CARD_Y, NEXUS_CONTENT_W, CARD_H);
 		nexus_draw_caption_c(GFX_W / 2, CARD_Y + 12, "PAIR A PHONE");
-		gfx_text_c(GFX_W / 2, BIG_Y, "PAIRED", NEXUS_TXT_VALUE,
-			   t->success, GFX_OPAQUE);
+		gfx_text_c(GFX_W / 2, BIG_Y, paired ? "PAIRED" : "CONNECTED",
+			   NEXUS_TXT_VALUE, t->success, GFX_OPAQUE);
 		nexus_draw_caption_c(GFX_W / 2, 146, "THE PHONE IS READY");
 		return;
 	}
@@ -105,7 +108,8 @@ static bool transient(void)
 {
 	return g_view == NEXUS_REMOTE_VIEW_HELLO ||
 	       g_view == NEXUS_REMOTE_VIEW_FULL ||
-	       g_view == NEXUS_REMOTE_VIEW_PAIRED;
+	       g_view == NEXUS_REMOTE_VIEW_PAIRED ||
+	       g_view == NEXUS_REMOTE_VIEW_CONNECTED;
 }
 
 static void tick(void)

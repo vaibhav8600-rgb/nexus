@@ -65,7 +65,18 @@ with other firmwares can keep them.
 1. Settings > `PHONE` (or the pair key). NEXUS shows a 60-second countdown.
 2. In the app, **Connect**, and pick **NEXUS** (the dongle's keyboard name).
 3. The phone asks for a code. NEXUS shows six digits; type them in.
-4. Done. The phone reconnects by itself from now on - no window, no code.
+4. Done. No code again: from now on the phone reconnects by itself.
+
+**Coming back later.** Open the app and tap **Connect to NEXUS**, pick
+NEXUS, and it connects - no code, nothing to press on the dongle, whether
+keys go to USB or to a BLE host. If NEXUS is ever missing from the list,
+open Settings > `PHONE` and tap Connect: a paired phone needs no code, and
+NEXUS shows **CONNECTED** and switches straight back to the profile you were
+on.
+
+Closing the app drops the phone's link a couple of seconds later. iOS would
+otherwise keep it up in the background, with NEXUS shown as connected in the
+phone's settings but nowhere to be found from the app.
 
 While the window is open, NEXUS switches ZMK to a free Bluetooth profile -
 the highest one, leaving the low ones for hosts - and switches back when it
@@ -91,7 +102,7 @@ nothing else, so either side can change as long as that page holds.
 
 | Phone | How |
 | --- | --- |
-| Android | Open the app's URL in **Chrome**, tap Connect. Menu > **Add to Home screen** for a full-screen app. |
+| Android | **Not working yet**: pairing fails in Chrome (see Known limits). Once fixed: open the URL in Chrome, tap Connect. |
 | iPhone | Safari has no Web Bluetooth. Open the URL in **Bluefy** (free, App Store). |
 
 <p>
@@ -126,6 +137,7 @@ everything, and the app reconnects when it comes back.
 | `CONFIG_NEXUS_REMOTE_INPUT_TEXT_QUEUE_SIZE` | 512 | Text and keys waiting to be typed, bytes of RAM |
 | `CONFIG_NEXUS_REMOTE_INPUT_TYPE_DELAY_MS` | 8 | Delay after each key report; about 60 characters a second |
 | `CONFIG_NEXUS_REMOTE_INPUT_HOLD_TIMEOUT_MS` | 1000 | Release everything this long after the phone goes quiet |
+| `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV` | y | Advertise for a paired phone while ZMK is not advertising, so the app finds NEXUS with a BLE host connected |
 
 The queue does not need to hold a whole paste: the app sends only what fits
 and tops it up as NEXUS types, so 512 bytes types a 5,000-character paste as
@@ -141,12 +153,15 @@ well as 4 KB would.
 
 - **Pairing**: the countdown, then the passkey, then **PAIRED**. A wrong
   passkey goes back to the countdown for another try; press the button to
-  cancel. **NO ROOM** when two phones are paired or no profile is free.
+  cancel. **CONNECTED** when a phone that is already paired comes back
+  through the window. **NO ROOM** when two phones are paired or no profile is
+  free.
 
 <p>
   <img src="images/screens/home-remote.png" width="170" alt="Home with a phone connected">
   <img src="images/screens/remote-noroom.png" width="170" alt="NO ROOM">
   <img src="images/screens/remote-hello.png" width="170" alt="The identify flash">
+  <img src="images/screens/remote-connected.png" width="170" alt="CONNECTED: a paired phone back">
 </p>
 
 - **Home**, top-left corner of the brand plate: a phone outline when Remote
@@ -188,6 +203,19 @@ on the hardware and both broke that:
 - A second identity on the one legacy advertiser cannot advertise while the
   dongle scans for or connects to its halves: they share one random address,
   so the phone's advertising never started and nothing was discoverable.
+
+**Advertising for a paired phone, in ZMK's gaps.** A paired phone comes back
+only through advertising, and ZMK stops advertising while the host on its
+active profile is connected. In exactly that gap - a phone paired, none
+connected - NEXUS starts ordinary legacy advertising on the one advertiser,
+same identity, same name, so the app finds it. It is ZMK's advertiser the
+rest of the time: NEXUS lets go before its own profile switches, re-checks
+200 ms after every connection or profile change, and if ZMK was refused the
+advertiser meanwhile, stops and has ZMK run its own advertising update again
+(through `zmk_ble_set_device_name()` with the name it already has, which
+writes nothing). Nothing can pair through it - outside the window ZMK refuses
+pairing to a profile that is not open. `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV=n`
+turns it off.
 
 **A phone never acts as a keyboard host.** ZMK sends reports only to the
 active profile, and a phone's profile is active only for the seconds it takes
@@ -246,18 +274,29 @@ hardware, 2026-10-01.
 - [ ] Split halves reconnect after a dongle reset while a phone is connected.
 - [ ] ZMK Studio still connects over USB.
 - [x] iPhone: pairs inside the window with the passkey from the screen.
-- [ ] Android: the same.
+- [ ] Android: the same. **Fails today**, see Known limits.
 - [ ] A write before pairing is refused.
-- [ ] iPhone and Android: after pairing, the phone's own on-screen keyboard
+- [x] iPhone: after pairing, the phone's own on-screen keyboard still appears.
+- [ ] Android: after pairing, the phone's own on-screen keyboard
       still appears (the phone did not adopt NEXUS as a keyboard).
 - [ ] After pairing, the profile that was active before is active again,
       and the phone sits in the highest free profile.
 - [x] A BLE host (second laptop) still pairs and types with Remote Input on.
 - [ ] Phone only, no Sofle keys, for 3 minutes: the display stays on.
-- [ ] NEXUS controls: D-pad, OK, Rotate and Drop play Tetris; a held arrow
+- [x] NEXUS controls: D-pad, OK, Rotate and Drop play Tetris; a held arrow
       repeats and stops on release; Back, Home, Games, Menu, Theme, Save work.
-- [ ] Output switch: USB and BLE both move typing, and the app shows which.
+- [x] Output switch: USB and BLE both move typing, and the app shows which.
 - [ ] Kill the app holding an arrow: the repeat stops within 1 s.
+- [ ] Close the app: within a few seconds the phone glyph goes and the
+      phone's Bluetooth settings no longer show NEXUS connected; reopen and
+      Connect finds NEXUS (no BLE host on the active profile).
+- [ ] With a BLE host on the active profile: PHONE, then Connect, shows
+      CONNECTED with no code and switches straight back to that profile.
+- [ ] With a BLE host on the active profile and no phone connected: the app
+      finds NEXUS and connects with no code and nothing pressed on NEXUS.
+- [ ] Phone advertising and ZMK's: with it running, the BLE host goes away
+      and comes back, `BT_SEL` to another profile and back, a new host pairs
+      to an open profile - each still works, and the halves stay connected.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.
@@ -270,13 +309,18 @@ bytes from the protocol page to each characteristic.
 
 ## Known limits
 
+- **Android does not pair yet.** In Chrome the first read fails at once
+  instead of waiting for pairing, so the app disconnects; and Android shows
+  its own code to type on NEXUS instead of asking for the one NEXUS shows,
+  so the codes never match. iPhone (Bluefy) is unaffected. Being worked on.
 - US keyboard layout for typed text. A host set to another layout gets the
   keys a US keyboard would press.
 - A Shift held on the Sofle while text is typing changes the case of what is
   typed; the HID report is shared, which is also what lets both work at once.
 - One phone connected at a time.
-- A phone reconnects through ZMK's advertising, which ZMK stops while its
-  active BLE host is connected. Over USB it always advertises; with a BLE
-  host active, connect the phone before the host, or switch to USB.
+- With `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV=n`, a phone reconnects only
+  through ZMK's advertising, which stops while the host on the active
+  Bluetooth profile is connected - USB output or not. Then use Settings >
+  `PHONE` to bring it back (no code for a paired phone).
 - `&bt BT_CLR_ALL` forgets phones too, as it does every bond; pair them again.
 - macOS usually wants F14/F15 for brightness rather than the consumer keys.

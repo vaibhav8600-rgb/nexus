@@ -30,6 +30,7 @@ enum nexus_remote_view {
 	NEXUS_REMOTE_VIEW_HELLO,   /* Control 0x05: "this is the one"     */
 	NEXUS_REMOTE_VIEW_FULL,    /* no phone slot or profile free       */
 	NEXUS_REMOTE_VIEW_PAIRED,  /* done: the phone is ready            */
+	NEXUS_REMOTE_VIEW_CONNECTED, /* a paired phone came back          */
 };
 
 /*

@@ -191,7 +191,9 @@ advertising, and writes to one extra GATT service. Its packets are validated
 in the Bluetooth callback and handed to the system work queue, which feeds
 ZMK's normal HID path, so the computer sees the same USB keyboard and mouse.
 GATT authorization keeps the phone out of ZMK's HID service, so it never
-becomes a keyboard host. Extended advertising and a second identity were both
+becomes a keyboard host. While ZMK is not advertising and a paired phone is
+away, NEXUS advertises in its place, and hands the advertiser back the
+moment ZMK needs it. Extended advertising and a second identity were both
 tried on the hardware and both broke the dongle; the reasons are in
 [remote-input.md](remote-input.md#how-it-stays-out-of-zmks-way).
 
