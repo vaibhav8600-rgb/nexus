@@ -64,7 +64,9 @@ with other firmwares can keep them.
 
 1. Settings > `PHONE` (or the pair key). NEXUS shows a 60-second countdown.
 2. In the app, **Connect**, and pick **NEXUS** (the dongle's keyboard name).
-3. The phone asks for a code. NEXUS shows six digits; type them in.
+3. The phone and NEXUS show the same six digits. Check they match, tap
+   **Pair** on the phone, and press the NEXUS button (or SELECT on the
+   keymap). Holding the button, or BACK, cancels.
 4. Done. No code again: from now on the phone reconnects by itself.
 
 **Coming back later.** Open the app and tap **Connect to NEXUS**, pick
@@ -102,7 +104,7 @@ nothing else, so either side can change as long as that page holds.
 
 | Phone | How |
 | --- | --- |
-| Android | **Not working yet**: pairing fails in Chrome (see Known limits). Once fixed: open the URL in Chrome, tap Connect. |
+| Android | Open the app's URL in **Chrome**, tap Connect. Experimental until confirmed on hardware (see Known limits). |
 | iPhone | Safari has no Web Bluetooth. Open the URL in **Bluefy** (free, App Store). |
 
 <p>
@@ -147,13 +149,15 @@ well as 4 KB would.
 
 <p>
   <img src="images/screens/remote-wait.png" width="170" alt="Pairing window: the countdown">
-  <img src="images/screens/remote-passkey.png" width="170" alt="The passkey to type on the phone">
+  <img src="images/screens/remote-confirm.png" width="170" alt="The code to compare with the phone">
   <img src="images/screens/remote-paired.png" width="170" alt="PAIRED">
 </p>
 
-- **Pairing**: the countdown, then the passkey, then **PAIRED**. A wrong
-  passkey goes back to the countdown for another try; press the button to
-  cancel. **CONNECTED** when a phone that is already paired comes back
+- **Pairing**: the countdown, then the code to compare with the phone, then
+  **PAIRED**. Press the button to confirm the code, hold it to cancel; a
+  pairing that fails goes back to the countdown for another try. A phone
+  without LE Secure Connections gets a code to type instead (the last
+  picture below). **CONNECTED** when a phone that is already paired comes back
   through the window. **NO ROOM** when two phones are paired or no profile is
   free.
 
@@ -162,6 +166,7 @@ well as 4 KB would.
   <img src="images/screens/remote-noroom.png" width="170" alt="NO ROOM">
   <img src="images/screens/remote-hello.png" width="170" alt="The identify flash">
   <img src="images/screens/remote-connected.png" width="170" alt="CONNECTED: a paired phone back">
+  <img src="images/screens/remote-passkey.png" width="170" alt="A code to type, for a phone without Secure Connections">
 </p>
 
 - **Home**, top-left corner of the brand plate: a phone outline when Remote
@@ -179,7 +184,8 @@ every screen in [ui.md](ui.md).
 
 ## Safety
 
-- Every write needs an encrypted, passkey-authenticated link.
+- Every write needs an encrypted link, authenticated by comparing the code
+  on both screens.
 - With remote input off, every write from the phone is refused and nothing
   reaches the computer.
 - Keys and buttons the phone holds are released after a second without
@@ -233,9 +239,12 @@ window for pairing phones.
 
 **Pairing without touching ZMK's callbacks.** Zephyr allows one global set of
 pairing callbacks and ZMK owns it. `bt_conn_auth_cb_overlay()` replaces them
-for the one connection that is pairing, so it gets a passkey on the NEXUS
-screen (LE Secure Connections with passkey entry) and the window check; every
-other link keeps ZMK's. ZMK's own `pairing_complete` then files the phone into
+for the one connection that is pairing, so it gets numeric comparison on the
+NEXUS screen (LE Secure Connections, display and yes/no) and the window check;
+every other link keeps ZMK's. Not passkey entry: ZMK advertises a keyboard,
+and Android pairs a keyboard by inventing its own code for the keyboard to
+type and submitting it at once, so a code NEXUS displays never matches -
+Android's HCI log shows Confirm Value Failed a third of a second in. ZMK's own `pairing_complete` then files the phone into
 the free profile, which is exactly what is wanted, and NEXUS switches back to
 the profile that was active before.
 
@@ -273,8 +282,11 @@ hardware, 2026-10-01.
       display, games, BLE profiles).
 - [ ] Split halves reconnect after a dongle reset while a phone is connected.
 - [ ] ZMK Studio still connects over USB.
-- [x] iPhone: pairs inside the window with the passkey from the screen.
-- [ ] Android: the same. **Fails today**, see Known limits.
+- [x] iPhone: pairs inside the window (with the passkey, before numeric
+      comparison).
+- [ ] iPhone: pairs by comparing codes, Pair on the phone, button on NEXUS.
+- [ ] Android (Chrome): the same. Failed with passkey entry; numeric
+      comparison is the fix, still to be confirmed.
 - [ ] A write before pairing is refused.
 - [x] iPhone: after pairing, the phone's own on-screen keyboard still appears.
 - [ ] Android: after pairing, the phone's own on-screen keyboard
@@ -310,10 +322,10 @@ bytes from the protocol page to each characteristic.
 
 ## Known limits
 
-- **Android does not pair yet.** In Chrome the first read fails at once
-  instead of waiting for pairing, so the app disconnects; and Android shows
-  its own code to type on NEXUS instead of asking for the one NEXUS shows,
-  so the codes never match. iPhone (Bluefy) is unaffected. Being worked on.
+- **Android is not confirmed yet.** With passkey entry Android paired NEXUS
+  as a keyboard and could never match the code; numeric comparison is meant
+  to fix that, and the app now waits while Chrome pairs. Until it has been
+  seen working on a real phone, treat Android as experimental.
 - US keyboard layout for typed text. A host set to another layout gets the
   keys a US keyboard would press.
 - A Shift held on the Sofle while text is typing changes the case of what is

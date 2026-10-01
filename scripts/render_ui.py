@@ -1402,8 +1402,8 @@ RMT = defines(read('src/remote/remote_screen.c'), ['CARD_Y', 'CARD_H', 'BIG_Y'])
 
 
 def remote(cv, t, view, number=''):
-    """draw() in remote_screen.c. @p view is WAIT, PASSKEY, PAIRED,
-    CONNECTED, FULL or HELLO; @p number the countdown or the passkey."""
+    """draw() in remote_screen.c. @p view is WAIT, CONFIRM, PASSKEY, PAIRED,
+    CONNECTED, FULL or HELLO; @p number the countdown or the code."""
     u, K = UI(cv, t), RMT
     u.ground()
     if view == 'HELLO':
@@ -1429,7 +1429,13 @@ def remote(cv, t, view, number=''):
     while scale > 1 and face_w(number, scale) > CONTENT_W - 16:
         scale -= 1
     face_text(cv, (W - face_w(number, scale)) // 2, K['BIG_Y'], number, scale,
-              t['accent'] if view == 'PASSKEY' else t['value'])
+              t['value'] if view == 'WAIT' else t['accent'])
+    if view == 'CONFIRM':
+        u.caption_c(W // 2, 140, 'SAME CODE ON THE PHONE?')
+        u.caption_c(W // 2, 152, 'TAP PAIR THERE, THEN HERE')
+        cv.text_c(W // 2, K['CARD_Y'] + K['CARD_H'] - 18,
+                  'PRESS TO PAIR - HOLD TO CANCEL', CAPTION, t['muted'])
+        return
     if view == 'PASSKEY':
         u.caption_c(W // 2, 146, 'TYPE THIS ON THE PHONE')
     else:
@@ -1500,6 +1506,7 @@ def main():
                                             SETTINGS_REMOTE_ROWS, 8)),
         ('remote-wait', lambda cv: remote(cv, nx, 'WAIT', '47')),
         ('remote-passkey', lambda cv: remote(cv, nx, 'PASSKEY', '482913')),
+        ('remote-confirm', lambda cv: remote(cv, nx, 'CONFIRM', '372641')),
         ('remote-paired', lambda cv: remote(cv, nx, 'PAIRED')),
         ('remote-connected', lambda cv: remote(cv, nx, 'CONNECTED')),
         ('remote-noroom', lambda cv: remote(cv, nx, 'FULL')),

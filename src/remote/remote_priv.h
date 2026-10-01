@@ -49,6 +49,9 @@ bool remote_hid_typing(void);
 /** Something the Status characteristic reports changed. Any thread. */
 void remote_status_kick(void);
 
+/** The code on the phone matches: accept the pairing in progress. */
+void remote_pair_confirm(void);
+
 /** Close the pairing window and abandon a pairing in progress. */
 void remote_pair_cancel(void);
 

@@ -39,7 +39,7 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
   date also sit either side of the name on the dashboard.
   ([details](docs/host-link.md))
 - **Remote Input** -- a phone as keyboard, trackpad and media remote from
-  across the room: the NEXUS Remote web app pairs once with a passkey shown
+  across the room: the NEXUS Remote web app pairs once by comparing a code shown
   on the screen and reconnects with a tap, and its input leaves through the
   same USB keyboard and mouse, so the computer needs nothing installed. The
   app also plays the dongle's games, walks its menus and switches output

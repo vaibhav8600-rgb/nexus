@@ -1,7 +1,8 @@
 /*
- * Remote Input on the NEXUS screen: the pairing window, the passkey, the
- * outcome (PAIRED, CONNECTED for a paired phone back, or NO ROOM), and the
- * "this is the one" flash for Control 0x05.
+ * Remote Input on the NEXUS screen: the pairing window, the code to compare
+ * (or, for a phone without LE Secure Connections, to type), the outcome
+ * (PAIRED, CONNECTED for a paired phone back, or NO ROOM), and the "this is
+ * the one" flash for Control 0x05.
  *
  * One screen with several views rather than several screens, because they
  * are one flow - window opens, phone asks, number appears, done - and each
@@ -89,6 +90,19 @@ static void draw(void)
 	nexus_draw_card(NEXUS_PAD, CARD_Y, NEXUS_CONTENT_W, CARD_H);
 	nexus_draw_caption_c(GFX_W / 2, CARD_Y + 12, "PAIR A PHONE");
 
+	if (g_view == NEXUS_REMOTE_VIEW_CONFIRM) {
+		/* Numeric comparison: the phone shows the same six digits, and
+		 * this press is what proves the phone in your hand is the one
+		 * pairing. Its own footer: the button means something else. */
+		big_number(gfx_utoa(g_passkey, buf, sizeof(buf), 6), t->accent);
+		nexus_draw_caption_c(GFX_W / 2, 140, "SAME CODE ON THE PHONE?");
+		nexus_draw_caption_c(GFX_W / 2, 152, "TAP PAIR THERE, THEN HERE");
+		gfx_text_c(GFX_W / 2, CARD_Y + CARD_H - 18,
+			   "PRESS TO PAIR - HOLD TO CANCEL", NEXUS_TXT_CAPTION,
+			   t->muted, GFX_OPAQUE);
+		return;
+	}
+
 	if (g_view == NEXUS_REMOTE_VIEW_PASSKEY) {
 		big_number(gfx_utoa(g_passkey, buf, sizeof(buf), 6), t->accent);
 		nexus_draw_caption_c(GFX_W / 2, 146, "TYPE THIS ON THE PHONE");
@@ -130,6 +144,12 @@ static bool action(enum nexus_action a)
 	if (a != NEXUS_ACTION_BACK && a != NEXUS_ACTION_SELECT) {
 		return false;
 	}
+	if (g_view == NEXUS_REMOTE_VIEW_CONFIRM && a == NEXUS_ACTION_SELECT) {
+		/* The screen stays: PAIRED replaces it once the phone agrees. */
+		remote_pair_confirm();
+		nexus_sound_play(NEXUS_SOUND_SELECT);
+		return true;
+	}
 	if (!transient()) {
 		remote_pair_cancel();
 	}
@@ -153,7 +173,8 @@ static const struct nexus_screen k_def = {
 	.action = action,
 	.tick = tick,
 	.refresh = NEXUS_REFRESH_NORMAL,
-	.btn_short = NEXUS_ACTION_BACK,
+	/* Press confirms a code, and cancels everywhere else; hold cancels. */
+	.btn_short = NEXUS_ACTION_SELECT,
 	.btn_long = NEXUS_ACTION_BACK,
 };
 

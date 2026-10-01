@@ -709,12 +709,23 @@ static void on_nexus_status(const struct nexus_status *st, uint32_t changed)
 static enum bt_security_err pairing_accept(struct bt_conn *conn,
 					   const struct bt_conn_pairing_feat *feat);
 static void passkey_display(struct bt_conn *conn, unsigned int passkey);
+static void passkey_confirm(struct bt_conn *conn, unsigned int passkey);
 static void pairing_cancel(struct bt_conn *conn);
 static void passkey_gone(void);
 
+/*
+ * Display and yes/no: with LE Secure Connections that is numeric comparison
+ * - the phone and NEXUS show the same six digits, and both are confirmed.
+ * Not passkey entry: Android sees ZMK's keyboard appearance, makes up its
+ * own code for "the keyboard" to type and submits it at once, so a code
+ * NEXUS displays can never match (Confirm Value Failed, in its HCI log).
+ * passkey_display stays for a phone without Secure Connections, which gets
+ * passkey entry again.
+ */
 static const struct bt_conn_auth_cb k_auth = {
 	.pairing_accept = pairing_accept,
 	.passkey_display = passkey_display,
+	.passkey_confirm = passkey_confirm,
 	.cancel = pairing_cancel,
 };
 
@@ -840,7 +851,29 @@ static void passkey_display(struct bt_conn *conn, unsigned int passkey)
 	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_PASSKEY, passkey);
 }
 
-/* The passkey is no longer wanted. With the window still open, back to its
+static void passkey_confirm(struct bt_conn *conn, unsigned int passkey)
+{
+	ARG_UNUSED(conn);
+
+	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_CONFIRM, passkey);
+}
+
+void remote_pair_confirm(void)
+{
+	struct bt_conn *conn = NULL;
+
+	K_SPINLOCK(&g_lock) {
+		if (g_pair_conn) {
+			conn = bt_conn_ref(g_pair_conn);
+		}
+	}
+	if (conn) {
+		bt_conn_auth_passkey_confirm(conn);
+		bt_conn_unref(conn);
+	}
+}
+
+/* The code is no longer wanted. With the window still open, back to its
  * countdown - a retry is one tap away - rather than to nothing. */
 static void passkey_gone(void)
 {
@@ -848,6 +881,7 @@ static void passkey_gone(void)
 		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, 0);
 	} else {
 		nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
+		nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_CONFIRM);
 	}
 }
 

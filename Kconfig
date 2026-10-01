@@ -643,7 +643,7 @@ config NEXUS_REMOTE_INPUT
 	  it does without this. A GATT authorization callback keeps every
 	  phone out of the dongle's keyboard service, so a phone never
 	  receives keystrokes or treats NEXUS as a keyboard. Pairing is LE
-	  Secure Connections with the passkey on the NEXUS screen, only
+	  Secure Connections, comparing a code on the NEXUS screen, only
 	  inside a window you open from Settings > PHONE or the keymap.
 
 	  The app can also drive NEXUS itself - the game layer's actions and

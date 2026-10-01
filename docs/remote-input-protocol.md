@@ -11,8 +11,10 @@ Setup, pairing and the keymap are in [remote-input.md](remote-input.md).
 
 - All multi-byte fields are **little-endian**.
 - Every characteristic needs an **encrypted, authenticated (LE Secure
-  Connections, passkey) link**. The first read of Status on a fresh phone is
-  what triggers pairing; do that before anything else, because a Write Without
+  Connections, numeric comparison) link**. The first read of Status on a fresh phone is
+  what triggers pairing; do that before anything else (and on Android, where
+  Chrome fails that read at once and pairs in the background, read it again
+  until it succeeds), because a Write Without
   Response on an unencrypted link is silently dropped.
 - While remote mode is **off**, every write fails and nothing reaches the
   computer. Status still reads, so the app can say why.
