@@ -71,6 +71,12 @@ keyboard. Up to two phones can be paired; forget them with
 `NEXUS_ACT_REMOTE_CLEAR` to pair a third, or to re-pair one that has forgotten
 NEXUS itself. With no phone slot or no free profile, NEXUS says **NO ROOM**.
 
+**If the phone will not pair, check its own Bluetooth list first.** A phone
+that has ever paired with NEXUS - an earlier attempt, a firmware since
+reflashed, phones forgotten on the dongle - keeps a record of it under
+Settings > Bluetooth, and that stale record makes every new attempt fail.
+Tap NEXUS there, **Forget This Device**, then pair again.
+
 ## The app
 
 **NEXUS Remote** is its own project, not part of this module: a web app
