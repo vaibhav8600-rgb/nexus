@@ -33,7 +33,6 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
-#include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
@@ -103,10 +102,12 @@ static void status_fn(struct k_work *work);
 static void pair_open_fn(struct k_work *work);
 static void pair_close_fn(struct k_work *work);
 static void clear_fn(struct k_work *work);
+static void phones_save_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
 static K_WORK_DEFINE(g_pair_open_work, pair_open_fn);
 static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
 static K_WORK_DEFINE(g_clear_work, clear_fn);
+static K_WORK_DEFINE(g_phones_save, phones_save_fn);
 
 /* A reference to the phone being served, or NULL. Caller unrefs. */
 static struct bt_conn *phone_get(void)
@@ -167,9 +168,19 @@ uint32_t nexus_remote_pair_remaining_s(void)
 	return (k_ticks_to_ms_floor32(t) + 999) / 1000;
 }
 
+/* On the system work queue, where ZMK saves its own profiles: a flash write
+ * from a Bluetooth callback would stall the radio's host thread - halves
+ * included - for as long as the erase takes. */
+static void phones_save_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	settings_save_one("nexus/remote/phones", &g_phones, sizeof(g_phones));
+}
+
 static void phones_save(void)
 {
-	settings_save_one("nexus/remote/phones", &g_phones, sizeof(g_phones));
+	k_work_submit(&g_phones_save);
 }
 
 /* ---- GATT ---------------------------------------------------------------- */
@@ -447,6 +458,7 @@ static enum bt_security_err pairing_accept(struct bt_conn *conn,
 					   const struct bt_conn_pairing_feat *feat);
 static void passkey_display(struct bt_conn *conn, unsigned int passkey);
 static void pairing_cancel(struct bt_conn *conn);
+static void passkey_gone(void);
 
 static const struct bt_conn_auth_cb k_auth = {
 	.pairing_accept = pairing_accept,
@@ -525,7 +537,7 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	}
 	if (pairing) {
 		bt_conn_unref(conn);
-		nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
+		passkey_gone();
 	}
 	if (!phone) {
 		return;
@@ -564,11 +576,22 @@ static void passkey_display(struct bt_conn *conn, unsigned int passkey)
 	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_PASSKEY, passkey);
 }
 
+/* The passkey is no longer wanted. With the window still open, back to its
+ * countdown - a retry is one tap away - rather than to nothing. */
+static void passkey_gone(void)
+{
+	if (pair_open()) {
+		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, 0);
+	} else {
+		nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
+	}
+}
+
 static void pairing_cancel(struct bt_conn *conn)
 {
 	ARG_UNUSED(conn);
 
-	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
+	passkey_gone();
 }
 
 static void pairing_complete(struct bt_conn *conn, bool bonded)
@@ -597,8 +620,7 @@ static void pairing_complete(struct bt_conn *conn, bool bonded)
 	serve(conn);
 	bt_conn_unref(conn); /* g_pair_conn's reference; serve() took its own */
 
-	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
-	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_WAIT);
+	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_PAIRED, 0);
 	nexus_sound_play(NEXUS_SOUND_CONNECT);
 
 	/* Close the window - which switches back to the previous profile -
@@ -614,7 +636,7 @@ static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 
 	/* The window stays open: a mistyped passkey can be tried again. */
 	LOG_WRN("remote: pairing failed (%d)", reason);
-	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
+	passkey_gone();
 	nexus_sound_play(NEXUS_SOUND_BACK);
 }
 

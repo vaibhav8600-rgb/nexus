@@ -1,10 +1,11 @@
 /*
- * Remote Input on the NEXUS screen: the pairing window, the passkey, and the
- * "this is the one" flash for Control 0x05.
+ * Remote Input on the NEXUS screen: the pairing window, the passkey, the
+ * outcome (PAIRED, or NO ROOM), and the "this is the one" flash for Control
+ * 0x05.
  *
- * One screen with three views rather than three screens, because they are
- * one flow - window opens, phone asks, number appears, done - and each step
- * replaces the last in place instead of stacking.
+ * One screen with several views rather than several screens, because they
+ * are one flow - window opens, phone asks, number appears, done - and each
+ * step replaces the last in place instead of stacking.
  *
  * Requests come from Bluetooth callbacks, so show/hide only record what is
  * wanted and hand the screen work to the NEXUS queue.
@@ -73,6 +74,15 @@ static void draw(void)
 		return;
 	}
 
+	if (g_view == NEXUS_REMOTE_VIEW_PAIRED) {
+		nexus_draw_card(NEXUS_PAD, CARD_Y, NEXUS_CONTENT_W, CARD_H);
+		nexus_draw_caption_c(GFX_W / 2, CARD_Y + 12, "PAIR A PHONE");
+		gfx_text_c(GFX_W / 2, BIG_Y, "PAIRED", NEXUS_TXT_VALUE,
+			   t->success, GFX_OPAQUE);
+		nexus_draw_caption_c(GFX_W / 2, 146, "THE PHONE IS READY");
+		return;
+	}
+
 	nexus_draw_card(NEXUS_PAD, CARD_Y, NEXUS_CONTENT_W, CARD_H);
 	nexus_draw_caption_c(GFX_W / 2, CARD_Y + 12, "PAIR A PHONE");
 
@@ -94,7 +104,8 @@ static void draw(void)
 static bool transient(void)
 {
 	return g_view == NEXUS_REMOTE_VIEW_HELLO ||
-	       g_view == NEXUS_REMOTE_VIEW_FULL;
+	       g_view == NEXUS_REMOTE_VIEW_FULL ||
+	       g_view == NEXUS_REMOTE_VIEW_PAIRED;
 }
 
 static void tick(void)
@@ -162,8 +173,9 @@ void nexus_remote_screen_show(enum nexus_remote_view view, uint32_t passkey)
 {
 	g_view = view;
 	g_passkey = passkey;
+	/* Words to read get longer than the identify flash. */
 	g_hello_until = k_uptime_get() +
-			(view == NEXUS_REMOTE_VIEW_FULL ? 3000 : HELLO_MS);
+			(view == NEXUS_REMOTE_VIEW_HELLO ? HELLO_MS : 2500);
 	g_want = true;
 	k_work_submit_to_queue(nexus_workq(), &g_apply);
 }

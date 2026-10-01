@@ -113,7 +113,9 @@ well as 4 KB would.
   connected, green while it is typing, and a grey outline when a phone is
   connected but you have switched remote input off. Nothing at all when it
   is off and no phone is there.
-- **Pairing**: the countdown, then the passkey. Press the button to cancel.
+- **Pairing**: the countdown, then the passkey, then **PAIRED**. A wrong
+  passkey goes back to the countdown for another try; press the button to
+  cancel. **NO ROOM** when two phones are paired or no profile is free.
 - **Identify** (from the app): the screen flashes and NEXUS beeps once.
 
 ## Safety
@@ -191,28 +193,31 @@ this module's CI or in the config repo, so re-check these after a ZMK bump:
 ## Test checklist (real hardware)
 
 The firmware builds in CI with the flag on and off. Everything below needs
-the dongle, and is where this is actually proven:
+the dongle, and is where this is actually proven. Ticked: verified on the
+hardware, 2026-10-01.
 
-- [ ] Flag off: behaves exactly like `main` (Sofle, USB, display, Studio,
-      games).
+- [x] Flag off: behaves exactly like `main`.
+- [x] Flag on: everything NEXUS and ZMK did before still works (Sofle, USB,
+      display, games, BLE profiles).
 - [ ] Split halves reconnect after a dongle reset while a phone is connected.
 - [ ] ZMK Studio still connects over USB.
-- [ ] iPhone and Android: pairing only inside the window, passkey from the
-      screen; a write before pairing is refused.
+- [x] iPhone: pairs inside the window with the passkey from the screen.
+- [ ] Android: the same.
+- [ ] A write before pairing is refused.
 - [ ] iPhone and Android: after pairing, the phone's own on-screen keyboard
       still appears (the phone did not adopt NEXUS as a keyboard).
 - [ ] After pairing, the profile that was active before is active again,
       and the phone sits in the highest free profile.
-- [ ] A BLE host (second laptop) still pairs and types with Remote Input on.
+- [x] A BLE host (second laptop) still pairs and types with Remote Input on.
 - [ ] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.
 - [ ] Kill the app mid-drag and mid-key-hold: everything released within 1 s.
 - [ ] Remote off: nothing from the phone reaches the computer.
 
-Before the app exists, drive it from **nRF Connect** on a phone: open the
-PHONE window, connect to NEXUS, read Status (this pairs), then write the example bytes from the
-protocol page to each characteristic.
+Without the app, drive it from **nRF Connect** on a phone: open the PHONE
+window, connect to NEXUS, read Status (this pairs), then write the example
+bytes from the protocol page to each characteristic.
 
 ## Known limits
 
