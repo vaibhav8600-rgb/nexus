@@ -83,8 +83,14 @@ the highest one, leaving the low ones for hosts - and switches back when it
 closes. Over USB that changes nothing you can see. Outside the window a phone
 cannot pair, so nobody in range can pair without pressing a key on your
 keyboard. Up to two phones can be paired; forget them with
-`NEXUS_ACT_REMOTE_CLEAR` to pair a third, or to re-pair one that has forgotten
-NEXUS itself. With no phone slot or no free profile, NEXUS says **NO ROOM**.
+`NEXUS_ACT_REMOTE_CLEAR` to pair a third. With no phone slot or no free
+profile, NEXUS says **NO ROOM**.
+
+**A phone that forgot NEXUS** (Forget This Device on the phone) pairs again
+the same way. Its first try is turned away while NEXUS clears its own old
+pairing - otherwise ZMK would file the phone into a second profile - and the
+screen says **OLD PAIRING CLEARED, TAP CONNECT AGAIN**. Tap Connect once
+more and type the code as usual.
 
 **If the phone will not pair, check its own Bluetooth list first.** A phone
 that has ever paired with NEXUS - an earlier attempt, a firmware since
@@ -162,6 +168,7 @@ well as 4 KB would.
   <img src="images/screens/remote-noroom.png" width="170" alt="NO ROOM">
   <img src="images/screens/remote-hello.png" width="170" alt="The identify flash">
   <img src="images/screens/remote-connected.png" width="170" alt="CONNECTED: a paired phone back">
+  <img src="images/screens/remote-again.png" width="170" alt="A phone that forgot NEXUS: connect again">
 </p>
 
 - **Home**, top-left corner of the brand plate: a phone outline when Remote
@@ -287,6 +294,8 @@ hardware, 2026-10-01.
       repeats and stops on release; Back, Home, Games, Menu, Theme, Save work.
 - [x] Output switch: USB and BLE both move typing, and the app shows which.
 - [ ] Kill the app holding an arrow: the repeat stops within 1 s.
+- [ ] A phone that forgot NEXUS (but NEXUS did not forget it): OLD PAIRING
+      CLEARED, then Connect again pairs it; no second ZMK profile used.
 - [x] Close the app: within a few seconds the phone glyph goes and the
       phone's Bluetooth settings no longer show NEXUS connected; reopen and
       Connect finds NEXUS (no BLE host on the active profile).

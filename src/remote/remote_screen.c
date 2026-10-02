@@ -95,8 +95,12 @@ static void draw(void)
 	} else {
 		g_drawn_s = nexus_remote_pair_remaining_s();
 		big_number(gfx_utoa(g_drawn_s, buf, sizeof(buf), 0), t->value);
-		nexus_draw_caption_c(GFX_W / 2, 140, "OPEN THE NEXUS APP");
-		nexus_draw_caption_c(GFX_W / 2, 152, "AND TAP CONNECT");
+		bool again = g_passkey == NEXUS_REMOTE_WAIT_AGAIN;
+
+		nexus_draw_caption_c(GFX_W / 2, 140, again ? "OLD PAIRING CLEARED"
+							  : "OPEN THE NEXUS APP");
+		nexus_draw_caption_c(GFX_W / 2, 152, again ? "TAP CONNECT AGAIN"
+							  : "AND TAP CONNECT");
 	}
 
 	gfx_text_c(GFX_W / 2, CARD_Y + CARD_H - 18, "PRESS TO CANCEL",

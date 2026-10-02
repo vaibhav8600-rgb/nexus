@@ -117,6 +117,8 @@ static struct {
 
 static int g_pair_profile = -1; /* work queue only */
 static bool g_just_paired;      /* the window is closing on a new pairing */
+static uint32_t g_wait_variant; /* WAIT's captions: 0 or ..._WAIT_AGAIN */
+static bt_addr_le_t g_forget;   /* a known phone that lost its pairing */
 static int g_prev_profile;      /* work queue only */
 static uint8_t g_last_status[STATUS_LEN];
 static atomic_t g_output; /* REMOTE_OUTPUT_* asked for, until applied */
@@ -127,6 +129,7 @@ static void pair_close_fn(struct k_work *work);
 static void clear_fn(struct k_work *work);
 static void output_fn(struct k_work *work);
 static void drop_fn(struct k_work *work);
+static void forget_fn(struct k_work *work);
 static void phones_save_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_status_work, status_fn);
 static K_WORK_DEFINE(g_pair_open_work, pair_open_fn);
@@ -134,6 +137,7 @@ static K_WORK_DELAYABLE_DEFINE(g_pair_close, pair_close_fn);
 static K_WORK_DEFINE(g_clear_work, clear_fn);
 static K_WORK_DEFINE(g_output_work, output_fn);
 static K_WORK_DELAYABLE_DEFINE(g_drop_work, drop_fn);
+static K_WORK_DEFINE(g_forget_work, forget_fn);
 static K_WORK_DEFINE(g_phones_save, phones_save_fn);
 
 /* A reference to the phone being served, or NULL. Caller unrefs. */
@@ -390,13 +394,35 @@ static ssize_t read_status(struct bt_conn *conn, const struct bt_gatt_attr *attr
  * profile, away from that host, for the rest of the minute. A phone that has
  * just paired is already closing it, after its settle time.
  */
-static void app_arrived(void)
+static void app_arrived(struct bt_conn *conn)
 {
-	if (pair_open() && !g_pair_conn && !g_just_paired) {
-		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_CONNECTED, 0);
-		nexus_sound_play(NEXUS_SOUND_CONNECT);
-		k_work_reschedule(&g_pair_close, K_NO_WAIT);
+	bool mine = false;
+	bool unref = false;
+
+	if (!pair_open() || g_just_paired) {
+		return;
 	}
+	/* A known phone that came in with its pairing intact was taken as the
+	 * pairing candidate too, in case it had lost it; subscribing means it
+	 * had not - Status needs the authenticated link - so let it go. */
+	K_SPINLOCK(&g_lock) {
+		if (g_pair_conn == conn) {
+			g_pair_conn = NULL;
+			mine = unref = true;
+		} else if (!g_pair_conn) {
+			mine = true;
+		}
+	}
+	if (unref) {
+		bt_conn_unref(conn); /* the candidate's; g_phone keeps its own */
+	}
+	if (!mine) {
+		return; /* another phone is pairing: leave its window open */
+	}
+	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_CONNECTED, 0);
+	nexus_sound_play(NEXUS_SOUND_CONNECT);
+	k_work_reschedule(&g_pair_close, K_NO_WAIT);
+}
 }
 
 /*
@@ -414,7 +440,7 @@ static ssize_t status_ccc_write(struct bt_conn *conn,
 	if (conn == g_phone) {
 		if (value) {
 			k_work_cancel_delayable(&g_drop_work);
-			app_arrived();
+			app_arrived(conn);
 		} else {
 			k_work_reschedule(&g_drop_work, APP_GONE_GRACE);
 		}
@@ -757,15 +783,16 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 	}
 	if (known_phone(bt_conn_get_dst(conn))) {
 		serve(conn);
-		return;
 	}
 	if (!pair_open()) {
 		return; /* a host, as far as NEXUS is concerned: ZMK's business */
 	}
 
 	/* The window is open, so whatever connects now is taken to be the
-	 * phone that was asked for. A host that connects in the same minute
-	 * gets the phone's treatment - documented, and the window is short. */
+	 * phone that was asked for - a known one too, which may have lost its
+	 * pairing and be about to ask again. A host that connects in the same
+	 * minute gets the phone's treatment - documented, and the window is
+	 * short. */
 	K_SPINLOCK(&g_lock) {
 		if (!g_pair_conn) {
 			g_pair_conn = bt_conn_ref(conn);
@@ -823,11 +850,23 @@ BT_CONN_CB_DEFINE(nexus_remote_conn) = {
 static enum bt_security_err pairing_accept(struct bt_conn *conn,
 					   const struct bt_conn_pairing_feat *feat)
 {
-	ARG_UNUSED(conn);
 	ARG_UNUSED(feat);
+
+	const bt_addr_le_t *addr = bt_conn_get_dst(conn);
 
 	if (!pair_open()) {
 		LOG_WRN("remote: pairing refused, window closed");
+		return BT_SECURITY_ERR_PAIR_NOT_ALLOWED;
+	}
+	if (known_phone(addr)) {
+		/*
+		 * A phone NEXUS knows, asking to pair: it forgot NEXUS, NEXUS
+		 * did not forget it. Let it pair now and ZMK files it into a
+		 * second profile beside the stale one, so forget NEXUS's side
+		 * first - which drops this link - and have it connect again.
+		 */
+		bt_addr_le_copy(&g_forget, addr);
+		k_work_submit(&g_forget_work);
 		return BT_SECURITY_ERR_PAIR_NOT_ALLOWED;
 	}
 	return BT_SECURITY_ERR_SUCCESS;
@@ -845,7 +884,7 @@ static void passkey_display(struct bt_conn *conn, unsigned int passkey)
 static void passkey_gone(void)
 {
 	if (pair_open()) {
-		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, 0);
+		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, g_wait_variant);
 	} else {
 		nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
 	}
@@ -950,6 +989,7 @@ static void pair_open_fn(struct k_work *work)
 	}
 
 	k_work_reschedule(&g_pair_close, PAIR_WINDOW);
+	g_wait_variant = 0;
 	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, 0);
 	nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
 	remote_status_kick();
@@ -961,6 +1001,19 @@ static void pair_close_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
+	struct bt_conn *stale = NULL;
+
+	/* A candidate the window never paired - a known phone back with its
+	 * pairing intact, whose app never subscribed - must not keep the
+	 * slot the next window's phone needs. */
+	K_SPINLOCK(&g_lock) {
+		stale = g_pair_conn;
+		g_pair_conn = NULL;
+	}
+	if (stale) {
+		bt_conn_unref(stale);
+	}
+
 	adv_release();
 	if (g_pair_profile >= 0 &&
 	    zmk_ble_active_profile_index() == g_pair_profile &&
@@ -969,6 +1022,7 @@ static void pair_close_fn(struct k_work *work)
 	}
 	g_pair_profile = -1;
 	g_just_paired = false;
+	g_wait_variant = 0;
 	adv_check();
 
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_WAIT);
@@ -1019,6 +1073,41 @@ static void clear_fn(struct k_work *work)
 	memset(&g_phones, 0, sizeof(g_phones));
 	phones_save();
 	LOG_INF("remote: paired phones forgotten");
+}
+
+/*
+ * A known phone lost its pairing (pairing_accept): clear its ZMK profile -
+ * which unpairs it and drops the link - forget it here, and stay in the
+ * window, where it connects again and pairs afresh.
+ */
+static void forget_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	int pairing = zmk_ble_active_profile_index();
+	int idx = zmk_ble_profile_index(&g_forget);
+
+	if (idx >= 0 && idx != pairing) {
+		zmk_ble_prof_select(idx);
+		zmk_ble_clear_bonds();
+		zmk_ble_prof_select(pairing);
+	} else {
+		bt_unpair(BT_ID_DEFAULT, &g_forget); /* a bond with no profile */
+	}
+
+	for (int i = 0; i < g_phones.n && i < PHONES_MAX; i++) {
+		if (!bt_addr_le_cmp(&g_phones.addr[i], &g_forget)) {
+			g_phones.addr[i] = g_phones.addr[--g_phones.n];
+			phones_save();
+			break;
+		}
+	}
+	LOG_INF("remote: a phone lost its pairing; cleared ours, connect again");
+
+	if (pair_open()) {
+		g_wait_variant = NEXUS_REMOTE_WAIT_AGAIN;
+		nexus_remote_screen_show(NEXUS_REMOTE_VIEW_WAIT, g_wait_variant);
+	}
 }
 
 /* ---- on / off, and the keymap actions ------------------------------------ */

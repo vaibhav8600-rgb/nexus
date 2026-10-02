@@ -39,7 +39,15 @@ enum nexus_remote_view {
  * record, and nothing is drawn.
  */
 
-/** Show @p view; replaces what the remote screen shows if already open. */
+/* @p arg for NEXUS_REMOTE_VIEW_WAIT: a known phone asked to pair again and
+ * its old pairing was cleared, so it has to connect once more. */
+#define NEXUS_REMOTE_WAIT_AGAIN 1
+
+/**
+ * Show @p view; replaces what the remote screen shows if already open.
+ * @p passkey is the code for PASSKEY, and for WAIT 0 or
+ * NEXUS_REMOTE_WAIT_AGAIN.
+ */
 void nexus_remote_screen_show(enum nexus_remote_view view, uint32_t passkey);
 
 /**
