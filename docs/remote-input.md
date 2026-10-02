@@ -125,7 +125,9 @@ nothing else, so either side can change as long as that page holds.
 
 A full-screen trackpad with a scroll strip down the right edge; the toolbar
 under it opens the phone's own keyboard, the special keys and shortcuts,
-media and volume, and NEXUS's own controls.
+media and volume, presentation (slides, timer, an air pointer that turns the
+phone into a pointer), and NEXUS's own controls. It also pastes the phone's
+clipboard, keeps text snippets, and shows the halves' batteries.
 
 **NEXUS controls** are the game layer on the phone: a D-pad with OK, Rotate
 and Drop to play the games on the dongle, Back, Home, Games, Menu and Host to
