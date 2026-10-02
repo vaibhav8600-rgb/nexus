@@ -1451,6 +1451,9 @@ SETTINGS_ROWS = [('SOUND', 'ON'), ('BRIGHT', '80%'), ('THEME', 'NEXUS'),
 # the same list in a build with CONFIG_NEXUS_REMOTE_INPUT
 SETTINGS_REMOTE_ROWS = (SETTINGS_ROWS[:8] + [('PHONE', 'LINKED')] +
                         SETTINGS_ROWS[8:])
+# Settings > PHONE, the list menus.c pushes (phone_rows)
+PHONE_ROWS = [('PAIR', ''), ('REMOTE', 'ON'), ('FORGET', '1 PHONE'),
+              ('BACK', '')]
 DIAG_ROWS = [('FIRMWARE', 'V1.0.0'), ('BOARD', 'NICE_NANO'),
              ('DISPLAY', 'OK'), ('BACKLIGHT', 'OK'), ('BUZZER', 'OK'),
              ('BUTTON', 'OK'), ('HOST', 'BLE 1'), ('L/R LINK', 'OK/OK'),
@@ -1501,6 +1504,7 @@ def main():
         ('home-remote', lambda cv: home(cv, nx, dict(STATUS, remote='phone'))),
         ('settings-remote', lambda cv: menu(cv, nx, 'SETTINGS',
                                             SETTINGS_REMOTE_ROWS, 8)),
+        ('phone-menu', lambda cv: menu(cv, nx, 'PHONE', PHONE_ROWS, 2)),
         ('remote-wait', lambda cv: remote(cv, nx, 'WAIT', '47')),
         ('remote-passkey', lambda cv: remote(cv, nx, 'PASSKEY', '482913')),
         ('remote-again', lambda cv: remote(cv, nx, 'WAIT_AGAIN', '38')),

@@ -30,7 +30,7 @@ Base UUID `7e4e0000-5c1a-4b2e-9d3f-8a6b4c2d1e0f`; each UUID below replaces the
 | Key | `7e4e0003-…` | Write | 6 |
 | Text | `7e4e0004-…` | Write | 1-244 |
 | Control | `7e4e0005-…` | Write | 1-3 |
-| Status | `7e4e0006-…` | Read, Notify | 7 |
+| Status | `7e4e0006-…` | Read, Notify | 9 |
 
 The dongle advertises as the keyboard it is, under ZMK's keyboard name
 (`CONFIG_ZMK_KEYBOARD_NAME`, "NEXUS" by default), without this service's
@@ -144,7 +144,7 @@ refused with `0x13`: a phone cannot switch Remote Input off, open pairing or
 forget phones. A held action repeats on the dongle as a held key does, and
 counts as held for the keepalive rule below; send `02` while it is down.
 
-## Status (7 bytes, Read and Notify)
+## Status (9 bytes, Read and Notify)
 
 ```
 u8  version     1
@@ -153,21 +153,25 @@ u8  state       bit0 remote enabled, bit1 USB connected,
 u8  host_leds   bit0 Num Lock, bit1 Caps Lock, bit2 Scroll Lock
 u16 text_free   free bytes in the text queue
 u8  features    bit0 text, bit1 consumer keys, bit2 horizontal scroll,
-                bit3 actions and output (Control 06, 07), bit4 HOST screen
+                bit3 actions and output (Control 06, 07), bit4 HOST screen,
+                bit5 batteries
 u8  output      the output keys go to: 1 USB, 2 BLE
+u8  batt_left   left half's battery, 0-100, 0xFF unknown
+u8  batt_right  right half's battery, the same
 ```
 
 Notified on any change, at most every 100 ms.
 
 Example -- enabled, USB up, Caps Lock on, 512 bytes free, everything but
-the HOST screen, output to USB:
+the HOST screen, output to USB, left half at 78 %, right not heard from:
 
 ```
-01 03 02 00 02 0F 01
+01 03 02 00 02 2F 01 4E FF
 ```
 
-Firmware before actions sent the first six bytes only; an app that sees six
-bytes has no `features` bit 3 and does not offer them.
+Older firmware sends fewer bytes - six before actions, seven before
+batteries. An app reads only what is there and checks `features` before
+offering anything.
 
 ## ATT errors
 

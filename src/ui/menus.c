@@ -451,11 +451,14 @@ static void v_host_link(char *out, size_t len)
 
 #if IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT)
 /*
- * One row, not two: the value cache is part of the UI's fixed RAM ceiling
- * (docs/configuration.md), and Settings is at MAX_ROWS with it. Selecting
- * pairs - the one thing a dongle without keymap bindings could not do
- * otherwise. On/off is NEXUS_ACT_REMOTE_TOGGLE.
+ * One row here, and a short list of its own: the value cache is the UI's
+ * fixed RAM ceiling (docs/configuration.md) and Settings is at MAX_ROWS, so
+ * pairing, on/off and forgetting live on a list pushed on top, which reuses
+ * the same cache - the way DIAG does. Without keymap bindings, this is the
+ * only way to any of the three.
  */
+static const struct nexus_screen phone_def;
+
 static void v_phone(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
@@ -468,8 +471,87 @@ static void v_phone(char *out, size_t len)
 
 static void a_phone(void)
 {
+	nexus_screen_push(&phone_def);
+}
+
+static void a_pair(void)
+{
 	nexus_remote_action(NEXUS_ACTION_REMOTE_PAIR);
 }
+
+static void v_remote(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, (nexus_status_get()->remote & NEXUS_REMOTE_ON) ? "ON" : "OFF");
+}
+
+static void a_remote(void)
+{
+	nexus_remote_action(NEXUS_ACTION_REMOTE_TOGGLE);
+}
+
+/* Forgetting is the one row that destroys something, so it takes a second
+ * press inside FORGET_CONFIRM_MS; the value says SURE? in between. */
+#define FORGET_CONFIRM_MS 3000
+static int64_t g_forget_armed;
+
+static bool forget_armed(void)
+{
+	return g_forget_armed &&
+	       k_uptime_get() - g_forget_armed < FORGET_CONFIRM_MS;
+}
+
+static void v_forget(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+	uint8_t n = nexus_remote_phone_count();
+
+	put(&b, forget_armed() ? "SURE?" : n == 0 ? "NONE"
+				       : n == 1 ? "1 PHONE"
+						: "2 PHONES");
+}
+
+static void a_forget(void)
+{
+	if (nexus_remote_phone_count() == 0) {
+		return;
+	}
+	if (forget_armed()) {
+		g_forget_armed = 0;
+		nexus_remote_action(NEXUS_ACTION_REMOTE_CLEAR);
+	} else {
+		g_forget_armed = k_uptime_get();
+	}
+}
+
+static void a_back(void);
+
+static const struct row phone_rows[] = {
+	{ "PAIR", NULL, a_pair },
+	{ "REMOTE", v_remote, a_remote },
+	{ "FORGET", v_forget, a_forget },
+	{ "BACK", NULL, a_back },
+};
+
+static void phone_enter(void)
+{
+	g_forget_armed = 0;
+	list_enter("PHONE", phone_rows, ARRAY_SIZE(phone_rows));
+}
+
+/* Ticks so SURE? reverts by itself, and the count follows a forget. */
+static const struct nexus_screen phone_def = {
+	.name = "PHONE",
+	.enter = phone_enter,
+	.exit = list_exit,
+	.draw = list_draw,
+	.action = list_action,
+	.tick = list_tick,
+	.refresh = NEXUS_REFRESH_NORMAL,
+	.btn_short = NEXUS_ACTION_NEXT,
+	.btn_long = NEXUS_ACTION_SELECT,
+};
 #endif
 
 static void v_save(char *out, size_t len)

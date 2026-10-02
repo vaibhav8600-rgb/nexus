@@ -185,12 +185,12 @@ again to replace the installed copy; the current one opens only the host link.
 **The phone will not pair, or connects and drops at once.**
 The phone remembers an earlier NEXUS under Settings > Bluetooth - an older
 attempt, a reflashed dongle, phones forgotten on the dongle. Tap NEXUS there,
-**Forget This Device**, then Settings > `PHONE` on NEXUS and Connect within
-the 60 seconds.
+**Forget This Device**, then Settings > `PHONE` > `PAIR` on NEXUS and Connect
+within the 60 seconds.
 
 **NEXUS says NO ROOM.** Two phones are paired already, or no Bluetooth
-profile is free. Forget phones with `NEXUS_ACT_REMOTE_CLEAR`, or clear a
-profile.
+profile is free. Forget phones with Settings > `PHONE` > `FORGET` (press
+twice), or clear a profile.
 
 **Android: a pairing code pops up and fails within a second.** Known:
 Android pairing does not work yet (iPhone with Bluefy does). See
@@ -201,8 +201,8 @@ without `CONFIG_NEXUS_REMOTE_INPUT=y`.
 
 **NEXUS is not in the app's list at all.** iPhone: open the app in Bluefy,
 not Safari. A phone that has never paired needs the window: Settings >
-`PHONE`. A paired one should always find it; if it does not, open Settings >
-`PHONE` and tap Connect - no code, NEXUS shows CONNECTED and switches
+`PHONE` > `PAIR`. A paired one should always find it; if it does not, open
+Settings > `PHONE` > `PAIR` and tap Connect - no code, NEXUS shows CONNECTED and switches
 straight back - and check the build has
 `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV` on (the default). See
 [remote-input.md](remote-input.md#known-limits).

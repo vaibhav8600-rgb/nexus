@@ -182,7 +182,7 @@ A held slot changes three things at once -- glyph colour, slot fill and border
 | `SPLASH` | Which splash the build got. Read-only. |
 | `GAMES` | How many games are built in. Read-only. |
 | `COMPANION` | Opens the HOST screen; reads `LINKED` while a companion is talking. Only with `CONFIG_NEXUS_HOST_LINK`. |
-| `PHONE` | Opens the 60 s window to pair a phone; reads `OFF`, `ON` or `LINKED`. Only with `CONFIG_NEXUS_REMOTE_INPUT` -- see [remote-input.md](remote-input.md#on-the-screen). |
+| `PHONE` | Opens the PHONE list: `PAIR` (the 60 s pairing window), `REMOTE` (phone input on/off) and `FORGET` (forget paired phones, press twice). Reads `OFF`, `ON` or `LINKED`. Only with `CONFIG_NEXUS_REMOTE_INPUT` -- see [remote-input.md](remote-input.md#on-the-screen). |
 | `DIAG` | Opens Diagnostics. |
 | `ABOUT` | Opens About. |
 | `SAVE` | Commits now rather than waiting for the autosave. |

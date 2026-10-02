@@ -23,7 +23,7 @@
  *   for the seconds it takes to pair. The same callback keeps everyone but
  *   the phone out of the Remote Input service.
  *
- *   Pairing. Settings > PHONE opens a 60 s window and switches ZMK to a free
+ *   Pairing. Settings > PHONE > PAIR opens a 60 s window and switches ZMK to a free
  *   profile, so its own advertising lets a phone in. Per-connection auth
  *   callbacks (bt_conn_auth_cb_overlay) give that one connection a passkey
  *   on the NEXUS screen; ZMK records the phone in that profile, NEXUS
@@ -42,6 +42,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/version.h>
 #include <string.h>
 
 #include <dt-bindings/nexus.h>
@@ -71,7 +72,7 @@ BUILD_ASSERT(REMOTE_OUTPUT_USB == ZMK_TRANSPORT_USB &&
 		     REMOTE_OUTPUT_BLE == ZMK_TRANSPORT_BLE,
 	     "Remote Input's output numbers no longer match ZMK's");
 
-#define STATUS_LEN 7
+#define STATUS_LEN 9
 
 #define PHONES_MAX 2
 #define PAIR_WINDOW K_SECONDS(60)
@@ -192,6 +193,11 @@ static bool pair_open(void)
 	return k_work_delayable_is_pending(&g_pair_close);
 }
 
+uint8_t nexus_remote_phone_count(void)
+{
+	return g_phones.n;
+}
+
 uint32_t nexus_remote_pair_remaining_s(void)
 {
 	k_ticks_t t = k_work_delayable_remaining_get(&g_pair_close);
@@ -228,11 +234,14 @@ static void status_bytes(uint8_t v[STATUS_LEN])
 	       (st->scroll_lock ? BIT(2) : 0);
 	v[3] = (uint8_t)free;
 	v[4] = (uint8_t)(free >> 8);
-	/* text, consumer, hwheel, dongle controls, the HOST screen */
+	/* text, consumer, hwheel, dongle controls, the HOST screen, batteries */
 	v[5] = BIT(0) | BIT(1) | BIT(2) | BIT(3) |
-	       (IS_ENABLED(CONFIG_NEXUS_HOST_LINK) ? BIT(4) : 0);
+	       (IS_ENABLED(CONFIG_NEXUS_HOST_LINK) ? BIT(4) : 0) | BIT(5);
 	/* What &out would show: the preferred transport, not the fallback. */
 	v[6] = (uint8_t)zmk_endpoint_get_preferred_transport();
+	/* The halves, as the dashboard shows them: 0-100, or 0xFF unknown. */
+	v[7] = st->battery_left;
+	v[8] = st->battery_right;
 }
 
 /* ZMK's endpoint calls save settings: the system work queue, as &out. */
@@ -448,9 +457,12 @@ static ssize_t status_ccc_write(struct bt_conn *conn,
 	return sizeof(value);
 }
 
-/* _bt_gatt_ccc is Zephyr 4.1's name; later trees call it
- * bt_gatt_ccc_managed_user_data. */
+/* The managed-CCC struct was renamed in Zephyr 4.2; ZMK is on 4.1 today. */
+#if ZEPHYR_VERSION_CODE >= ZEPHYR_VERSION(4, 2, 0)
+static struct bt_gatt_ccc_managed_user_data g_status_ccc =
+#else
 static struct _bt_gatt_ccc g_status_ccc =
+#endif
 	BT_GATT_CCC_INITIALIZER(NULL, status_ccc_write, NULL);
 
 /*
@@ -566,7 +578,7 @@ static uint8_t find_hids(const struct bt_gatt_attr *attr, uint16_t handle,
  * only while its active profile is open or that profile's host is away. In
  * the gap - a host connected on the active profile, a phone paired, none
  * connected - NEXUS advertises instead, under the same name, so the app finds
- * it again without a trip to Settings > PHONE.
+ * it again without a trip to Settings > PHONE > PAIR.
  *
  * The advertiser is ZMK's the rest of the time. NEXUS lets go before its own
  * profile switches, and on any change re-checks after ADV_SETTLE - ZMK
@@ -721,7 +733,8 @@ static void on_nexus_status(const struct nexus_status *st, uint32_t changed)
 {
 	ARG_UNUSED(st);
 
-	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_ENDPOINT)) {
+	if (changed & (NEXUS_STATUS_LOCKS | NEXUS_STATUS_ENDPOINT |
+		       NEXUS_STATUS_BATTERY)) {
 		remote_status_kick();
 	}
 	/* The active profile switched, or its host came or went. */

@@ -43,11 +43,14 @@ you leave both at 7 it still works while a profile is free, which on a USB
 dongle with no BLE hosts there usually is.
 
 <img src="images/screens/settings-remote.png" width="170" align="right" alt="Settings with the PHONE row">
+<img src="images/screens/phone-menu.png" width="170" align="right" alt="The PHONE list: pair, remote on/off, forget">
 
 **3. Keys**, optionally. Settings has a `PHONE` row - its value is `ON`,
-`OFF` or `LINKED`, and selecting it opens the pairing window - so the
-dongle's own button is enough to pair. Turning remote input on and off, and
-forgetting phones, are keymap actions; bind them anywhere:
+`OFF` or `LINKED` - that opens a short list: **PAIR** opens the pairing
+window, **REMOTE** switches phone input on and off, and **FORGET** forgets
+the paired phones (press it twice: the value reads `SURE?` in between). So
+the dongle's own button does all of it. The same three are keymap actions
+too, if you would rather have keys:
 
 ```dts
 &nexus_action NEXUS_ACT_REMOTE_PAIR     // open the 60 s pairing window
@@ -62,7 +65,8 @@ with other firmwares can keep them.
 
 ## Pairing a phone
 
-1. Settings > `PHONE` (or the pair key). NEXUS shows a 60-second countdown.
+1. Settings > `PHONE` > `PAIR` (or the pair key). NEXUS shows a 60-second
+   countdown.
 2. In the app, **Connect**, and pick **NEXUS** (the dongle's keyboard name).
 3. The phone asks for a code. NEXUS shows six digits; type them in.
 4. Done. No code again: from now on the phone reconnects by itself.
@@ -70,7 +74,7 @@ with other firmwares can keep them.
 **Coming back later.** Open the app and tap **Connect to NEXUS**, pick
 NEXUS, and it connects - no code, nothing to press on the dongle, whether
 keys go to USB or to a BLE host. If NEXUS is ever missing from the list,
-open Settings > `PHONE` and tap Connect: a paired phone needs no code, and
+open Settings > `PHONE` > `PAIR` and tap Connect: a paired phone needs no code, and
 NEXUS shows **CONNECTED** and switches straight back to the profile you were
 on.
 
@@ -83,7 +87,8 @@ the highest one, leaving the low ones for hosts - and switches back when it
 closes. Over USB that changes nothing you can see. Outside the window a phone
 cannot pair, so nobody in range can pair without pressing a key on your
 keyboard. Up to two phones can be paired; forget them with
-`NEXUS_ACT_REMOTE_CLEAR` to pair a third. With no phone slot or no free
+Settings > `PHONE` > `FORGET` (or `NEXUS_ACT_REMOTE_CLEAR`) to pair a third.
+With no phone slot or no free
 profile, NEXUS says **NO ROOM**.
 
 **A phone that forgot NEXUS** (Forget This Device on the phone) pairs again
@@ -179,7 +184,7 @@ well as 4 KB would.
 - **Identify** (from the app): the screen flashes and NEXUS beeps once.
 - Using the phone counts as using the keyboard: ZMK does not go idle and
   the display does not blank while the phone types or points.
-- **Settings** gains a `PHONE` row; see [ui.md](ui.md#settings).
+- **Settings** gains a `PHONE` row and its list; see [ui.md](ui.md#settings).
 
 These are rendered from the firmware source by `scripts/render_ui.py`, like
 every screen in [ui.md](ui.md).
@@ -331,6 +336,6 @@ bytes from the protocol page to each characteristic.
 - With `CONFIG_NEXUS_REMOTE_INPUT_PHONE_ADV=n`, a phone reconnects only
   through ZMK's advertising, which stops while the host on the active
   Bluetooth profile is connected - USB output or not. Then use Settings >
-  `PHONE` to bring it back (no code for a paired phone).
+  `PHONE` > `PAIR` to bring it back (no code for a paired phone).
 - `&bt BT_CLR_ALL` forgets phones too, as it does every bond; pair them again.
 - macOS usually wants F14/F15 for brightness rather than the consumer keys.

@@ -644,7 +644,7 @@ config NEXUS_REMOTE_INPUT
 	  phone out of the dongle's keyboard service, so a phone never
 	  receives keystrokes or treats NEXUS as a keyboard. Pairing is LE
 	  Secure Connections with the passkey on the NEXUS screen, only
-	  inside a window you open from Settings > PHONE or the keymap.
+	  inside a window you open from Settings > PHONE > PAIR or the keymap.
 
 	  The app can also drive NEXUS itself - the game layer's actions and
 	  the USB/BLE output - but not Remote Input's own on/off, pairing or
@@ -695,7 +695,7 @@ config NEXUS_REMOTE_INPUT_PHONE_ADV
 	  ZMK stops advertising while the host on its active Bluetooth
 	  profile is connected, and a phone can only come back through
 	  advertising - so with a BLE host connected the app never finds
-	  NEXUS without a trip to Settings > PHONE. With this, NEXUS
+	  NEXUS without a trip to Settings > PHONE > PAIR. With this, NEXUS
 	  advertises on ZMK's behalf in exactly those gaps, only while a
 	  phone is paired and none is connected, and hands the advertiser
 	  back the moment ZMK wants it.

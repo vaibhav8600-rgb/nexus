@@ -56,6 +56,9 @@ void nexus_remote_screen_show(enum nexus_remote_view view, uint32_t passkey);
  */
 void nexus_remote_screen_hide(enum nexus_remote_view view);
 
+/** Phones paired with NEXUS, 0 to 2. */
+uint8_t nexus_remote_phone_count(void);
+
 /** Seconds left in the pairing window, 0 when closed. */
 uint32_t nexus_remote_pair_remaining_s(void);
 
