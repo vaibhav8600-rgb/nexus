@@ -280,7 +280,7 @@ this module's CI or in the config repo, so re-check these after a ZMK bump:
 
 The firmware builds in CI with the flag on and off. Everything below needs
 the dongle, and is where this is actually proven. Ticked: verified on the
-hardware, 2026-10-01.
+hardware, 2026-10-01 and 2026-10-02.
 
 - [x] Flag off: behaves exactly like `main`.
 - [x] Flag on: everything NEXUS and ZMK did before still works (Sofle, USB,
@@ -300,8 +300,8 @@ hardware, 2026-10-01.
 - [x] NEXUS controls: D-pad, OK, Rotate and Drop play Tetris; a held arrow
       repeats and stops on release; Back, Home, Games, Menu, Theme, Save work.
 - [x] Output switch: USB and BLE both move typing, and the app shows which.
-- [ ] Kill the app holding an arrow: the repeat stops within 1 s.
-- [ ] A phone that forgot NEXUS (but NEXUS did not forget it): OLD PAIRING
+- [x] Kill the app holding an arrow: the repeat stops within 1 s.
+- [x] A phone that forgot NEXUS (but NEXUS did not forget it): OLD PAIRING
       CLEARED, then Connect again pairs it; no second ZMK profile used.
 - [x] Close the app: within a few seconds the phone glyph goes and the
       phone's Bluetooth settings no longer show NEXUS connected; reopen and
@@ -314,11 +314,14 @@ hardware, 2026-10-01.
       and comes back, `BT_SEL` to another profile and back - each still
       works, and the halves stay connected.
 - [ ] The same, and a new host pairs to an open profile.
-- [ ] Sofle typing and phone input at the same time.
+- [x] Sofle typing and phone input at the same time.
 - [ ] 500-character paste arrives exactly, default speed, Windows and macOS.
 - [ ] Every special key, shortcut and media key, Windows and macOS.
 - [ ] Kill the app mid-drag and mid-key-hold: everything released within 1 s.
-- [ ] Remote off: nothing from the phone reaches the computer.
+- [x] Remote off: nothing from the phone reaches the computer.
+- [x] Settings > PHONE: PAIR opens the window, REMOTE switches on and off,
+      FORGET asks SURE? and acts only on the second press.
+- [x] The app shows both halves' battery levels.
 
 Without the app, drive it from **nRF Connect** on a phone: open the PHONE
 window, connect to NEXUS, read Status (this pairs), then write the example

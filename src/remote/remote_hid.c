@@ -40,7 +40,8 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
  * it is dropped rather than growing the table. */
 #define MAX_HELD 12
 
-#define MOD_USAGE(bit) ZMK_HID_USAGE(HID_USAGE_KEY, 0xE0 + (bit))
+/* Parenthesised: ZMK_HID_USAGE does not wrap its id, and GCC warns. */
+#define MOD_USAGE(bit) ZMK_HID_USAGE(HID_USAGE_KEY, (0xE0 + (bit)))
 
 RING_BUF_DECLARE(g_queue, CONFIG_NEXUS_REMOTE_INPUT_TEXT_QUEUE_SIZE);
 static struct k_spinlock g_qlock;
