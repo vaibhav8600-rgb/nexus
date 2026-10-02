@@ -432,7 +432,6 @@ static void app_arrived(struct bt_conn *conn)
 	nexus_sound_play(NEXUS_SOUND_CONNECT);
 	k_work_reschedule(&g_pair_close, K_NO_WAIT);
 }
-}
 
 /*
  * Status subscriptions, per connection, are the app coming and going. iOS
