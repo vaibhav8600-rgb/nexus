@@ -60,6 +60,7 @@ class Host:
         self.now = 0
         self.ring = bytearray()
         self.line_buf = ''
+        self.skip = False
 
     # -- the wire
     def isr(self, data):
@@ -72,15 +73,20 @@ class Host:
         data, self.ring = bytes(self.ring), bytearray()
         for b in data:
             c = chr(b)
-            if c == '\r':
+            if b == 0:                  # HOST_LINES_GAP: bytes went missing
+                self.line_buf, self.skip = '', True
                 continue
-            if c != '\n':
-                if len(self.line_buf) < self.LINE_MAX - 1:
-                    self.line_buf += c
+            if c == '\n':
+                if self.skip:
+                    self.skip = False
+                elif self.line_buf:
+                    line, self.line_buf = self.line_buf, ''
+                    self.line(line)
                 continue
-            if self.line_buf:
-                line, self.line_buf = self.line_buf, ''
-                self.line(line)
+            if self.skip or c == '\r':
+                continue
+            if len(self.line_buf) < self.LINE_MAX - 1:
+                self.line_buf += c
 
     # -- the model
     def num(self, s, cap):
@@ -272,6 +278,12 @@ def protocol(text_max):
     st.isr(b'C 37\nM 62\n')
     st.work()
     ok(st.cpu == 37 and st.mem == 62, 'and the lines after that are fine')
+    st = Host(text_max)
+    st.isr(b'C 1\x000\nM 50\n')
+    st.work()
+    ok(st.cpu == UNKNOWN and st.mem == 50,
+       'a gap marker where bytes were dropped: "C 1" + gap + "0" is not read '
+       'as CPU 10 - the torn line goes, the next one stands')
 
     print('\nThe date turns over with the clock')
     st = Host(text_max)
@@ -345,7 +357,7 @@ def protocol(text_max):
        'power, so a companion that ran once this morning is enough for them')
 
 
-def link_source(c, usb, priv, kconfig):
+def link_source(c, usb, priv, lines, lines_h, kconfig):
     print('\nWhat the C actually does')
     isr = body(usb, 'static void uart_cb(const struct device *dev, '
                     'void *user_data)')
@@ -363,17 +375,23 @@ def link_source(c, usb, priv, kconfig):
            and forbidden not in kick,
            'the ISR does not touch %s' % forbidden)
     work = body(c, 'static void parse_work_fn(struct k_work *work)\n{')
-    drain = body(c, 'static bool drain(struct host_source *src)\n{')
+    drain = body(c, 'static unsigned int drain(struct host_source *src)\n{')
     ok('ring_buf_get(src->ring' in drain and 'k_spin_lock(&src->lock)' in drain
        and 'drain(&host_usb)' in work,
        'the work item drains the ring under the same lock')
-    ok('if (src->line_len < HOST_LINE_MAX - 1)' in drain,
+    ok('host_lines_feed(&src->lines, chunk, got, parse_line)' in drain
+       and 'if (l->len < HOST_LINE_MAX - 1)' in lines,
        'the line buffer cannot overrun - longer lines truncate')
+    ok('#include <zephyr' not in lines and '#include <zephyr' not in lines_h
+       and 'HOST_LINES_GAP' in lines,
+       'lines are assembled in plain C, where a unit test can reach them, '
+       'and a gap in the bytes is never read as a shorter line')
     ok('g_line_ready' not in c and 'atomic' not in c,
        'and the drop-if-busy handoff is gone entirely')
     source = priv.split('struct host_source {')[1].split('\n};')[0]
     ok('struct ring_buf *ring;' in source and 'struct k_spinlock lock;' in source
-       and 'char line[HOST_LINE_MAX];' in source,
+       and 'struct host_lines lines;' in source
+       and 'char line[HOST_LINE_MAX];' in lines_h,
        'a source owns its ring, its lock and its line buffer - two wires '
        'never share one')
     ok('uart' not in c and 'DT_NODELABEL' not in c
@@ -963,8 +981,8 @@ def without_host_link():
     kc = read('Kconfig').split('config NEXUS_HOST_LINK\n')[1].split('\nconfig ')[0]
     ok('default n' in kc, 'the host link is off unless a config turns it on')
     cm = read('CMakeLists.txt')
-    for f in ('src/host/host_link.c', 'src/host/host_link_usb.c',
-              'src/ui/host_screen.c'):
+    for f in ('src/host/host_link.c', 'src/host/host_lines.c',
+              'src/host/host_link_usb.c', 'src/ui/host_screen.c'):
         ok('zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK %s)' % f in cm,
            '%s is only compiled with it' % f)
 
@@ -1010,7 +1028,9 @@ def main():
 
     protocol(text_max)
     link_source(c, read('src', 'host', 'host_link_usb.c'),
-                read('src', 'host', 'host_priv.h'), read('Kconfig'))
+                read('src', 'host', 'host_priv.h'),
+                read('src', 'host', 'host_lines.c'),
+                read('src', 'host', 'host_lines.h'), read('Kconfig'))
     screen(s, read('src', 'status', 'zmk_events.c'))
     layout(s)
     home_plate()

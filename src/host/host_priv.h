@@ -15,9 +15,7 @@
 #include <zephyr/spinlock.h>
 #include <zephyr/sys/ring_buffer.h>
 
-/* Longest line we will look at. Anything longer is truncated rather than
- * split, so a runaway host cannot desynchronise the parser. */
-#define HOST_LINE_MAX 72
+#include "host_lines.h"
 
 /* A ring holds a whole burst: a full update is under 150 bytes. */
 #define HOST_RING_SIZE 256
@@ -32,8 +30,7 @@ struct host_source {
 	/* For the ring's own indices, held for a memcpy. */
 	struct k_spinlock lock;
 	/* The line being assembled. Work queue only. */
-	char line[HOST_LINE_MAX];
-	uint8_t line_len;
+	struct host_lines lines;
 };
 
 #define HOST_SOURCE_DEFINE(name)                                               \

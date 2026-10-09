@@ -76,6 +76,7 @@ zephyr_library_sources_ifdef(CONFIG_NEXUS_TETRIS
 
 zephyr_library_sources_ifdef(CONFIG_NEXUS_BEHAVIOR_ACTION src/behaviors/behavior_nexus_action.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK src/host/host_link.c)
+zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK src/host/host_lines.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK src/host/host_link_usb.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK src/ui/host_screen.c)
 

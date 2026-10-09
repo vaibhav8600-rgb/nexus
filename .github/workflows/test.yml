@@ -37,6 +37,14 @@ jobs:
              tests/remote/test_remote_proto.c src/remote/remote_proto.c
           /tmp/test_remote
 
+      - name: Host link line assembler
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+             -fsanitize=address,undefined -fno-sanitize-recover=all \
+             -Isrc/host -o /tmp/test_host_lines \
+             tests/host/test_host_lines.c src/host/host_lines.c
+          /tmp/test_host_lines
+
       - name: Splash asset pipeline
         run: python3 tests/splash/test_png2c.py
 

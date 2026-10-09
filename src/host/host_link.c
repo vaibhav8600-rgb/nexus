@@ -317,12 +317,12 @@ void host_link_kick(void)
 	k_work_submit_to_queue(nexus_workq(), &g_parse);
 }
 
-/** Everything one source has waiting. @return whether a line was parsed. */
-static bool drain(struct host_source *src)
+/** Everything one source has waiting. @return how many lines it parsed. */
+static unsigned int drain(struct host_source *src)
 {
 	uint8_t chunk[32];
 	uint32_t got;
-	bool parsed = false;
+	unsigned int lines = 0;
 
 	do {
 		k_spinlock_key_t key = k_spin_lock(&src->lock);
@@ -330,32 +330,10 @@ static bool drain(struct host_source *src)
 		got = ring_buf_get(src->ring, chunk, sizeof(chunk));
 		k_spin_unlock(&src->lock, key);
 
-		for (uint32_t i = 0; i < got; i++) {
-			char c = (char)chunk[i];
-
-			if (c == '\r') {
-				continue;
-			}
-			if (c != '\n') {
-				/* Truncate rather than wrap: the tail of an
-				 * over-long line is dropped, the next line
-				 * still parses. */
-				if (src->line_len < HOST_LINE_MAX - 1) {
-					src->line[src->line_len++] = c;
-				}
-				continue;
-			}
-			if (src->line_len == 0) {
-				continue;
-			}
-			src->line[src->line_len] = '\0';
-			src->line_len = 0;
-			parse_line(src->line);
-			parsed = true;
-		}
+		lines += host_lines_feed(&src->lines, chunk, got, parse_line);
 	} while (got == sizeof(chunk));
 
-	return parsed;
+	return lines;
 }
 
 static void parse_work_fn(struct k_work *work)
