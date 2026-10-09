@@ -34,6 +34,17 @@ jobs:
             shield: nexus_dongle nexus_dongle_demo
             snippet: studio-rpc-usb-uart
             extra: -DCONFIG_NEXUS_REMOTE_INPUT=y
+          # The host link over its USB serial port, as a real config sets it
+          # up: Studio's port and the companion's side by side. The link
+          # needs a devicetree node the module does not ship, so CI supplies
+          # one. Until this entry, nothing in CI compiled src/host at all.
+          - name: nexus_dongle_host_usb
+            board: nice_nano@2.0.0//zmk
+            shield: nexus_dongle nexus_dongle_demo
+            snippet: studio-rpc-usb-uart
+            extra: >-
+              -DCONFIG_NEXUS_HOST_LINK=y
+              -DEXTRA_DTC_OVERLAY_FILE=${GITHUB_WORKSPACE}/nexus/.github/ci/host-cdc.overlay
           # Section 81: a peripheral build must not drag in the UI, the games
           # or the display stack. If NEXUS ever leaks into this one, the size
           # check below fails.
