@@ -173,11 +173,20 @@ second, instead of "it looked right on the bench". Keep it.
 ### The host link is one way, and off by default
 
 What only the PC knows - the time, its load, what it is playing - reaches the
-dongle over a second USB serial interface, as lines of text a companion
-writes. The dongle never writes back, so the companion cannot type or drive
-the keyboard, and a serial terminal is a debugger. The ISR moves bytes into a
-ring and posts work; lines are parsed on the display queue, and each field
-repaints only the card that shows it, only on the screen in front of you.
+dongle as lines of text a companion writes: over a second USB serial
+interface, or over a write-only GATT characteristic on the Bluetooth
+connection the host already has. The dongle never writes back, so the
+companion cannot type or drive the keyboard, and a serial terminal is a
+debugger. A transport - the UART interrupt, the Bluetooth RX thread - moves
+bytes into its own ring and posts work; lines are assembled and parsed on the
+display queue, and each field repaints only the card that shows it, only on
+the screen in front of you.
+
+With both transports built, the HOST screen describes the host being typed
+into: USB lines count while ZMK's endpoint is USB, Bluetooth lines - from the
+active profile's host alone - while it is Bluetooth, and a change of host
+forgets the last one's load and track. The core learns the endpoint from the
+status model, so `zmk_events.c` stays the only file that listens to ZMK.
 
 With `CONFIG_NEXUS_HOST_LINK=n`, the default, none of it is compiled: no
 serial interface, no HOST screen, no clock on the home plate. A host test holds
@@ -263,7 +272,7 @@ visual feature threatens anything above it, the visual feature loses.
 | `src/ui/` | Screens, widgets, theme. |
 | `src/games/` | Manager + Tetris, Snake and Breakout. |
 | `src/hal/` | Button, buzzer, backlight. |
-| `src/host/` | The host link: USB serial receive ring, line parser, the host model. Only with `CONFIG_NEXUS_HOST_LINK`. |
+| `src/host/` | The host link: the host model and line parser (`host_link.c`), bytes to lines in plain C (`host_lines.c`), and one file per transport - USB serial (`host_link_usb.c`), Bluetooth (`host_link_ble.c`). Only with `CONFIG_NEXUS_HOST_LINK`. |
 | `src/remote/` | Remote Input: the GATT service and pairing window, the packet decoder, the HID feeder, the pairing screen. Only with `CONFIG_NEXUS_REMOTE_INPUT`. |
 | `tools/nexus-host/` | The companions that feed it: PowerShell for Windows, Python for Linux and macOS, `install.cmd` / `uninstall.cmd`. |
 | `src/behaviors/` | `&nexus_action`. |

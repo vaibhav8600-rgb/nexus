@@ -1,7 +1,10 @@
 # Design: host link over Bluetooth
 
-Status: **proposed, waiting for approval.** No feature code is written yet.
-Branch `feature/host-link-ble`, cut from `main` at `805e464`.
+Status: **approved 2026-10-09 and implemented** on `feature/host-link-ble`,
+cut from `main` at `805e464`. Waiting for the hardware checklist in
+[host-link.md](../host-link.md#test-checklist-real-hardware). Open questions
+1 to 3 were answered as proposed. What changed while building it is under
+[Found while building](#found-while-building).
 
 ## What it does
 
@@ -205,6 +208,36 @@ most +3 KB flash and +512 B RAM. Real figures will come from CI.
 | Extra radio traffic disturbs typing or the halves | About 150 bytes a second on a link that is already open. Hardware item 13 checks it. |
 | A Kconfig dependency loop from the new symbols | The selects are the ones `NEXUS_HOST_LINK` has today, moved to a child symbol. CI builds all three combinations. |
 | The refactor changes USB behaviour | First commit is the split alone, with the host test's 151 checks and a USB CI build proving it. |
+
+## Found while building
+
+1. **The service is named `zz_nexus_host_svc`, to sort last.** Zephyr lays
+   static GATT services out in name order, so a service added in the middle
+   moves the handle of everything after it. `nexus_host_svc` would have
+   landed before `nexus_remote_svc` and moved Remote Input's handles, which
+   paired phones have cached. Last in the database, nothing existing moves.
+2. **A gap marker instead of a flag.** A dropped Bluetooth write has to make
+   the assembler skip the torn line. A flag beside the ring is read at the
+   wrong moment when a later write has already gone in: `C 1` + dropped +
+   `0` would read as CPU 10. A NUL put into the ring where the bytes are
+   missing is in the right place by construction. One byte of the ring is
+   kept free for it.
+3. **A source that stops being believed part-way through a line** skips the
+   rest of that line when it is believed again, so the tail of a title is
+   never read as a line of its own.
+4. **Changing profile while typing over USB is not a change of host.** The
+   pair compared is (endpoint, profile only when the endpoint is Bluetooth).
+5. **The companion writes 20 bytes at a time, always,** rather than asking
+   the link for its MTU: every link carries 20, a full update is eight
+   writes, and the dongle's ring takes a write whole or not at all.
+6. **The companion asks Windows' cache first** and the device once per run,
+   so looking for the dongle every 10 s puts nothing on the air.
+7. **`CryptographicBuffer` does not work from PowerShell 5.1** for
+   `WriteValueAsync`; `AsBuffer` does. Found by running the companion
+   against the dongle before any firmware existed, with the UUIDs pointed at
+   a service it already has.
+8. **CI first.** The host link was not compiled by CI, so the USB build was
+   added before the refactor, to give it something to be compared with.
 
 ## Open questions for Vaibhav
 
