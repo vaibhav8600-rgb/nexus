@@ -39,14 +39,25 @@ UNKNOWN = 0xFF
 U32_MAX = 0xFFFFFFFF
 
 
+class Source:
+    """struct host_source: one wire's ring and the line it is assembling."""
+
+    def __init__(self):
+        self.ring = bytearray()
+        self.line_buf = ''
+        self.skip = False
+        self.gapped = False
+
+
 class Host:
-    """Mirrors host_link.c: the ring, the line assembler, parse_line(), the
-    clock and the date. @c now stands in for k_uptime_get(), in seconds."""
+    """Mirrors host_link.c: the sources, the line assembler, parse_line(),
+    the clock and the date. @c now stands in for k_uptime_get(), in
+    seconds."""
 
     RING = 256
     LINE_MAX = 72
 
-    def __init__(self, text_max):
+    def __init__(self, text_max, ble_built=False):
         self.text_max = text_max
         self.link = False
         self.cpu = UNKNOWN
@@ -58,46 +69,86 @@ class Host:
         self.clock_at = 0
         self.day = U32_MAX
         self.now = 0
-        self.ring = bytearray()
-        self.line_buf = ''
-        self.skip = False
-        self.gapped = False
+        self.usb = Source()
+        self.ble = Source()
+        # CONFIG_NEXUS_HOST_LINK_BLE, and what the status model says.
+        self.ble_built = ble_built
+        self.endpoint = 'usb'
+        self.seen = (None, 0)
 
     # -- the wire
     def isr(self, data):
-        """uart_cb(): into the ring, dropping what does not fit."""
-        room = self.RING - len(self.ring)
-        self.ring += data[:room]
+        """uart_cb(): into the USB ring, dropping what does not fit."""
+        room = self.RING - len(self.usb.ring)
+        self.usb.ring += data[:room]
 
     def packet(self, data):
-        """host_source_put_whole(): a packet goes in whole or not at all,
-        and a dropped one leaves a single gap marker in its place."""
-        if self.RING - len(self.ring) > len(data):
-            self.ring += data
-            self.gapped = False
-        elif not self.gapped:
-            self.ring += b'\x00'
-            self.gapped = True
+        """host_source_put_whole(): a packet goes into the Bluetooth ring
+        whole or not at all, and a dropped one leaves a single gap marker in
+        its place."""
+        src = self.ble
+        if self.RING - len(src.ring) > len(data):
+            src.ring += data
+            src.gapped = False
+        elif not src.gapped:
+            src.ring += b'\x00'
+            src.gapped = True
 
-    def work(self):
-        """parse_work_fn(): drain the ring, assemble, parse."""
-        data, self.ring = bytes(self.ring), bytearray()
+    def feed(self, src, data):
+        """host_lines_feed()."""
         for b in data:
             c = chr(b)
             if b == 0:                  # HOST_LINES_GAP: bytes went missing
-                self.line_buf, self.skip = '', True
+                src.line_buf, src.skip = '', True
                 continue
             if c == '\n':
-                if self.skip:
-                    self.skip = False
-                elif self.line_buf:
-                    line, self.line_buf = self.line_buf, ''
+                if src.skip:
+                    src.skip = False
+                elif src.line_buf:
+                    line, src.line_buf = src.line_buf, ''
                     self.line(line)
                 continue
-            if self.skip or c == '\r':
+            if src.skip or c == '\r':
                 continue
-            if len(self.line_buf) < self.LINE_MAX - 1:
-                self.line_buf += c
+            if len(src.line_buf) < self.LINE_MAX - 1:
+                src.line_buf += c
+
+    def discard(self, src, data):
+        """host_lines_discard()."""
+        if data:
+            src.skip = data[-1:] != b'\n'
+        elif src.line_buf:
+            src.skip = True
+        src.line_buf = ''
+
+    def drain(self, src, listen):
+        data, src.ring = bytes(src.ring), bytearray()
+        (self.feed if listen else self.discard)(src, data)
+
+    def believed(self, wire):
+        """believed(): with one way in, always; with two, the endpoint's."""
+        return not self.ble_built or self.endpoint == wire
+
+    def work(self):
+        """parse_work_fn(): drain each source, assemble, parse."""
+        self.drain(self.usb, self.believed('usb'))
+        self.drain(self.ble, self.believed('ble'))
+
+    def status(self, endpoint, profile=0, connected=True):
+        """on_status(): NEXUS_STATUS_ENDPOINT fired with this state."""
+        self.endpoint = endpoint
+        if not self.ble_built:
+            return
+        if not connected:
+            self.drain(self.ble, False)
+            self.ble.line_buf, self.ble.skip = '', False
+        pair = (endpoint, profile if endpoint == 'ble' else 0)
+        if pair == self.seen:
+            return
+        self.seen = pair
+        self.drain(self.usb, False)
+        self.drain(self.ble, False)
+        self.line('X')
 
     # -- the model
     def num(self, s, cap):
@@ -386,11 +437,12 @@ def link_source(c, usb, priv, lines, lines_h, kconfig):
            and forbidden not in kick,
            'the ISR does not touch %s' % forbidden)
     work = body(c, 'static void parse_work_fn(struct k_work *work)\n{')
-    drain = body(c, 'static unsigned int drain(struct host_source *src)\n{')
+    drain = body(c, 'static __maybe_unused unsigned int drain('
+                    'struct host_source *src, bool listen)\n{')
     ok('ring_buf_get(src->ring' in drain and 'k_spin_lock(&src->lock)' in drain
-       and 'lines += drain(&host_usb);' in work,
+       and 'lines += drain(&host_usb, believed(NEXUS_ENDPOINT_USB));' in work,
        'the work item drains the ring under the same lock')
-    ok('host_lines_feed(&src->lines, chunk, got, parse_line)' in drain
+    ok('host_lines_feed(&src->lines, chunk, got,' in drain
        and 'if (l->len < HOST_LINE_MAX - 1)' in lines,
        'the line buffer cannot overrun - longer lines truncate')
     ok('#include <zephyr' not in lines and '#include <zephyr' not in lines_h
@@ -436,7 +488,11 @@ def link_source(c, usb, priv, lines, lines_h, kconfig):
     ok("c -= 'a' - 'A'" in c_fold and '> 90U' in c_fold,
        'the C folds case and drops what is outside the font')
     xs = c.split("case 'X':")[1].split('return;')[0]
-    ok('clock_sec' not in xs and 'g_host.day' not in xs,
+    forget = body(c, 'static void forget(void)\n{')
+    ok('forget();' in xs and 'clock_sec' not in xs + forget
+       and 'g_host.day' not in xs + forget
+       and all('g_host.%s' % f in forget
+               for f in ('cpu', 'mem', 'now_playing', 'artist', 'link')),
        'X leaves the clock and date alone')
 
     print('\nIt repaints what moved, and only when you are looking')
@@ -518,7 +574,8 @@ def screen(s, events):
     link_c = read('src', 'host', 'host_link.c')
     p_case = link_c.split("case 'P':")[1].split("case '")[0]
     ok('to_u32(val, 1)' in p_case and 'NEXUS_HOST_F_NP' in p_case
-       and 'g_host.paused = false;' in link_c.split("case 'X':")[1],
+       and 'forget();' in link_c.split("case 'X':")[1].split('return;')[0]
+       and 'g_host.paused = false;' in body(link_c, 'static void forget(void)\n{'),
        'P 1 plays, P 0 pauses, anything else is ignored; X clears it')
     st = Host(40)
     st.line('N SO WHAT')
@@ -749,7 +806,7 @@ def ble_source(text_max, c, ble, priv, kconfig, cmake):
     st = Host(text_max)
     st.packet(b'N ' + b'Z' * 240)       # 242 of 256: the title, unfinished
     st.packet(b'Y' * 10 + b'\nC 1')     # 14 bytes into 14 free: dropped
-    ok(len(st.ring) == 243 and st.ring[-1] == 0,
+    ok(len(st.ble.ring) == 243 and st.ble.ring[-1] == 0,
        'a packet that does not fit is dropped whole and leaves a gap marker '
        '- which always fits, a byte of the ring being kept for it')
     st.packet(b'5\nM 3')                # 5 bytes: fits behind the marker
@@ -766,7 +823,7 @@ def ble_source(text_max, c, ble, priv, kconfig, cmake):
     st.packet(b'N ' + b'Z' * 248)       # 250 of 256
     st.packet(b'A' * 10)
     st.packet(b'B' * 10)
-    ok(st.ring.count(0) == 1 and len(st.ring) == 251,
+    ok(st.ble.ring.count(0) == 1 and len(st.ble.ring) == 251,
        'a run of dropped packets leaves one marker, not one each')
 
     put = body(c, 'void host_source_put_whole(struct host_source *src, '
@@ -827,6 +884,142 @@ def ble_source(text_max, c, ble, priv, kconfig, cmake):
        'src/host/host_link_ble.c is only compiled with it')
     ok('DT_NODELABEL' not in ble and 'uart' not in ble,
        'and it needs no devicetree node and no serial port')
+
+
+def which_host(text_max, c):
+    print('\nTwo ways in: the host you are typing into')
+    st = Host(text_max, ble_built=True)
+    st.status('usb')
+    st.isr(b'C 11\nN FROM THE CABLE\n')
+    st.packet(b'C 99\nN OVER THE AIR\n')
+    st.work()
+    ok((st.cpu, st.now_playing) == (11, 'FROM THE CABLE'),
+       'keys going out over USB: USB lines count, Bluetooth lines do not')
+    st.status('ble', 1)
+    ok(st.cpu == UNKNOWN and st.now_playing == '' and not st.link,
+       'switching to a Bluetooth host forgets the other machine\'s load and '
+       'track at once, as X does')
+    st.isr(b'C 11\n')
+    st.packet(b'C 99\nN OVER THE AIR\n')
+    st.work()
+    ok((st.cpu, st.now_playing) == (99, 'OVER THE AIR'),
+       'keys going out over Bluetooth: Bluetooth lines count, USB lines do '
+       'not')
+
+    st = Host(text_max, ble_built=True)
+    st.status('ble', 0)
+    st.packet(b'T 48720\nD 20709\nC 37\nN SO WHAT\n')
+    st.work()
+    st.status('ble', 2)
+    ok(st.clock() != U32_MAX and st.today() == 20709,
+       'another profile: the clock and the date are kept')
+    ok(st.cpu == UNKNOWN and st.now_playing == '',
+       'but not the load or the track, which were the other host\'s')
+
+    st = Host(text_max, ble_built=True)
+    st.status('ble', 0)
+    st.packet(b'C 37\nN SO WHAT\n')
+    st.work()
+    st.status('ble', 0, connected=False)
+    st.status('ble', 0)
+    ok(st.cpu == 37 and st.now_playing == 'SO WHAT' and st.link,
+       'the same host dropping and coming back fires the same status flag '
+       'and clears nothing: a laptop waking up keeps its track')
+    st.status('usb')
+    st.status('usb', 3)
+    st.isr(b'C 20\n')
+    st.work()
+    st.status('usb', 4)
+    ok(st.cpu == 20,
+       'and changing Bluetooth profile while typing over USB is no change of '
+       'host at all')
+
+    st = Host(text_max, ble_built=True)
+    st.status('usb')
+    st.packet(b'C 55\nN STALE TITLE\nM 4')     # not listened to, in flight
+    st.status('ble', 0)
+    st.work()
+    ok(st.cpu == UNKNOWN and st.now_playing == '',
+       'what a source had in flight before the switch is thrown away, not '
+       'read as the new host\'s')
+    st.packet(b'2\nC 7\n')
+    st.work()
+    ok(st.mem == UNKNOWN and st.cpu == 7,
+       'and the tail of a line it was part-way through is not a line: '
+       '"M 4" + switch + "2" is neither M 42 nor anything else')
+
+    st = Host(text_max, ble_built=True)
+    st.status('ble', 0)
+    st.packet(b'N HALF A TI')
+    st.work()
+    st.status('ble', 0, connected=False)
+    st.status('ble', 0)
+    st.packet(b'C 8\n')
+    st.work()
+    ok(st.cpu == 8 and st.now_playing == '',
+       'a host that disconnects mid-line starts afresh when it is back: its '
+       'first line is read, the half is not joined to it')
+
+    st = Host(text_max)                 # no Bluetooth transport built
+    st.status('ble', 1)
+    st.isr(b'C 64\n')
+    st.work()
+    ok(st.cpu == 64,
+       'a build without the Bluetooth transport listens to USB whatever the '
+       'endpoint, exactly as before')
+
+    print('\nAnd the C that does it')
+    bel = body(c, 'static __maybe_unused bool believed('
+                  'enum nexus_endpoint wire)\n{')
+    ok('if (!IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE))' in bel
+       and 'return true;' in bel
+       and 'nexus_status_get()->endpoint == wire' in bel,
+       'believed() is the endpoint ZMK has selected - and always, with one '
+       'transport')
+    work = body(c, 'static void parse_work_fn(struct k_work *work)\n{')
+    ok('drain(&host_ble, believed(NEXUS_ENDPOINT_BLE))' in work,
+       'the parser asks it for each source')
+    drain = body(c, 'static __maybe_unused unsigned int drain('
+                    'struct host_source *src, bool listen)\n{')
+    ok('host_lines_discard(&src->lines, chunk, got)' in drain,
+       'a source that is not believed is still drained, so its ring never '
+       'fills with another machine\'s lines')
+    obs = body(c, 'static void on_status(const struct nexus_status *st, '
+                  'uint32_t changed)\n{')
+    ok('if (!(changed & NEXUS_STATUS_ENDPOINT))' in obs,
+       'the switch is seen through the status model')
+    ok('st->endpoint == via && now == profile' in obs
+       and "st->endpoint == NEXUS_ENDPOINT_BLE ? st->bt_profile : 0" in obs,
+       'by comparing the (endpoint, profile) pair with the last one seen')
+    ok(obs.index('return;\n\t}\n\tvia = st->endpoint;') < obs.index('forget();')
+       and 'drain(&host_ble, false);' in obs
+       and 'drain(&host_usb, false);' in obs,
+       'and only a real change forgets and throws away what was in flight')
+    ok('host_lines_reset(&host_ble.lines);' in obs.split('via = ')[0]
+       and '!st->bt_connected' in obs,
+       'a Bluetooth host that is gone has its half line reset')
+    ok('zmk/events' not in c and '#include <zmk' not in c,
+       'the core still knows nothing of ZMK: zmk_events.c is the only file '
+       'that listens to it')
+    init = body(c, 'int nexus_host_link_init(void)\n{')
+    ok('nexus_status_subscribe(on_status)' in init
+       and init.index('CONFIG_NEXUS_HOST_LINK_BLE')
+       < init.index('nexus_status_subscribe'),
+       'the observer is registered only when the Bluetooth transport is '
+       'built')
+    ok('k_spin_lock' not in obs and 'k_mutex' not in obs,
+       'and needs no lock of its own: observers run on the work queue the '
+       'parser runs on')
+    status_c = read('src', 'status', 'status.c')
+    slots = int(re.search(r'#define NEXUS_STATUS_MAX_OBS (\d+)',
+                          status_c).group(1))
+    users = sum(len(re.findall(r'nexus_status_subscribe\(', read(*f)))
+                for f in (('src', 'host', 'host_link.c'),
+                          ('src', 'remote', 'remote.c'),
+                          ('src', 'ui', 'home.c')))
+    ok(users == 3 and users <= slots,
+       'three observers at most - Remote Input, the home screen, this - of '
+       'the %d slots' % slots)
 
 
 def companions():
@@ -1103,7 +1296,7 @@ def without_host_link():
     init = body(read('src', 'host', 'host_link.c'),
                 'int nexus_host_link_init(void)\n{')
     ok('#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)' in init
-       and 'return 0;' in init,
+       and 'int ret = 0;' in init and 'return ret;' in init,
        'and with it off nothing calls into that file')
 
     only_there = re.compile(
@@ -1147,6 +1340,7 @@ def main():
     text_max = int(re.search(r'#define NEXUS_HOST_TEXT (\d+)', h).group(1))
 
     protocol(text_max)
+    which_host(text_max, c)
     ble_source(text_max, c, read('src', 'host', 'host_link_ble.c'),
                read('src', 'host', 'host_priv.h'), read('Kconfig'),
                read('CMakeLists.txt'))

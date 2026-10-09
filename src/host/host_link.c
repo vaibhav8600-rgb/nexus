@@ -15,6 +15,7 @@
 
 #include <nexus/host.h>
 #include <nexus/screen.h>
+#include <nexus/status.h>
 #include <zephyr/kernel.h>
 #include <zephyr/spinlock.h>
 #include <zephyr/sys/ring_buffer.h>
@@ -147,6 +148,25 @@ static void fold(char *dst, const char *src, size_t max)
 }
 
 /*
+ * Forget what a companion said about the machine it runs on: its load, its
+ * track, and that it was there at all.
+ *
+ * Not the clock or the date: those stay true for as long as the dongle keeps
+ * power, which is what lets the companion be something that ran once this
+ * morning rather than something that must be running all day.
+ */
+static void forget(void)
+{
+	g_host.cpu = NEXUS_HOST_UNKNOWN;
+	g_host.mem = NEXUS_HOST_UNKNOWN;
+	g_host.now_playing[0] = '\0';
+	g_host.artist[0] = '\0';
+	g_host.paused = false;
+	g_host.link = false;
+	nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
+}
+
+/*
  * One line. The first character is the field; anything after a single space
  * is its value. Unknown fields are ignored rather than rejected, so a newer
  * companion talking to older firmware degrades instead of failing.
@@ -276,19 +296,8 @@ static void parse_line(const char *line)
 	}
 	case 'X':
 		/* The companion is going away and says so, rather than leaving
-		 * numbers on screen that stopped being true when it quit.
-		 *
-		 * Not the clock or the date: those stay true for as long as
-		 * the dongle keeps power, which is what lets the companion be
-		 * something that ran once this morning rather than something
-		 * that must be running all day. */
-		g_host.cpu = NEXUS_HOST_UNKNOWN;
-		g_host.mem = NEXUS_HOST_UNKNOWN;
-		g_host.now_playing[0] = '\0';
-		g_host.artist[0] = '\0';
-		g_host.paused = false;
-		g_host.link = false;
-		nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
+		 * numbers on screen that stopped being true when it quit. */
+		forget();
 		return;
 	default:
 		return;
@@ -336,8 +345,17 @@ void host_link_kick(void)
 	k_work_submit_to_queue(nexus_workq(), &g_parse);
 }
 
-/** Everything one source has waiting. @return how many lines it parsed. */
-static unsigned int drain(struct host_source *src)
+/*
+ * Everything one source has waiting: read as lines if @p listen, thrown away
+ * if not - and thrown away in a way that leaves the line it was part-way
+ * through unread when listening starts again.
+ *
+ * @return how many lines it parsed.
+ *
+ * __maybe_unused, here and on believed(): a build with neither transport
+ * still has the HOST screen, and nothing in it to drain.
+ */
+static __maybe_unused unsigned int drain(struct host_source *src, bool listen)
 {
 	uint8_t chunk[32];
 	uint32_t got;
@@ -349,11 +367,86 @@ static unsigned int drain(struct host_source *src)
 		got = ring_buf_get(src->ring, chunk, sizeof(chunk));
 		k_spin_unlock(&src->lock, key);
 
-		lines += host_lines_feed(&src->lines, chunk, got, parse_line);
+		if (listen) {
+			lines += host_lines_feed(&src->lines, chunk, got,
+						 parse_line);
+		} else {
+			host_lines_discard(&src->lines, chunk, got);
+		}
 	} while (got == sizeof(chunk));
 
 	return lines;
 }
+
+/*
+ * With two ways in, the HOST screen describes the host being typed into:
+ * lines from USB count while ZMK sends keys over USB, lines from Bluetooth
+ * while it sends them over Bluetooth. The dongle can be in one machine's USB
+ * port and typing into another over the air, each running a companion, and
+ * believing whichever spoke last would put two machines' numbers on one
+ * screen by turns.
+ *
+ * The endpoint is the one ZMK has selected, not the one preferred: on a
+ * charger, with the output still set to USB, that is Bluetooth.
+ *
+ * With one way in there is nobody to prefer it over, and a build without the
+ * Bluetooth transport listens to USB whatever the endpoint - as it always
+ * has.
+ */
+static __maybe_unused bool believed(enum nexus_endpoint wire)
+{
+	if (!IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)) {
+		return true;
+	}
+	return nexus_status_get()->endpoint == wire;
+}
+
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
+/*
+ * The host being typed into changed - another endpoint, or another
+ * Bluetooth profile - so what the screen says about "the host" is about the
+ * wrong machine. Forget it, as X would, and throw away what the old one had
+ * in flight.
+ *
+ * NEXUS_STATUS_ENDPOINT also fires when the same host merely drops or comes
+ * back, so the pair is compared with the last one seen: a laptop waking from
+ * sleep must not blank a track it is about to send again anyway.
+ *
+ * On the NEXUS work queue, like the parser, so neither can see the other
+ * half-done.
+ */
+static void on_status(const struct nexus_status *st, uint32_t changed)
+{
+	static enum nexus_endpoint via;
+	static uint8_t profile;
+
+	if (!(changed & NEXUS_STATUS_ENDPOINT)) {
+		return;
+	}
+
+	if (!st->bt_connected) {
+		/* That host is gone, and whatever it was in the middle of
+		 * saying with it. When it is back it starts a line afresh. */
+		drain(&host_ble, false);
+		host_lines_reset(&host_ble.lines);
+	}
+
+	/* Which Bluetooth host only matters while keys go to one. */
+	uint8_t now = st->endpoint == NEXUS_ENDPOINT_BLE ? st->bt_profile : 0;
+
+	if (st->endpoint == via && now == profile) {
+		return;
+	}
+	via = st->endpoint;
+	profile = now;
+
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
+	drain(&host_usb, false);
+#endif
+	drain(&host_ble, false);
+	forget();
+}
+#endif
 
 static void parse_work_fn(struct k_work *work)
 {
@@ -362,10 +455,10 @@ static void parse_work_fn(struct k_work *work)
 	unsigned int lines = 0;
 
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
-	lines += drain(&host_usb);
+	lines += drain(&host_usb, believed(NEXUS_ENDPOINT_USB));
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
-	lines += drain(&host_ble);
+	lines += drain(&host_ble, believed(NEXUS_ENDPOINT_BLE));
 #endif
 	if (lines == 0) {
 		return;
@@ -396,9 +489,18 @@ int nexus_host_link_init(void)
 	/* With no transport built the HOST screen still has something true
 	 * to show - how long the host has been connected - so that is not an
 	 * error. */
-#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
-	return host_link_usb_init();
-#else
-	return 0;
+	int ret = 0;
+
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
+	/* Kept for good: the service is there from boot to power-off. */
+	ret = nexus_status_subscribe(on_status);
 #endif
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
+	int usb = host_link_usb_init();
+
+	if (usb) {
+		ret = usb;
+	}
+#endif
+	return ret;
 }

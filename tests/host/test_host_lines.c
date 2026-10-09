@@ -202,11 +202,26 @@ static void test_reset_and_discard(void)
 	host_lines_discard(&l, (const uint8_t *)"M 5\nN In ", 9);
 	CHECK(feed(&l, "C 4\nM 6\n") == 1 && !strcmp(g_log[0], "M 6"));
 
-	/* Discarding nothing changes nothing. */
+	/* Discarding nothing, between lines, changes nothing... */
 	clear();
-	CHECK(feed(&l, "C 7") == 0);
 	host_lines_discard(&l, NULL, 0);
-	CHECK(feed(&l, "7\n") == 1 && !strcmp(g_log[0], "C 77"));
+	CHECK(feed(&l, "C 7\n") == 1 && !strcmp(g_log[0], "C 7"));
+
+	/* ...but part-way through a line it gives that line up: "stop
+	 * reading here" with the tail still to come. "M 1" + [not read] +
+	 * "5\n" is not M 15, and "5" is not a line either. */
+	clear();
+	CHECK(feed(&l, "M 1") == 0);
+	host_lines_discard(&l, NULL, 0);
+	CHECK(feed(&l, "5\nC 9\n") == 1 && !strcmp(g_log[0], "C 9"));
+
+	/* And a skip already in force is not ended by it. */
+	static const uint8_t gap2[] = {HOST_LINES_GAP};
+
+	clear();
+	host_lines_feed(&l, gap2, sizeof(gap2), emit);
+	host_lines_discard(&l, NULL, 0);
+	CHECK(feed(&l, "tail\nP 0\n") == 1 && !strcmp(g_log[0], "P 0"));
 }
 
 int main(void)

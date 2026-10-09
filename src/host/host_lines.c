@@ -46,11 +46,12 @@ unsigned int host_lines_feed(struct host_lines *l, const uint8_t *buf, size_t n,
 
 void host_lines_discard(struct host_lines *l, const uint8_t *buf, size_t n)
 {
-	if (n == 0) {
-		return;
+	if (n > 0) {
+		l->skip = buf[n - 1] != '\n';
+	} else if (l->len > 0) {
+		l->skip = true;
 	}
 	l->len = 0;
-	l->skip = buf[n - 1] != '\n';
 }
 
 void host_lines_reset(struct host_lines *l)

@@ -47,13 +47,17 @@ unsigned int host_lines_feed(struct host_lines *l, const uint8_t *buf, size_t n,
 			     host_line_fn emit);
 
 /**
- * Take @p n bytes that are not going to be read: forget the line in
- * progress, and if they stop part-way through a line, skip the rest of it
- * when bytes are next fed.
+ * Take @p n bytes that are not going to be read - none is allowed, and means
+ * "nothing arrived, but stop reading here". The line in progress is
+ * forgotten, and if the stream is left part-way through a line, the rest of
+ * that line is skipped when bytes are next fed: its tail is not a line.
  */
 void host_lines_discard(struct host_lines *l, const uint8_t *buf, size_t n);
 
-/** Forget the line in progress. The next byte starts a new one. */
+/**
+ * Forget the line in progress. The next byte starts a new one: for a wire
+ * that has started again, not one that carries on mid-line.
+ */
 void host_lines_reset(struct host_lines *l);
 
 #endif /* NEXUS_HOST_LINES_H_ */
