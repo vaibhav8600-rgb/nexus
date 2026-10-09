@@ -52,7 +52,7 @@ struct nexus_host {
 	 * Wall-clock, as seconds since midnight local time, plus the uptime it
 	 * arrived at. The dongle has no RTC: this is the only real time it
 	 * will ever see, and between updates it counts with k_uptime_get(),
-	 * which drifts. The companion resends it every minute, so the drift
+	 * which drifts. The companion resends it every few seconds, so the drift
 	 * never accumulates past that.
 	 *
 	 * Seconds-since-midnight rather than a Unix epoch because the dongle

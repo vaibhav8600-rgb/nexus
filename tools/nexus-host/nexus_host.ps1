@@ -39,7 +39,14 @@ param(
 )
 
 $TEXT_MAX = 39          # NEXUS_HOST_TEXT - 1; the dongle truncates anyway
-$CLOCK_EVERY = 60       # seconds between clock resyncs
+# Seconds between clock resends. Ten, not sixty: the dongle forgets the time
+# whenever it loses power - moved to a charger, to another PC - and over
+# Bluetooth this script does not always see that happen, because Windows
+# holds a dead link open for several seconds and the dongle can be back
+# within them. The link is one way, so nothing can ask for the time again;
+# a minute without a clock looked like a host link that had stopped working.
+# The dongle draws minutes, so a resend inside the same one costs no repaint.
+$CLOCK_EVERY = 10
 $NP_EVERY = 10          # seconds between resends of the track, changed or not
 
 # The host link's Bluetooth service (docs/host-link.md): one characteristic,

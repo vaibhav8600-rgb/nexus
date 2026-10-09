@@ -38,7 +38,10 @@ except ImportError:
     psutil = None
 
 TEXT_MAX = 39          # NEXUS_HOST_TEXT - 1, the dongle truncates anyway
-CLOCK_EVERY = 60       # seconds between clock resyncs
+# Seconds between clock resends. Ten, not sixty: a dongle that has lost power
+# has no clock, and nothing can ask for one over a one-way link. The dongle
+# draws minutes, so a resend inside the same one costs no repaint.
+CLOCK_EVERY = 10
 NP_EVERY = 10          # seconds between resends of the track, changed or not
 ZMK_VID = 0x1D50
 EPOCH = datetime.date(1970, 1, 1)

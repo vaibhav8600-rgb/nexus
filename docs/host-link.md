@@ -246,9 +246,11 @@ nice!nano dongle with both transports and Remote Input built in).
 - [x] Laptop sleeps and wakes: dashes after the stale time, then it recovers
       without restarting the companion.
 - [ ] Bluetooth, then the dongle moved to USB, then back to a charger: the
-      data returns over Bluetooth by itself. (Failed on 2026-10-09 - the
-      companion had to be restarted - and was fixed in the companion the
-      same day; to be run again.)
+      data returns over Bluetooth by itself, the time within ten seconds.
+      (On 2026-10-09 the time took up to a minute, which read as no data
+      until the companion was restarted or the output toggled: the clock was
+      resent once a minute and the dongle had just lost it with its power.
+      The companion now resends it every ten seconds; to be run again.)
 - [x] After a reflash, Windows finds the new service with no re-pair.
 - [ ] Reflash the dongle while the new companion runs: it finds the dongle
       again by itself.
@@ -329,8 +331,10 @@ only how it is drawn -- the companion sends the same seconds-since-midnight
 either way, so changing it needs nothing on the host.
 
 Between updates the dongle counts forward with its kernel uptime, which drifts.
-The companion resends `T` and `D` every minute, so the drift never
-accumulates past that. Seconds are not displayed, on purpose: a seconds digit would repaint that
+The companion resends `T` and `D` every ten seconds, so the drift never
+accumulates past that - and a dongle that has just lost power, and with it
+the time, has it back within those ten seconds. Nothing can ask for it: the
+link is one way. Seconds are not displayed, on purpose: a seconds digit would repaint that
 card once a second forever, which is exactly what a screen sitting idle on a
 desk must not do.
 

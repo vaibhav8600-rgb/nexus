@@ -1162,6 +1162,10 @@ def companions():
        'and P, from the session\'s own playback status, resent when it '
        'changes')
     ok("'X'" in ps, 'says X on the way out')
+    ok(re.search(r'^\$CLOCK_EVERY = 10$', ps, re.M) is not None
+       and nh.CLOCK_EVERY == 10,
+       'the clock is resent every 10 s by both companions: a dongle that '
+       'lost power has no time, and a one-way link cannot ask for it')
     ok('$np -ne $lastNp -or ((Get-Date) - $lastNpAt).TotalSeconds -ge $NP_EVERY'
        in ps and '$NP_EVERY = 10 ' in ps,
        'and resent every 10 s whether it changed or not, as the Python one '

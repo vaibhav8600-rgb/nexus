@@ -290,6 +290,13 @@ Bluetooth-only build uses 2,408 B less RAM than the USB one.
     loss; the service is now disposed with the device, and one opened and not
     kept is closed on the spot.
 
+13. **The clock is resent every 10 s, not every 60.** The dongle loses the
+    time with its power, and moved to a charger it can be back on the same
+    Bluetooth link before Windows has noticed the link died - so the
+    companion sees no reconnect and does not resend. For up to a minute HOST
+    had no time or date, which on the bench read as "no host data until the
+    companion is restarted or the output toggled".
+
 ## Open questions for Vaibhav
 
 1. **Old companion with the BLE transport on.** With `HOST_LINK_BLE=y`, an
