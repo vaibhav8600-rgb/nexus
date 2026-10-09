@@ -234,12 +234,15 @@ repo, before any merge.
 
 ## Baseline (main)
 
-Filled in from CI run on this branch's first commit, which changes no
-firmware.
+From CI on this branch at `c53d780`, which changes no firmware. Flash and RAM
+are the linker's own figures for the two memory regions.
 
-| Build | text | data | bss | flash | RAM |
+| Build | text | data | bss | Flash used | RAM used |
 | --- | --- | --- | --- | --- | --- |
-| `nexus_dongle` | | | | | |
-| `nexus_dongle_no_studio` | | | | | |
-| `nexus_dongle_remote` | | | | | |
-| `settings_reset` | | | | | |
+| `nexus_dongle` | 334,856 | 32,298 | 87,502 | 367,168 B (45.27%) | 93,194 B (35.55%) |
+| `nexus_dongle_no_studio` | 326,880 | 30,324 | 80,820 | 357,212 B (44.05%) | 85,946 B (32.79%) |
+| `nexus_dongle_remote` | 347,328 | 34,875 | 92,621 | 382,208 B (47.13%) | 99,302 B (37.88%) |
+| `settings_reset` | 49,008 | 3,485 | 12,150 | 52,508 B (6.47%) | 12,840 B (4.90%) |
+
+None of these builds turns the host link on, so each must come out
+byte-identical at the end of this work.
