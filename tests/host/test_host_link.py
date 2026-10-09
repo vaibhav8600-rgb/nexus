@@ -345,23 +345,41 @@ def protocol(text_max):
        'power, so a companion that ran once this morning is enough for them')
 
 
-def link_source(c, kconfig):
+def link_source(c, usb, priv, kconfig):
     print('\nWhat the C actually does')
-    isr = body(c, 'static void uart_cb(const struct device *dev, '
-                  'void *user_data)')
-    ok('ring_buf_put(&g_rx_ring' in isr and 'k_spin_lock(&g_rx_lock)' in isr
-       and 'k_work_submit_to_queue' in isr,
+    isr = body(usb, 'static void uart_cb(const struct device *dev, '
+                    'void *user_data)')
+    put = body(c, 'void host_source_put(struct host_source *src, '
+                  'const uint8_t *buf, uint32_t len)\n{')
+    kick = body(c, 'void host_link_kick(void)\n{')
+    ok('host_source_put(&host_usb' in isr and 'host_link_kick()' in isr
+       and 'ring_buf_put(src->ring' in put
+       and 'k_spin_lock(&src->lock)' in put
+       and 'k_work_submit_to_queue' in kick,
        'the ISR moves bytes into the ring, under its lock, and posts the work')
     for forbidden in ('nexus_screen_invalidate', 'parse_line', 'LOG_',
                       'g_line'):
-        ok(forbidden not in isr, 'the ISR does not touch %s' % forbidden)
+        ok(forbidden not in isr and forbidden not in put
+           and forbidden not in kick,
+           'the ISR does not touch %s' % forbidden)
     work = body(c, 'static void parse_work_fn(struct k_work *work)\n{')
-    ok('ring_buf_get(&g_rx_ring' in work and 'k_spin_lock(&g_rx_lock)' in work,
+    drain = body(c, 'static bool drain(struct host_source *src)\n{')
+    ok('ring_buf_get(src->ring' in drain and 'k_spin_lock(&src->lock)' in drain
+       and 'drain(&host_usb)' in work,
        'the work item drains the ring under the same lock')
-    ok('if (g_line_len < LINE_MAX - 1)' in work,
+    ok('if (src->line_len < HOST_LINE_MAX - 1)' in drain,
        'the line buffer cannot overrun - longer lines truncate')
     ok('g_line_ready' not in c and 'atomic' not in c,
        'and the drop-if-busy handoff is gone entirely')
+    source = priv.split('struct host_source {')[1].split('\n};')[0]
+    ok('struct ring_buf *ring;' in source and 'struct k_spinlock lock;' in source
+       and 'char line[HOST_LINE_MAX];' in source,
+       'a source owns its ring, its lock and its line buffer - two wires '
+       'never share one')
+    ok('uart' not in c and 'DT_NODELABEL' not in c
+       and '#include "host_priv.h"' in usb,
+       'the core knows nothing about the wire: the UART is the USB '
+       "transport's alone")
     kc = kconfig.split('config NEXUS_HOST_LINK\n')[1].split('\nconfig ')[0]
     ok('select RING_BUFFER' in kc, 'Kconfig selects the ring buffer it uses')
     to_u32 = body(c, 'static uint32_t to_u32(const char *s, uint32_t max)')
@@ -373,8 +391,8 @@ def link_source(c, kconfig):
     ok('g_host.link = false;' in body(c, 'static void stale_work_fn('
                                          'struct k_work *work)\n{'),
        'and running out drops the link')
-    ok('uart_irq_rx_enable' in c and 'uart_tx' not in c and
-       'uart_poll_out' not in c,
+    ok('uart_irq_rx_enable' in usb and 'uart_tx' not in usb + c and
+       'uart_poll_out' not in usb + c,
        'receive only - the dongle has no way to talk back')
 
     c_fold = c.split('static void fold')[1].split('\n}\n')[0]
@@ -945,7 +963,8 @@ def without_host_link():
     kc = read('Kconfig').split('config NEXUS_HOST_LINK\n')[1].split('\nconfig ')[0]
     ok('default n' in kc, 'the host link is off unless a config turns it on')
     cm = read('CMakeLists.txt')
-    for f in ('src/host/host_link.c', 'src/ui/host_screen.c'):
+    for f in ('src/host/host_link.c', 'src/host/host_link_usb.c',
+              'src/ui/host_screen.c'):
         ok('zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK %s)' % f in cm,
            '%s is only compiled with it' % f)
 
@@ -959,7 +978,8 @@ def without_host_link():
         for name in files:
             rel = os.path.relpath(os.path.join(dirpath, name), ROOT)
             rel = rel.replace(os.sep, '/')
-            host_only = ('src/host/host_link.c', 'src/ui/host_screen.c')
+            host_only = ('src/host/host_link.c', 'src/host/host_link_usb.c',
+                         'src/ui/host_screen.c')
             if not name.endswith('.c') or rel in host_only:
                 continue
             stack = []           # per open #if: does it select the host link?
@@ -989,7 +1009,8 @@ def main():
     text_max = int(re.search(r'#define NEXUS_HOST_TEXT (\d+)', h).group(1))
 
     protocol(text_max)
-    link_source(c, read('Kconfig'))
+    link_source(c, read('src', 'host', 'host_link_usb.c'),
+                read('src', 'host', 'host_priv.h'), read('Kconfig'))
     screen(s, read('src', 'status', 'zmk_events.c'))
     layout(s)
     home_plate()

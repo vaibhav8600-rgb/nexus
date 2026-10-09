@@ -1,43 +1,27 @@
 /*
- * The companion link: a USB CDC serial the host writes lines to.
+ * The companion link: lines of text the host writes, and what they mean.
  *
- * A second serial interface rather than the one ZMK Studio already uses.
- * Studio's port carries its own protobuf RPC and Studio expects to own it;
- * sharing it would mean forking ZMK's RPC to carry unrelated traffic, and the
- * two would fight over the port whenever Studio was open. USB gives us as
- * many interfaces as the endpoints allow, and this costs one.
+ * This file is the part no wire knows about - the model, the parser, the
+ * staleness rule. How the bytes arrive is a transport's business
+ * (host_link_usb.c); each one copies them into its own source and posts the
+ * work below.
  *
- * Parsing happens on the NEXUS work queue, never in the UART interrupt. The
- * ISR does the least it can: move bytes into a ring buffer and post the work.
- * The work item assembles lines and parses them. Model updates and repaints
- * from an ISR would be a much worse bug than a few bytes of latency.
+ * Parsing happens on the NEXUS work queue, never where the bytes arrive. A
+ * transport does the least it can: move bytes into a ring buffer and post
+ * the work. The work item assembles lines and parses them. Model updates and
+ * repaints from an interrupt would be a much worse bug than a few bytes of
+ * latency.
  */
 
 #include <nexus/host.h>
 #include <nexus/screen.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
 #include <zephyr/spinlock.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <string.h>
 
 #include "../nexus_priv.h"
-
-LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
-
-#define LINK_NODE DT_NODELABEL(nexus_host_cdc)
-
-#if !DT_NODE_HAS_STATUS(LINK_NODE, okay)
-#error "CONFIG_NEXUS_HOST_LINK needs the nexus_host_cdc node enabled - see docs/host-link.md"
-#endif
-
-static const struct device *const g_uart = DEVICE_DT_GET(LINK_NODE);
-
-/* Longest line we will look at. Anything longer is truncated rather than
- * split, so a runaway host cannot desynchronise the parser. */
-#define LINE_MAX 72
+#include "host_priv.h"
 
 static struct nexus_host g_host = {
 	.cpu = NEXUS_HOST_UNKNOWN,
@@ -47,7 +31,7 @@ static struct nexus_host g_host = {
 };
 
 /*
- * Bytes, not lines, cross from the ISR to the work item.
+ * Bytes, not lines, cross from a transport to the work item.
  *
  * This used to hand over one finished line at a time and drop any line that
  * arrived before the work item had taken the last. The reasoning was that
@@ -58,18 +42,10 @@ static struct nexus_host g_host = {
  * before the work item can possibly have run. Every line after the first was
  * lost, every time.
  *
- * A ring holds a whole burst - a full update is under 150 bytes - and the line
- * buffer below is touched only by the work item, so there is nothing left to
- * race. The lock is for the ring's own indices, held for a memcpy.
+ * A source's ring holds a whole burst, and its line buffer is touched only by
+ * the work item, so there is nothing left to race. The lock is for the ring's
+ * own indices, held for a memcpy.
  */
-#define RX_RING_SIZE 256
-
-RING_BUF_DECLARE(g_rx_ring, RX_RING_SIZE);
-static struct k_spinlock g_rx_lock;
-
-static char g_line[LINE_MAX];
-static uint8_t g_line_len;
-
 static void parse_work_fn(struct k_work *work);
 static K_WORK_DEFINE(g_parse, parse_work_fn);
 
@@ -326,19 +302,33 @@ static void parse_line(const char *line)
 	}
 }
 
-static void parse_work_fn(struct k_work *work)
-{
-	ARG_UNUSED(work);
+/* ---- sources ------------------------------------------------------------ */
 
+void host_source_put(struct host_source *src, const uint8_t *buf, uint32_t len)
+{
+	k_spinlock_key_t key = k_spin_lock(&src->lock);
+
+	ring_buf_put(src->ring, buf, len);
+	k_spin_unlock(&src->lock, key);
+}
+
+void host_link_kick(void)
+{
+	k_work_submit_to_queue(nexus_workq(), &g_parse);
+}
+
+/** Everything one source has waiting. @return whether a line was parsed. */
+static bool drain(struct host_source *src)
+{
 	uint8_t chunk[32];
 	uint32_t got;
 	bool parsed = false;
 
 	do {
-		k_spinlock_key_t key = k_spin_lock(&g_rx_lock);
+		k_spinlock_key_t key = k_spin_lock(&src->lock);
 
-		got = ring_buf_get(&g_rx_ring, chunk, sizeof(chunk));
-		k_spin_unlock(&g_rx_lock, key);
+		got = ring_buf_get(src->ring, chunk, sizeof(chunk));
+		k_spin_unlock(&src->lock, key);
 
 		for (uint32_t i = 0; i < got; i++) {
 			char c = (char)chunk[i];
@@ -350,22 +340,29 @@ static void parse_work_fn(struct k_work *work)
 				/* Truncate rather than wrap: the tail of an
 				 * over-long line is dropped, the next line
 				 * still parses. */
-				if (g_line_len < LINE_MAX - 1) {
-					g_line[g_line_len++] = c;
+				if (src->line_len < HOST_LINE_MAX - 1) {
+					src->line[src->line_len++] = c;
 				}
 				continue;
 			}
-			if (g_line_len == 0) {
+			if (src->line_len == 0) {
 				continue;
 			}
-			g_line[g_line_len] = '\0';
-			g_line_len = 0;
-			parse_line(g_line);
+			src->line[src->line_len] = '\0';
+			src->line_len = 0;
+			parse_line(src->line);
 			parsed = true;
 		}
 	} while (got == sizeof(chunk));
 
-	if (!parsed) {
+	return parsed;
+}
+
+static void parse_work_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	if (!drain(&host_usb)) {
 		return;
 	}
 
@@ -389,61 +386,7 @@ static void stale_work_fn(struct k_work *work)
 	nexus_host_screen_dirty(NEXUS_HOST_F_LINK);
 }
 
-/* ---- the wire ----------------------------------------------------------- */
-
-static void uart_cb(const struct device *dev, void *user_data)
-{
-	ARG_UNUSED(user_data);
-
-	if (!uart_irq_update(dev)) {
-		return;
-	}
-
-	bool any = false;
-
-	while (uart_irq_rx_ready(dev)) {
-		uint8_t buf[16];
-		int n = uart_fifo_read(dev, buf, sizeof(buf));
-
-		if (n <= 0) {
-			break;
-		}
-
-		/*
-		 * The FIFO must be drained whether or not the ring has room,
-		 * or the interrupt stays asserted and fires forever. So a
-		 * full ring drops what does not fit - which takes a host
-		 * sending 256 bytes faster than the work queue runs. The
-		 * torn line that leaves is rejected whole by to_u32(), not
-		 * misread as a number.
-		 */
-		k_spinlock_key_t key = k_spin_lock(&g_rx_lock);
-
-		ring_buf_put(&g_rx_ring, buf, (uint32_t)n);
-		k_spin_unlock(&g_rx_lock, key);
-		any = true;
-	}
-
-	if (any) {
-		k_work_submit_to_queue(nexus_workq(), &g_parse);
-	}
-}
-
 int nexus_host_link_init(void)
 {
-	if (!device_is_ready(g_uart)) {
-		LOG_WRN("host link: %s not ready", g_uart->name);
-		return -ENODEV;
-	}
-
-	int ret = uart_irq_callback_user_data_set(g_uart, uart_cb, NULL);
-
-	if (ret) {
-		LOG_WRN("host link: no interrupt-driven UART (%d)", ret);
-		return ret;
-	}
-
-	uart_irq_rx_enable(g_uart);
-	LOG_INF("host link ready on %s", g_uart->name);
-	return 0;
+	return host_link_usb_init();
 }
