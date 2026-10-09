@@ -245,9 +245,24 @@ try {
     Write-Warning "now playing unavailable: $($_.Exception.Message)"
 }
 
+function Get-Reason($err) {
+    <#  What actually went wrong, in its own words. PowerShell wraps a .NET
+        failure in 'Exception calling "WriteLine" with "1" argument(s): ...'
+        and a task's in "One or more errors occurred", and the one sentence
+        worth reading - "The port is closed." - is at the bottom of the pile. #>
+    $e = $err.Exception
+    while ($e.InnerException) { $e = $e.InnerException }
+    $e.Message
+}
+
 function Wait-WinRt($operation, $type, $ms = 2000) {
     $task = $script:asTask.MakeGenericMethod($type).Invoke($null, @($operation))
-    if (-not $task.Wait($ms)) { throw 'WinRT call timed out' }
+    try {
+        $done = $task.Wait($ms)
+    } catch {
+        throw (Get-Reason $_)
+    }
+    if (-not $done) { throw 'no answer in time' }
     $task.Result
 }
 
@@ -274,6 +289,9 @@ if ($script:asTask) {
 
 # Devices already asked over the air this run. See Find-BleLink.
 $script:bleAsked = @{}
+# The service was there and Windows would not hand it over. See
+# Get-BleCharacteristic.
+$script:bleBusy = $false
 
 function Get-BleConnected {
     <#  Every Bluetooth LE device Windows is connected to right now. #>
@@ -288,7 +306,14 @@ function Get-BleConnected {
 function Get-BleCharacteristic($dev, [string]$mode) {
     <#  The host link's characteristic on $dev, or nothing. $mode is Cached -
         what Windows remembers, no radio - or Uncached, which asks the
-        device. #>
+        device.
+
+        Windows gives a Bluetooth service to one program at a time, as it
+        does a serial port: with a companion already running, the service is
+        found and its characteristic is AccessDenied. That is a different
+        answer from "this firmware has no such service", and reporting the
+        one as the other sends you off to re-pair a dongle that is working -
+        so it is remembered in $script:bleBusy for whoever asked. #>
     $gatt = 'Windows.Devices.Bluetooth.GenericAttributeProfile'
     $cache = [Windows.Devices.Bluetooth.BluetoothCacheMode]::$mode
     $svcs = Wait-WinRt ($dev.GetGattServicesForUuidAsync($BLE_SERVICE, $cache)) `
@@ -296,6 +321,7 @@ function Get-BleCharacteristic($dev, [string]$mode) {
     if ("$($svcs.Status)" -ne 'Success' -or $svcs.Services.Count -eq 0) { return }
     $chars = Wait-WinRt ($svcs.Services[0].GetCharacteristicsForUuidAsync($BLE_RX, $cache)) `
         ([type]"$gatt.GattCharacteristicsResult") 8000
+    if ("$($chars.Status)" -eq 'AccessDenied') { $script:bleBusy = $true }
     if ("$($chars.Status)" -ne 'Success' -or $chars.Characteristics.Count -eq 0) { return }
     $chars.Characteristics[0]
 }
@@ -310,6 +336,7 @@ function Find-BleLink {
         a dongle reflashed since then has one more - so each device is also
         asked over the air, once per run. #>
     if (-not $script:bleReady) { return }
+    $script:bleBusy = $false
     foreach ($d in Get-BleConnected) {
         $dev = $null
         $rx = $null
@@ -347,7 +374,9 @@ function Send-BleLines($link, $lines) {
         # WriteValueAsync overload that takes it.
         $buf = [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::AsBuffer($part)
         $result = Wait-WinRt ($link.Rx.WriteValueAsync($buf, $option)) $status
-        if ("$result" -ne 'Success') { throw "write: $result" }
+        # Unreachable is the ordinary one: the dongle was unplugged, reset,
+        # or this PC is on its way to sleep.
+        if ("$result" -ne 'Success') { throw "the dongle did not take the write ($result)" }
     }
 }
 
@@ -420,6 +449,7 @@ if ($List) {
         foreach ($d in Get-BleConnected) {
             $any = $true
             $has = $false
+            $script:bleBusy = $false
             try {
                 $le = [Windows.Devices.Bluetooth.BluetoothLEDevice]
                 $dev = Wait-WinRt ($le::FromIdAsync($d.Id)) $le 5000
@@ -429,6 +459,7 @@ if ($List) {
                 }
             } catch {}
             $what = if ($has) { 'host link service <- the companion uses this' }
+                    elseif ($script:bleBusy) { 'host link service, in use (a companion is already running)' }
                     else { 'no host link service' }
             Write-Output "  $($d.Name): $what"
         }
@@ -474,7 +505,11 @@ try {
     $fresh = $false
 
     if ($useUsb -and $open.Count -eq 0 -and (Get-Date) -ge $nextUsb) {
-        $nextUsb = (Get-Date).AddSeconds(3)
+        # Every 3 s while there is nothing at all, so a replugged dongle is
+        # picked up quickly. While Bluetooth is carrying the data there is no
+        # hurry, and asking Windows for its serial ports is not free: every
+        # $BLE_RESCAN seconds, the same as the other way round.
+        $nextUsb = (Get-Date).AddSeconds($(if ($ble) { $BLE_RESCAN } else { 3 }))
         # The host link port only - never Studio's. See Get-HostLinkPort.
         $targets = if ($Port) { @($Port) } else { @(Get-HostLinkPort) }
         foreach ($name in $targets) {
@@ -495,7 +530,7 @@ try {
                 # and "Access is denied" here almost always means another
                 # copy of this script already has the port.
                 if (-not $script:moaned[$name]) {
-                    Write-Warning "$name : $($_.Exception.Message)"
+                    Write-Warning "$name : $(Get-Reason $_)"
                     $script:moaned[$name] = $true
                 }
             }
@@ -522,6 +557,9 @@ try {
             if ($useUsb -and -not $Port -and @(Get-NexusPorts).Count -gt 0) {
                 Write-Output ('dongle found, but no free host link port - ' +
                               'is another copy running? (-List shows the ports)')
+            } elseif ($script:bleBusy) {
+                Write-Output ('dongle found over Bluetooth, but its host link service ' +
+                              'is in use - is another copy running?')
             } else {
                 Write-Output 'waiting for the dongle'
             }
@@ -595,7 +633,7 @@ try {
                 $open[$name].WriteLine($line)
                 Write-Verbose "$name > $line"
             } catch {
-                Write-Warning "$name lost: $($_.Exception.Message)"
+                Write-Warning "$name lost: $(Get-Reason $_)"
                 try { $open[$name].Close() } catch {}
                 $open.Remove($name)
                 break
@@ -610,7 +648,7 @@ try {
             Send-BleLines $ble $lines
             Write-Verbose "bluetooth > $($lines -join ' | ')"
         } catch {
-            Write-Warning "bluetooth $($ble.Name) lost: $($_.Exception.Message)"
+            Write-Warning "bluetooth $($ble.Name) lost: $(Get-Reason $_)"
             Close-BleLink $ble
             $ble = $null
             # Look again at the next rescan, not at once: a PC going to

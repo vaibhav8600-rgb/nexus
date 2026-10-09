@@ -1007,6 +1007,16 @@ def which_host(text_max, c):
        < init.index('nexus_status_subscribe'),
        'the observer is registered only when the Bluetooth transport is '
        'built')
+    kick = body(c, 'void host_link_kick(void)\n{')
+    ok('if (!g_queue_up) {\n\t\treturn;' in kick
+       and kick.index('g_queue_up') < kick.index('k_work_submit_to_queue')
+       and obs.index('g_queue_up = true;') < obs.index('NEXUS_STATUS_ENDPOINT'),
+       'nothing is posted to the work queue before it is known to run: a '
+       'bonded host can write earlier in boot than ZMK starts that queue, '
+       'and the first status notification - delivered on it - is the proof')
+    ok('g_queue_up = true;' in init.split('nexus_status_subscribe')[1],
+       'and if the observer cannot be registered it falls back to posting '
+       'at once, rather than never listening')
     ok('k_spin_lock' not in obs and 'k_mutex' not in obs,
        'and needs no lock of its own: observers run on the work queue the '
        'parser runs on')
@@ -1195,6 +1205,21 @@ def companions():
     ok('Close-BleLink $ble' in lost and '$ble = $null' in lost
        and '$nextBle =' in lost,
        'a failed write drops the link and waits for the next look')
+    getc = ps.split('function Get-BleCharacteristic')[1].split('\n}\n')[0]
+    ok("-eq 'AccessDenied') { $script:bleBusy = $true }" in getc
+       and "elseif ($script:bleBusy) { 'host link service, in use" in ps
+       and "} elseif ($script:bleBusy) {" in loop,
+       'a service another program already has open is said to be in use, '
+       'not missing: Windows gives it to one program at a time, and a '
+       'running companion made -List read "no host link service"')
+    reason = ps.split('function Get-Reason')[1].split('\n}\n')[0]
+    ok('while ($e.InnerException) { $e = $e.InnerException }' in reason
+       and '$_.Exception.Message' not in loop,
+       'a lost link is reported in the error\'s own words - "The port is '
+       'closed." - not PowerShell\'s wrapping of it')
+    ok('AddSeconds($(if ($ble) { $BLE_RESCAN } else { 3 }))' in loop,
+       'while Bluetooth carries the data, the USB port is looked for every '
+       '10 s rather than every 3')
     ok('Send-BleLines $ble @(\'X\')' in loop.split('} finally {')[1],
        'and it says X over Bluetooth too on the way out')
     ok(loop.index('foreach ($name in @($open.Keys))')

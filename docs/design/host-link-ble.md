@@ -1,7 +1,8 @@
 # Design: host link over Bluetooth
 
-Status: **approved 2026-10-09 and implemented** on `feature/host-link-ble`,
-cut from `main` at `805e464`. Waiting for the hardware checklist in
+Status: **approved 2026-10-09, implemented** on `feature/host-link-ble` (cut
+from `main` at `805e464`) **and run on the hardware the same day**: the
+checklist is in
 [host-link.md](../host-link.md#test-checklist-real-hardware). Open questions
 1 to 3 were answered as proposed. What changed while building it is under
 [Found while building](#found-while-building).
@@ -263,6 +264,21 @@ Bluetooth-only build uses 2,408 B less RAM than the USB one.
    a service it already has.
 8. **CI first.** The host link was not compiled by CI, so the USB build was
    added before the refactor, to give it something to be compared with.
+9. **No work is posted before the queue runs.** The NEXUS queue is ZMK's
+   display queue, which starts after Bluetooth does, and a bonded host could
+   in principle write before it exists. The first status notification is
+   delivered on that queue, so its arrival is what arms the Bluetooth
+   transport; bytes that came earlier wait in their ring. The status model
+   already holds back for the same reason. Found in the audit, not on the
+   bench.
+10. **Windows gives the service to one program at a time.** With a companion
+    running, a second one - and `-List` - got `AccessDenied` for the
+    characteristic, which read as "no host link service". It is now reported
+    as "in use". Found on the hardware.
+11. **The companion's messages.** A lost link was reported as PowerShell's
+    wrapping of the error; it now gives the error's own sentence. While
+    Bluetooth carries the data the USB port is looked for every 10 s, not
+    every 3.
 
 ## Open questions for Vaibhav
 

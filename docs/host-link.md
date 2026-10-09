@@ -214,6 +214,10 @@ when you turn the option on.
 The Python companion (Linux, macOS) is USB only for now, and says so if asked
 for `--transport ble`.
 
+Windows gives a Bluetooth service to one program at a time, as it does a
+serial port. With a companion already running, `-List` reads "host link
+service, in use", and a second copy waits rather than fighting over it.
+
 **If Windows does not find the service** after a reflash - `-List` says "no
 host link service" - Windows is using the list of services it remembered when
 it paired. The companion asks the dongle directly once each time it starts,
@@ -223,30 +227,35 @@ and pair it again, once.
 ### Test checklist (real hardware)
 
 The firmware builds in CI in all three combinations. Everything below needs
-the dongle.
+the dongle. Ticked: run on the hardware, 2026-10-09 (Windows 11 laptop,
+nice!nano dongle with both transports and Remote Input built in).
 
 - [ ] Option off: everything as on `main` - typing, split, USB, BLE profiles,
-      Studio, display, games, sound.
+      Studio, display, games, sound. (CI: the four builds without the host
+      link are byte-identical to `main`.)
 - [ ] `HOST_LINK` with USB only: HOST and the companion exactly as before.
-- [ ] Bluetooth on, dongle in the laptop's USB, output USB: data, via USB.
-- [ ] The same, output switched to BLE on the same laptop: data continues.
-- [ ] **Dongle on a wall charger, BLE only to the laptop: HOST shows clock,
+- [x] Option on: typing, split, USB, BLE profiles, display and games as
+      before.
+- [x] Bluetooth on, dongle in the laptop's USB, output USB: data, via USB.
+- [x] The same, output switched to BLE on the same laptop: data continues.
+- [x] **Dongle on a wall charger, BLE only to the laptop: HOST shows clock,
       date, CPU, RAM and track; pause and play follow.**
-- [ ] Switch to a BLE profile whose host has no companion: load and track go
+- [x] Switch to a BLE profile whose host has no companion: load and track go
       to dashes at once, the clock stays. Switch back: data returns in a
       second or two, the track within ten.
-- [ ] Laptop sleeps and wakes: dashes after the stale time, then it recovers
+- [x] Laptop sleeps and wakes: dashes after the stale time, then it recovers
       without restarting the companion.
-- [ ] Reflash the dongle while the companion runs: it finds the dongle again
-      (note whether Windows needed NEXUS removed and re-paired).
-- [ ] Remote Input on: the iPhone connects and types as before.
+- [x] After a reflash, Windows finds the new service with no re-pair.
+- [ ] Reflash the dongle while the new companion runs: it finds the dongle
+      again by itself.
+- [x] Remote Input on: the iPhone connects and types as before.
 - [ ] A second paired host that is not the active profile, or a phone, writes
       to the characteristic (nRF Connect): nothing changes on screen.
-- [ ] ZMK Studio connects over USB while the companion runs.
-- [ ] Reset the dongle while the companion runs over BLE: both halves
-      reconnect.
-- [ ] Ten minutes of typing and a game of Tetris with the companion running
-      over BLE: no lag, no dropped keys, no split disconnects.
+- [x] ZMK Studio connects over USB while the companion runs.
+- [x] Reset the dongle while the companion runs over BLE: both halves
+      reconnect, and the data comes back.
+- [x] Typing and a game of Tetris with the companion running over BLE: no
+      lag, no dropped keys, no split disconnects.
 - [ ] nRF Connect, from the active host: `C 4` and `2\n` as two writes shows
       CPU 42.
 

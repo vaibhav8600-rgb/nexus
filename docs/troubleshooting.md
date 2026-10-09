@@ -213,9 +213,10 @@ straight back - and check the build has
 The firmware needs `CONFIG_NEXUS_HOST_LINK_BLE=y`, and the companion has to
 be the one that knows Bluetooth: run `install.cmd` again. Then
 `nexus_host.ps1 -List` - under "Connected Bluetooth LE devices", NEXUS should
-read "host link service". "no host link service" with the right firmware
-means Windows is using what it remembered from pairing: remove NEXUS under
-Bluetooth settings and pair it again, once.
+read "host link service", or "host link service, in use" while a companion is
+running. "no host link service" with the right firmware means Windows is
+using what it remembered from pairing: remove NEXUS under Bluetooth settings
+and pair it again, once.
 
 **HOST shows dashes although a companion is running.**
 With the Bluetooth transport built, HOST shows the host you are typing into.
