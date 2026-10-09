@@ -340,8 +340,27 @@ void host_source_put_whole(struct host_source *src, const uint8_t *buf,
 	k_spin_unlock(&src->lock, key);
 }
 
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
+/*
+ * The NEXUS queue is ZMK's display queue, and it is not running from the
+ * first instant of boot. A bonded host is: it can reconnect and write before
+ * the queue exists, and submitting to a queue with no thread is undefined -
+ * from the Bluetooth RX thread, the kind of undefined that takes Bluetooth
+ * down (nexus_status_mark() holds back for the same reason).
+ *
+ * The first status notification is delivered on that queue, so its arrival is
+ * the proof it runs. Until then bytes wait in their ring; nothing is lost.
+ */
+static bool g_queue_up;
+#endif
+
 void host_link_kick(void)
 {
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
+	if (!g_queue_up) {
+		return;
+	}
+#endif
 	k_work_submit_to_queue(nexus_workq(), &g_parse);
 }
 
@@ -420,6 +439,13 @@ static void on_status(const struct nexus_status *st, uint32_t changed)
 	static enum nexus_endpoint via;
 	static uint8_t profile;
 
+	if (!g_queue_up) {
+		/* This is the queue, so it runs: see g_queue_up. Whatever
+		 * arrived before now is still in its ring. */
+		g_queue_up = true;
+		host_link_kick();
+	}
+
 	if (!(changed & NEXUS_STATUS_ENDPOINT)) {
 		return;
 	}
@@ -494,6 +520,12 @@ int nexus_host_link_init(void)
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
 	/* Kept for good: the service is there from boot to power-off. */
 	ret = nexus_status_subscribe(on_status);
+	if (ret) {
+		/* No observer, so nothing will ever say the queue is up.
+		 * Better the old behaviour than a HOST screen that never
+		 * listens. */
+		g_queue_up = true;
+	}
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
 	int usb = host_link_usb_init();
