@@ -1022,6 +1022,10 @@ def which_host(text_max, c):
        'the %d slots' % slots)
 
 
+def inst_src(ps):
+    return ps.split('if ($Install) {')[-1].split('\n}\n')[0]
+
+
 def companions():
     print('\nThe Python companion needs nothing but Python')
     py = read('tools', 'nexus-host', 'nexus_host.py')
@@ -1117,6 +1121,14 @@ def companions():
     nh.now_playing = lambda: ('So What', 'Miles Davis', False)
     got = nh.batch(state, Quiet())
     ok(got[-1] == 'P 0', 'and pausing sends P 0: %s' % got)
+    ok(not any(line[0] in 'NAP' for line in nh.batch(state, Quiet())),
+       'a track that has not changed is not resent every second')
+    state['np_at'] -= nh.NP_EVERY
+    got = nh.batch(state, Quiet())
+    ok(got[-3:] == ['N SO WHAT', 'A MILES DAVIS', 'P 0'],
+       'but it is resent every %d s: the dongle forgets it when the '
+       'keyboard switches host, and a one-way link cannot ask again'
+       % nh.NP_EVERY)
     nl = chr(10)
     for text, has, want in (
             ('Song' + nl + 'Band' + nl + 'Playing' + nl, True,
@@ -1140,6 +1152,62 @@ def companions():
        'and P, from the session\'s own playback status, resent when it '
        'changes')
     ok("'X'" in ps, 'says X on the way out')
+    ok('$np -ne $lastNp -or ((Get-Date) - $lastNpAt).TotalSeconds -ge $NP_EVERY'
+       in ps and '$NP_EVERY = 10 ' in ps,
+       'and resent every 10 s whether it changed or not, as the Python one '
+       'does')
+
+    print('\nThe Windows companion over Bluetooth')
+    ble_c = read('src', 'host', 'host_link_ble.c')
+    for name, const in (('service', 'BLE_SERVICE'), ('characteristic', 'BLE_RX')):
+        guid = re.search(r"\$%s = \[guid\]'([0-9a-f-]{36})'" % const, ps).group(1)
+        parts = guid.split('-')
+        enc = '0x%s, 0x%s, 0x%s, 0x%s, 0x%sULL' % tuple(parts)
+        ok(enc in ble_c, 'the %s UUID is the firmware\'s: %s' % (name, guid))
+    ok("[ValidateSet('Auto', 'Usb', 'Ble')]" in ps
+       and "[string]$Transport = 'Auto'" in ps,
+       '-Transport Auto, Usb or Ble; Auto unless told otherwise')
+    send = ps.split('function Send-BleLines')[1].split('\n}\n')[0]
+    ok('GattWriteOption]::WriteWithoutResponse' in send
+       and '$at += $BLE_CHUNK' in send and '$BLE_CHUNK = 20 ' in ps,
+       'lines go out as writes without response, 20 bytes at a time')
+    ok('WindowsRuntimeBufferExtensions]::AsBuffer($part)' in send
+       and 'CryptographicBuffer' not in send.split('#>')[1].split('# AsBuffer')[0]
+       and '::CreateFromByteArray' not in ps,
+       'through AsBuffer - PowerShell cannot pass a CryptographicBuffer to '
+       'WriteValueAsync, which was found by running it')
+    find = ps.split('function Find-BleLink')[1].split('\n}\n')[0]
+    ok("Get-BleCharacteristic $dev 'Cached'" in find
+       and find.index("'Cached'") < find.index("'Uncached'")
+       and '$script:bleAsked[$d.Id] = $true' in find,
+       'the dongle is looked for in what Windows remembers first - no radio '
+       '- and each device asked over the air once a run')
+    ok('GetDeviceSelectorFromConnectionStatus' in ps
+       and 'BluetoothLEAdvertisementWatcher' not in ps
+       and 'PairAsync' not in ps,
+       'only devices Windows is already connected to: it scans for and '
+       'pairs with nothing')
+    loop = ps.split("Write-Output 'NEXUS companion running.")[1]
+    ok('$nextBle = (Get-Date).AddSeconds($BLE_RESCAN)' in loop
+       and '(Get-Date) -ge $nextBle' in loop and '$BLE_RESCAN = 10 ' in ps,
+       'and looks again every 10 s when it is not there, not every round')
+    lost = loop.split('Send-BleLines $ble $lines')[1].split('if ($open.Count')[0]
+    ok('Close-BleLink $ble' in lost and '$ble = $null' in lost
+       and '$nextBle =' in lost,
+       'a failed write drops the link and waits for the next look')
+    ok('Send-BleLines $ble @(\'X\')' in loop.split('} finally {')[1],
+       'and it says X over Bluetooth too on the way out')
+    ok(loop.index('foreach ($name in @($open.Keys))')
+       < loop.index('Send-BleLines $ble $lines')
+       and "if ($useUsb -and $open.Count -eq 0" in loop
+       and "if ($useBle -and -not $ble" in loop,
+       'with both there it sends to both: the dongle picks the one that '
+       'matches where its keys are going')
+    ok('$launch += " -Transport $Transport"' in inst_src(ps),
+       '-Install keeps a -Transport that was asked for')
+    py = read('tools', 'nexus-host', 'nexus_host.py')
+    ok("args.transport == 'ble'" in py and 'not supported by this' in py,
+       'the Python companion says plainly that it cannot do Bluetooth yet')
     ok(not re.search(r'^\s*\$args\s*\+?=', ps, re.M),
        'never assigns $args - that is PowerShell\'s automatic variable')
     inst = ps.split('if ($Install) {')[-1].split('\n}\n')[0]

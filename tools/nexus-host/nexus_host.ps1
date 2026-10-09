@@ -4,8 +4,9 @@
 
 .DESCRIPTION
     Pushes the clock, CPU and memory load and what is playing to a NEXUS
-    dongle over its host-link USB serial. One way: the dongle never writes
-    back, so this cannot type, press keys or read anything out of it.
+    dongle: over its host-link USB serial, over the Bluetooth connection this
+    PC already has to it, or both. One way: the dongle never writes back, so
+    this cannot type, press keys or read anything out of it.
 
     The Python companion does the same thing on Linux and macOS, but on
     Windows Python cannot open a COM port without pyserial. Windows can do
@@ -17,11 +18,16 @@
     .\nexus_host.ps1 -List
     .\nexus_host.ps1
     .\nexus_host.ps1 -Port COM15 -Verbose
+    .\nexus_host.ps1 -Transport Ble
 #>
 [CmdletBinding()]
 param(
     # Serial port. Found automatically when omitted.
     [string]$Port,
+    # How to reach the dongle: its USB serial port, the Bluetooth connection
+    # this PC already has to it, or - Auto - whichever of the two is there.
+    [ValidateSet('Auto', 'Usb', 'Ble')]
+    [string]$Transport = 'Auto',
     # List candidate ports and exit.
     [switch]$List,
     # Start with Windows from now on, and start now. Per-user, no admin.
@@ -34,6 +40,14 @@ param(
 
 $TEXT_MAX = 39          # NEXUS_HOST_TEXT - 1; the dongle truncates anyway
 $CLOCK_EVERY = 60       # seconds between clock resyncs
+$NP_EVERY = 10          # seconds between resends of the track, changed or not
+
+# The host link's Bluetooth service (docs/host-link.md): one characteristic,
+# written without response.
+$BLE_SERVICE = [guid]'bbb8ee45-91c5-40fb-8c33-1c8b9c4795cc'
+$BLE_RX = [guid]'40064c5a-dc78-4b9e-b148-9e13bcbd7708'
+$BLE_CHUNK = 20         # what every Bluetooth link carries in one write
+$BLE_RESCAN = 10        # seconds between looks for the dongle over Bluetooth
 
 # ---- starting with Windows ------------------------------------------------
 #
@@ -120,6 +134,7 @@ if ($Install) {
         $launch = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized " +
                   "-File `"$script`""
         if ($Port) { $launch += " -Port $Port" }
+        if ($Transport -ne 'Auto') { $launch += " -Transport $Transport" }
 
         $exe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
         Set-ItemProperty $RUN_KEY -Name $RUN_NAME -Value "`"$exe`" $launch" `
@@ -230,10 +245,114 @@ try {
     Write-Warning "now playing unavailable: $($_.Exception.Message)"
 }
 
-function Wait-WinRt($operation, $type) {
+function Wait-WinRt($operation, $type, $ms = 2000) {
     $task = $script:asTask.MakeGenericMethod($type).Invoke($null, @($operation))
-    if (-not $task.Wait(2000)) { throw 'WinRT call timed out' }
+    if (-not $task.Wait($ms)) { throw 'WinRT call timed out' }
     $task.Result
+}
+
+# ---- Bluetooth ------------------------------------------------------------
+#
+# The dongle is already paired to this PC as a keyboard. With the host link's
+# Bluetooth transport built in, it also has one small service to write these
+# lines to - so the HOST screen works when the dongle is on a charger and
+# reaches this PC over the air alone. Nothing is paired, connected or scanned
+# for here: only devices Windows is connected to already are looked at.
+#
+# The same WinRT that names the track, so still nothing to install.
+$script:bleReady = $false
+if ($script:asTask) {
+    try {
+        [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows.Devices.Bluetooth, ContentType = WindowsRuntime] | Out-Null
+        [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType = WindowsRuntime] | Out-Null
+        [Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceServicesResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime] | Out-Null
+        $script:bleReady = $true
+    } catch {
+        Write-Verbose "bluetooth unavailable: $($_.Exception.Message)"
+    }
+}
+
+# Devices already asked over the air this run. See Find-BleLink.
+$script:bleAsked = @{}
+
+function Get-BleConnected {
+    <#  Every Bluetooth LE device Windows is connected to right now. #>
+    $le = [Windows.Devices.Bluetooth.BluetoothLEDevice]
+    $sel = $le::GetDeviceSelectorFromConnectionStatus(
+        [Windows.Devices.Bluetooth.BluetoothConnectionStatus]::Connected)
+    $found = Wait-WinRt ([Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel)) `
+        ([Windows.Devices.Enumeration.DeviceInformationCollection]) 5000
+    @($found)
+}
+
+function Get-BleCharacteristic($dev, [string]$mode) {
+    <#  The host link's characteristic on $dev, or nothing. $mode is Cached -
+        what Windows remembers, no radio - or Uncached, which asks the
+        device. #>
+    $gatt = 'Windows.Devices.Bluetooth.GenericAttributeProfile'
+    $cache = [Windows.Devices.Bluetooth.BluetoothCacheMode]::$mode
+    $svcs = Wait-WinRt ($dev.GetGattServicesForUuidAsync($BLE_SERVICE, $cache)) `
+        ([type]"$gatt.GattDeviceServicesResult") 8000
+    if ("$($svcs.Status)" -ne 'Success' -or $svcs.Services.Count -eq 0) { return }
+    $chars = Wait-WinRt ($svcs.Services[0].GetCharacteristicsForUuidAsync($BLE_RX, $cache)) `
+        ([type]"$gatt.GattCharacteristicsResult") 8000
+    if ("$($chars.Status)" -ne 'Success' -or $chars.Characteristics.Count -eq 0) { return }
+    $chars.Characteristics[0]
+}
+
+function Find-BleLink {
+    <#  A connected Bluetooth device with the host link's service, as
+        @{ Name; Device; Rx } - or nothing.
+
+        What Windows remembers of a device is asked first: no radio, so
+        looking again every few seconds disturbs nobody's mouse. Windows
+        remembers a paired device's services from when it paired, though, and
+        a dongle reflashed since then has one more - so each device is also
+        asked over the air, once per run. #>
+    if (-not $script:bleReady) { return }
+    foreach ($d in Get-BleConnected) {
+        $dev = $null
+        $rx = $null
+        try {
+            $le = [Windows.Devices.Bluetooth.BluetoothLEDevice]
+            $dev = Wait-WinRt ($le::FromIdAsync($d.Id)) $le 5000
+            if ($dev) {
+                $rx = Get-BleCharacteristic $dev 'Cached'
+                if (-not $rx -and -not $script:bleAsked[$d.Id]) {
+                    $script:bleAsked[$d.Id] = $true
+                    $rx = Get-BleCharacteristic $dev 'Uncached'
+                }
+            }
+        } catch {
+            Write-Verbose "bluetooth $($d.Name): $($_.Exception.Message)"
+        }
+        if ($rx) { return @{ Name = $d.Name; Device = $dev; Rx = $rx } }
+        if ($dev) { try { $dev.Dispose() } catch {} }
+    }
+}
+
+function Send-BleLines($link, $lines) {
+    <#  The same lines the serial port gets, in writes of $BLE_CHUNK bytes:
+        the dongle assembles lines from a stream, wherever the cuts fall.
+        Throws when the link is gone. #>
+    $bytes = [Text.Encoding]::ASCII.GetBytes((@($lines) -join "`n") + "`n")
+    $option = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattWriteOption]::WriteWithoutResponse
+    $status = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus]
+    for ($at = 0; $at -lt $bytes.Length; $at += $BLE_CHUNK) {
+        $n = [Math]::Min($BLE_CHUNK, $bytes.Length - $at)
+        $part = New-Object byte[] $n
+        [Array]::Copy($bytes, $at, $part, 0, $n)
+        # AsBuffer, not CryptographicBuffer: PowerShell hands that one's
+        # result over as a bare COM object and then cannot find the
+        # WriteValueAsync overload that takes it.
+        $buf = [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::AsBuffer($part)
+        $result = Wait-WinRt ($link.Rx.WriteValueAsync($buf, $option)) $status
+        if ("$result" -ne 'Success') { throw "write: $result" }
+    }
+}
+
+function Close-BleLink($link) {
+    if ($link -and $link.Device) { try { $link.Device.Dispose() } catch {} }
 }
 
 function ConvertTo-Panel([string]$text) {
@@ -293,6 +412,29 @@ if ($List) {
         Write-Output "$($c.Port): $what"
     }
     Write-Output ''
+    Write-Output 'Connected Bluetooth LE devices:'
+    if (-not $script:bleReady) {
+        Write-Output '  (Bluetooth is not available to this PowerShell)'
+    } else {
+        $any = $false
+        foreach ($d in Get-BleConnected) {
+            $any = $true
+            $has = $false
+            try {
+                $le = [Windows.Devices.Bluetooth.BluetoothLEDevice]
+                $dev = Wait-WinRt ($le::FromIdAsync($d.Id)) $le 5000
+                if ($dev) {
+                    $has = [bool](Get-BleCharacteristic $dev 'Uncached')
+                    $dev.Dispose()
+                }
+            } catch {}
+            $what = if ($has) { 'host link service <- the companion uses this' }
+                    else { 'no host link service' }
+            Write-Output "  $($d.Name): $what"
+        }
+        if (-not $any) { Write-Output '  none' }
+    }
+    Write-Output ''
     Write-Output 'All serial ports:'
     Get-CimInstance Win32_PnPEntity |
         Where-Object { $_.Name -match 'COM\d+' } |
@@ -306,16 +448,33 @@ $cpuCounter = '\Processor(_Total)\% Processor Time'
 try { Get-Counter $cpuCounter -ErrorAction Stop | Out-Null } catch {}
 
 Write-Output 'NEXUS companion running. Ctrl-C to stop.'
+$useUsb = $Transport -ne 'Ble'
+$useBle = $Transport -ne 'Usb'
+if ($useBle -and -not $script:bleReady) {
+    Write-Warning 'Bluetooth is not available to this PowerShell; USB only.'
+    $useBle = $false
+}
 $open = @{}
+$ble = $null
 $script:moaned = @{}      # ports already complained about, so it is said once
 $script:waiting = $false
+$nextUsb = [datetime]::MinValue
+$nextBle = [datetime]::MinValue
+$lastClock = [datetime]::MinValue
+$lastNp = $null
+$lastNpAt = [datetime]::MinValue
 
 try {
-  # Outer loop: reconnect rather than exit. The dongle disappears from USB on
-  # every reflash and every reboot, and a companion that has to be restarted
-  # by hand each time is a companion you stop bothering with.
+  # Reconnect rather than exit. The dongle disappears from USB on every
+  # reflash and every reboot, and from Bluetooth whenever this PC sleeps, and
+  # a companion that has to be restarted by hand each time is a companion you
+  # stop bothering with. Each way in is looked for on its own clock, so one
+  # being there does not stop the other being found.
   while ($true) {
-    if ($open.Count -eq 0) {
+    $fresh = $false
+
+    if ($useUsb -and $open.Count -eq 0 -and (Get-Date) -ge $nextUsb) {
+        $nextUsb = (Get-Date).AddSeconds(3)
         # The host link port only - never Studio's. See Get-HostLinkPort.
         $targets = if ($Port) { @($Port) } else { @(Get-HostLinkPort) }
         foreach ($name in $targets) {
@@ -325,6 +484,7 @@ try {
                 $sp.DtrEnable = $true
                 $sp.Open()
                 $open[$name] = $sp
+                $fresh = $true
                 Write-Output "open $name"
             } catch {
                 # Said once per port, not once per retry: a port that is
@@ -340,101 +500,141 @@ try {
                 }
             }
         }
-        if ($open.Count -eq 0) {
-            if (-not $script:waiting) {
-                # Two different waits, and saying which saves a lot of
-                # guessing: no dongle at all, or a dongle whose host link
-                # port something else is holding.
-                if (-not $Port -and @(Get-NexusPorts).Count -gt 0) {
-                    Write-Output ('dongle found, but no free host link port - ' +
-                                  'is another copy running? (-List shows the ports)')
-                } else {
-                    Write-Output 'waiting for the dongle'
-                }
-                $script:waiting = $true
-            }
-            Start-Sleep -Seconds 3
-            continue
+    }
+
+    if ($useBle -and -not $ble -and (Get-Date) -ge $nextBle) {
+        # Every $BLE_RESCAN seconds, not every round: firmware without the
+        # Bluetooth transport never has the service, and asking once a
+        # second for something that is not there is a busy loop.
+        $nextBle = (Get-Date).AddSeconds($BLE_RESCAN)
+        $ble = Find-BleLink
+        if ($ble) {
+            $fresh = $true
+            Write-Output "open bluetooth $($ble.Name)"
         }
-        $script:waiting = $false
+    }
+
+    if ($open.Count -eq 0 -and -not $ble) {
+        if (-not $script:waiting) {
+            # Two different waits, and saying which saves a lot of
+            # guessing: no dongle at all, or a dongle whose host link
+            # port something else is holding.
+            if ($useUsb -and -not $Port -and @(Get-NexusPorts).Count -gt 0) {
+                Write-Output ('dongle found, but no free host link port - ' +
+                              'is another copy running? (-List shows the ports)')
+            } else {
+                Write-Output 'waiting for the dongle'
+            }
+            $script:waiting = $true
+        }
+        Start-Sleep -Seconds 1
+        continue
+    }
+    $script:waiting = $false
+    if ($fresh) {
         $script:moaned = @{}
         # A fresh link knows nothing about us: resend everything.
         $lastClock = [datetime]::MinValue
         $lastNp = $null
     }
 
-    while ($open.Count -gt 0) {
-        $lines = New-Object System.Collections.Generic.List[string]
+    $lines = New-Object System.Collections.Generic.List[string]
 
-        if (((Get-Date) - $lastClock).TotalSeconds -ge $CLOCK_EVERY) {
-            $now = Get-Date
-            $lines.Add('T ' + [int]($now - $now.Date).TotalSeconds)
-            # After T, from the same instant: the dongle files the date
-            # against the day that clock counts from.
-            $lines.Add('D ' + [int]($now.Date - [datetime]::new(1970, 1, 1)).TotalDays)
-            $lastClock = $now
-        }
-
-        try {
-            $cpu = (Get-Counter $cpuCounter -ErrorAction Stop
-                   ).CounterSamples[0].CookedValue
-            $lines.Add('C ' + [int][math]::Round($cpu))
-        } catch {}
-
-        try {
-            $os = Get-CimInstance Win32_OperatingSystem
-            $used = 100 * (1 - $os.FreePhysicalMemory / $os.TotalVisibleMemorySize)
-            $lines.Add('M ' + [int][math]::Round($used))
-        } catch {}
-
-        $title, $artist, $playing = Get-NowPlaying
-        $np = "$title|$artist|$playing"
-        if ($np -ne $lastNp) {
-            $lines.Add("N $title")
-            $lines.Add("A $artist")
-            # Playing or paused: the dongle moves its level bars only while
-            # a track plays. Firmware from before P ignores it.
-            $lines.Add("P $playing")
-            $lastNp = $np
-        }
-
-        # Never nothing. The dongle drops the link after a few silent seconds,
-        # so a round where every reading failed and the track did not change
-        # would show NO LINK while this is plainly still running - the one
-        # state that sends you looking for a hardware fault that is not there.
-        # A clock resend is the cheapest line to say it with: the dongle draws
-        # minutes, so landing in the same one costs no repaint.
-        if ($lines.Count -eq 0) {
-            $now = Get-Date
-            $lines.Add('T ' + [int]($now - $now.Date).TotalSeconds)
-        }
-
-        foreach ($name in @($open.Keys)) {
-            foreach ($line in $lines) {
-                try {
-                    $open[$name].WriteLine($line)
-                    Write-Verbose "$name > $line"
-                } catch {
-                    Write-Warning "$name lost: $($_.Exception.Message)"
-                    try { $open[$name].Close() } catch {}
-                    $open.Remove($name)
-                    break
-                }
-            }
-        }
-        Start-Sleep -Milliseconds ([int]($Interval * 1000))
+    if (((Get-Date) - $lastClock).TotalSeconds -ge $CLOCK_EVERY) {
+        $now = Get-Date
+        $lines.Add('T ' + [int]($now - $now.Date).TotalSeconds)
+        # After T, from the same instant: the dongle files the date
+        # against the day that clock counts from.
+        $lines.Add('D ' + [int]($now.Date - [datetime]::new(1970, 1, 1)).TotalDays)
+        $lastClock = $now
     }
 
-    # Dropped out of the inner loop: the dongle went away. Say so once, then
-    # go back round and wait for it to come back.
-    Write-Output 'link lost; waiting for the dongle'
-    Start-Sleep -Seconds 3
+    try {
+        $cpu = (Get-Counter $cpuCounter -ErrorAction Stop
+               ).CounterSamples[0].CookedValue
+        $lines.Add('C ' + [int][math]::Round($cpu))
+    } catch {}
+
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem
+        $used = 100 * (1 - $os.FreePhysicalMemory / $os.TotalVisibleMemorySize)
+        $lines.Add('M ' + [int][math]::Round($used))
+    } catch {}
+
+    $title, $artist, $playing = Get-NowPlaying
+    $np = "$title|$artist|$playing"
+    # When it changes, and every $NP_EVERY seconds whether it has or not. The
+    # link is one way: when you switch the keyboard to another host and back,
+    # the dongle forgets the track, and nothing can tell this script to say
+    # it again. The dongle ignores a value it already has, so the resend
+    # costs it no repaint.
+    if ($np -ne $lastNp -or ((Get-Date) - $lastNpAt).TotalSeconds -ge $NP_EVERY) {
+        $lines.Add("N $title")
+        $lines.Add("A $artist")
+        # Playing or paused: the dongle moves its level bars only while
+        # a track plays. Firmware from before P ignores it.
+        $lines.Add("P $playing")
+        $lastNp = $np
+        $lastNpAt = Get-Date
+    }
+
+    # Never nothing. The dongle drops the link after a few silent seconds,
+    # so a round where every reading failed and the track did not change
+    # would show NO LINK while this is plainly still running - the one
+    # state that sends you looking for a hardware fault that is not there.
+    # A clock resend is the cheapest line to say it with: the dongle draws
+    # minutes, so landing in the same one costs no repaint.
+    if ($lines.Count -eq 0) {
+        $now = Get-Date
+        $lines.Add('T ' + [int]($now - $now.Date).TotalSeconds)
+    }
+
+    foreach ($name in @($open.Keys)) {
+        foreach ($line in $lines) {
+            try {
+                $open[$name].WriteLine($line)
+                Write-Verbose "$name > $line"
+            } catch {
+                Write-Warning "$name lost: $($_.Exception.Message)"
+                try { $open[$name].Close() } catch {}
+                $open.Remove($name)
+                break
+            }
+        }
+    }
+
+    # To Bluetooth as well when both are there. The dongle listens to the
+    # one that matches where its keys are going, and drops the other.
+    if ($ble) {
+        try {
+            Send-BleLines $ble $lines
+            Write-Verbose "bluetooth > $($lines -join ' | ')"
+        } catch {
+            Write-Warning "bluetooth $($ble.Name) lost: $($_.Exception.Message)"
+            Close-BleLink $ble
+            $ble = $null
+            # Look again at the next rescan, not at once: a PC going to
+            # sleep fails every write until it is awake.
+            $nextBle = (Get-Date).AddSeconds($BLE_RESCAN)
+        }
+    }
+
+    if ($open.Count -eq 0 -and -not $ble) {
+        # The dongle went away. Say so once, then wait for it to come back.
+        Write-Output 'link lost; waiting for the dongle'
+        $script:waiting = $true
+    }
+    Start-Sleep -Milliseconds ([int]($Interval * 1000))
   }
 } finally {
     # "I am going away", so the dongle shows dashes rather than numbers that
     # stopped being true the moment this stopped.
     foreach ($name in @($open.Keys)) {
         try { $open[$name].WriteLine('X'); $open[$name].Close() } catch {}
+    }
+    if ($ble) {
+        try { Send-BleLines $ble @('X') } catch {}
+        Close-BleLink $ble
     }
     Write-Output 'stopped'
 }

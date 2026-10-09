@@ -39,6 +39,7 @@ except ImportError:
 
 TEXT_MAX = 39          # NEXUS_HOST_TEXT - 1, the dongle truncates anyway
 CLOCK_EVERY = 60       # seconds between clock resyncs
+NP_EVERY = 10          # seconds between resends of the track, changed or not
 ZMK_VID = 0x1D50
 EPOCH = datetime.date(1970, 1, 1)
 
@@ -252,11 +253,16 @@ def batch(state, load):
 
     title, artist, playing = now_playing()
     np = (fold(title), fold(artist), playing)
-    if np != state['np']:
+    # When it changes, and every NP_EVERY seconds whether it has or not. The
+    # link is one way: when the keyboard is switched to another host and
+    # back the dongle forgets the track, and nothing can ask for it again.
+    # The dongle ignores a value it already has, so a resend costs no repaint.
+    if np != state['np'] or now - state.get('np_at', now) >= NP_EVERY:
         # P: playing or paused. The dongle moves its level bars only while
         # a track plays; firmware from before P ignores the line.
         out += ['N %s' % np[0], 'A %s' % np[1], 'P %d' % playing]
         state['np'] = np
+        state['np_at'] = now
 
     # Never nothing: the dongle drops the link after a few silent seconds,
     # and NO LINK while this is plainly running sends you looking for a
@@ -272,6 +278,10 @@ def main():
     ap.add_argument('--port', action='append',
                     help='serial port; found when omitted (repeatable)')
     ap.add_argument('--list', action='store_true', help='list candidate ports')
+    ap.add_argument('--transport', choices=('auto', 'usb', 'ble'),
+                    default='auto',
+                    help='how to reach the dongle (default auto); only the '
+                         'Windows companion, nexus_host.ps1, does ble so far')
     ap.add_argument('--interval', type=float, default=1.0,
                     help='seconds between updates (default 1)')
     ap.add_argument('--verbose', action='store_true', help='echo every line')
@@ -287,6 +297,11 @@ def main():
         if sys.platform == 'darwin' and not serial:
             print('macOS: pass --port /dev/cu.usbmodem... (see ls /dev/cu.*)')
         return 0
+
+    if args.transport == 'ble':
+        sys.exit('The host link over Bluetooth is not supported by this '
+                 'companion yet; USB works. On Windows, nexus_host.ps1 does '
+                 'both.')
 
     if not serial and os.name != 'posix':
         sys.exit('On Windows use nexus_host.ps1, or pip install pyserial.')
