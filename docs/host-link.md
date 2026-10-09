@@ -245,6 +245,10 @@ nice!nano dongle with both transports and Remote Input built in).
       second or two, the track within ten.
 - [x] Laptop sleeps and wakes: dashes after the stale time, then it recovers
       without restarting the companion.
+- [ ] Bluetooth, then the dongle moved to USB, then back to a charger: the
+      data returns over Bluetooth by itself. (Failed on 2026-10-09 - the
+      companion had to be restarted - and was fixed in the companion the
+      same day; to be run again.)
 - [x] After a reflash, Windows finds the new service with no re-pair.
 - [ ] Reflash the dongle while the new companion runs: it finds the dongle
       again by itself.

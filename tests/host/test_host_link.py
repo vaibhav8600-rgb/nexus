@@ -1212,6 +1212,17 @@ def companions():
        'a service another program already has open is said to be in use, '
        'not missing: Windows gives it to one program at a time, and a '
        'running companion made -List read "no host link service"')
+    close = ps.split('function Close-BleLink')[1].split('\n}\n')[0]
+    ok("foreach ($part in 'Service', 'Device')" in close
+       and '$link[$part].Dispose()' in close and '[GC]::Collect()' in close,
+       'a link that is dropped gives its service back as well as its device')
+    ok('if (-not $rx) { try { $svc.Dispose() } catch {} }' in getc
+       and '@{ Service = $svc; Rx = $rx }' in getc
+       and 'Service = $got.Service' in find,
+       'and a service that was opened and not kept is closed on the spot: '
+       'Windows reserves a service for the object that opened it, and one '
+       'left behind locked the companion out of its own dongle after the '
+       'first lost link - found on the hardware')
     reason = ps.split('function Get-Reason')[1].split('\n}\n')[0]
     ok('while ($e.InnerException) { $e = $e.InnerException }' in reason
        and '$_.Exception.Message' not in loop,

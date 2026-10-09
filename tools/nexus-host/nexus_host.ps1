@@ -304,9 +304,18 @@ function Get-BleConnected {
 }
 
 function Get-BleCharacteristic($dev, [string]$mode) {
-    <#  The host link's characteristic on $dev, or nothing. $mode is Cached -
-        what Windows remembers, no radio - or Uncached, which asks the
-        device.
+    <#  The host link on $dev, as @{ Service; Rx } - its service and the
+        characteristic to write to - or nothing. $mode is Cached - what
+        Windows remembers, no radio - or Uncached, which asks the device.
+
+        Whoever gets a service back has to Dispose it. Windows keeps a
+        service reserved for the object that opened it, for as long as that
+        object lives - and in PowerShell that is until the garbage collector
+        happens by, not until the variable is gone. A service left behind
+        locks this very process out of it: the next look finds the service
+        and is refused its characteristic, forever, which is how a companion
+        that had lost its Bluetooth link once never got it back. So a
+        service that is not being returned is closed here.
 
         Windows gives a Bluetooth service to one program at a time, as it
         does a serial port: with a companion already running, the service is
@@ -319,16 +328,25 @@ function Get-BleCharacteristic($dev, [string]$mode) {
     $svcs = Wait-WinRt ($dev.GetGattServicesForUuidAsync($BLE_SERVICE, $cache)) `
         ([type]"$gatt.GattDeviceServicesResult") 8000
     if ("$($svcs.Status)" -ne 'Success' -or $svcs.Services.Count -eq 0) { return }
-    $chars = Wait-WinRt ($svcs.Services[0].GetCharacteristicsForUuidAsync($BLE_RX, $cache)) `
-        ([type]"$gatt.GattCharacteristicsResult") 8000
-    if ("$($chars.Status)" -eq 'AccessDenied') { $script:bleBusy = $true }
-    if ("$($chars.Status)" -ne 'Success' -or $chars.Characteristics.Count -eq 0) { return }
-    $chars.Characteristics[0]
+    $svc = $svcs.Services[0]
+    $rx = $null
+    try {
+        $chars = Wait-WinRt ($svc.GetCharacteristicsForUuidAsync($BLE_RX, $cache)) `
+            ([type]"$gatt.GattCharacteristicsResult") 8000
+        if ("$($chars.Status)" -eq 'AccessDenied') { $script:bleBusy = $true }
+        if ("$($chars.Status)" -eq 'Success' -and $chars.Characteristics.Count -gt 0) {
+            $rx = $chars.Characteristics[0]
+        }
+    } finally {
+        if (-not $rx) { try { $svc.Dispose() } catch {} }
+    }
+    if ($rx) { @{ Service = $svc; Rx = $rx } }
 }
 
 function Find-BleLink {
     <#  A connected Bluetooth device with the host link's service, as
-        @{ Name; Device; Rx } - or nothing.
+        @{ Name; Device; Service; Rx } - or nothing. Close-BleLink gives it
+        back.
 
         What Windows remembers of a device is asked first: no radio, so
         looking again every few seconds disturbs nobody's mouse. Windows
@@ -339,21 +357,23 @@ function Find-BleLink {
     $script:bleBusy = $false
     foreach ($d in Get-BleConnected) {
         $dev = $null
-        $rx = $null
+        $got = $null
         try {
             $le = [Windows.Devices.Bluetooth.BluetoothLEDevice]
             $dev = Wait-WinRt ($le::FromIdAsync($d.Id)) $le 5000
             if ($dev) {
-                $rx = Get-BleCharacteristic $dev 'Cached'
-                if (-not $rx -and -not $script:bleAsked[$d.Id]) {
+                $got = Get-BleCharacteristic $dev 'Cached'
+                if (-not $got -and -not $script:bleAsked[$d.Id]) {
                     $script:bleAsked[$d.Id] = $true
-                    $rx = Get-BleCharacteristic $dev 'Uncached'
+                    $got = Get-BleCharacteristic $dev 'Uncached'
                 }
             }
         } catch {
-            Write-Verbose "bluetooth $($d.Name): $($_.Exception.Message)"
+            Write-Verbose "bluetooth $($d.Name): $(Get-Reason $_)"
         }
-        if ($rx) { return @{ Name = $d.Name; Device = $dev; Rx = $rx } }
+        if ($got) {
+            return @{ Name = $d.Name; Device = $dev; Service = $got.Service; Rx = $got.Rx }
+        }
         if ($dev) { try { $dev.Dispose() } catch {} }
     }
 }
@@ -381,7 +401,20 @@ function Send-BleLines($link, $lines) {
 }
 
 function Close-BleLink($link) {
-    if ($link -and $link.Device) { try { $link.Device.Dispose() } catch {} }
+    <#  Give the service back, then the device. Both, and at once: see
+        Get-BleCharacteristic for what a service left open costs. The
+        collection after it is for the objects PowerShell made along the way
+        and still holds - a result list, the characteristic - which keep
+        their own grip on the service until they are finalised. #>
+    if (-not $link) { return }
+    foreach ($part in 'Service', 'Device') {
+        if ($link[$part]) { try { $link[$part].Dispose() } catch {} }
+    }
+    $link.Rx = $null
+    $link.Service = $null
+    $link.Device = $null
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
 }
 
 function ConvertTo-Panel([string]$text) {
@@ -454,8 +487,9 @@ if ($List) {
                 $le = [Windows.Devices.Bluetooth.BluetoothLEDevice]
                 $dev = Wait-WinRt ($le::FromIdAsync($d.Id)) $le 5000
                 if ($dev) {
-                    $has = [bool](Get-BleCharacteristic $dev 'Uncached')
-                    $dev.Dispose()
+                    $got = Get-BleCharacteristic $dev 'Uncached'
+                    $has = [bool]$got
+                    Close-BleLink @{ Device = $dev; Service = $(if ($got) { $got.Service }) }
                 }
             } catch {}
             $what = if ($has) { 'host link service <- the companion uses this' }

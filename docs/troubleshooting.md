@@ -218,6 +218,12 @@ running. "no host link service" with the right firmware means Windows is
 using what it remembered from pairing: remove NEXUS under Bluetooth settings
 and pair it again, once.
 
+**HOST data stops after the dongle was unplugged or the PC slept, and comes
+back only when the companion is restarted.**
+An early Bluetooth companion never got a lost link back. Run `install.cmd`
+again for the current one, which reconnects by itself within about ten
+seconds.
+
 **HOST shows dashes although a companion is running.**
 With the Bluetooth transport built, HOST shows the host you are typing into.
 Typing over Bluetooth into a machine with no companion - or with an old,
