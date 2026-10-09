@@ -340,7 +340,12 @@ static void parse_work_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
 
-	if (!drain(&host_usb)) {
+	unsigned int lines = 0;
+
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
+	lines += drain(&host_usb);
+#endif
+	if (lines == 0) {
 		return;
 	}
 
@@ -366,5 +371,12 @@ static void stale_work_fn(struct k_work *work)
 
 int nexus_host_link_init(void)
 {
+	/* With no transport built the HOST screen still has something true
+	 * to show - how long the host has been connected - so that is not an
+	 * error. */
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
 	return host_link_usb_init();
+#else
+	return 0;
+#endif
 }

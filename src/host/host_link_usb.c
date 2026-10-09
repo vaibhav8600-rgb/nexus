@@ -25,7 +25,7 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define LINK_NODE DT_NODELABEL(nexus_host_cdc)
 
 #if !DT_NODE_HAS_STATUS(LINK_NODE, okay)
-#error "CONFIG_NEXUS_HOST_LINK needs the nexus_host_cdc node enabled - see docs/host-link.md"
+#error "CONFIG_NEXUS_HOST_LINK_USB needs the nexus_host_cdc node enabled - see docs/host-link.md"
 #endif
 
 static const struct device *const g_uart = DEVICE_DT_GET(LINK_NODE);

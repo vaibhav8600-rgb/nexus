@@ -46,7 +46,7 @@ void host_source_put(struct host_source *src, const uint8_t *buf, uint32_t len);
 /** There are bytes to look at: run the parser on the NEXUS work queue. */
 void host_link_kick(void);
 
-/* ---- host_link_usb.c ----------------------------------------------------- */
+/* ---- host_link_usb.c, with CONFIG_NEXUS_HOST_LINK_USB -------------------- */
 
 extern struct host_source host_usb;
 

@@ -377,7 +377,7 @@ def link_source(c, usb, priv, lines, lines_h, kconfig):
     work = body(c, 'static void parse_work_fn(struct k_work *work)\n{')
     drain = body(c, 'static unsigned int drain(struct host_source *src)\n{')
     ok('ring_buf_get(src->ring' in drain and 'k_spin_lock(&src->lock)' in drain
-       and 'drain(&host_usb)' in work,
+       and 'lines += drain(&host_usb);' in work,
        'the work item drains the ring under the same lock')
     ok('host_lines_feed(&src->lines, chunk, got, parse_line)' in drain
        and 'if (l->len < HOST_LINE_MAX - 1)' in lines,
@@ -400,6 +400,14 @@ def link_source(c, usb, priv, lines, lines_h, kconfig):
        "transport's alone")
     kc = kconfig.split('config NEXUS_HOST_LINK\n')[1].split('\nconfig ')[0]
     ok('select RING_BUFFER' in kc, 'Kconfig selects the ring buffer it uses')
+    kusb = kconfig.split('config NEXUS_HOST_LINK_USB\n')[1].split('\nconfig ')[0]
+    ok('default y' in kusb and 'depends on NEXUS_HOST_LINK && ZMK_USB' in kusb,
+       'the USB transport is on whenever the host link is, so a config from '
+       'before the split builds what it always did')
+    ok(all('select %s' % sym in kusb and 'select %s' % sym not in kc
+           for sym in ('SERIAL', 'UART_INTERRUPT_DRIVEN', 'USB_CDC_ACM')),
+       'and the serial stack is selected by the transport that uses it, not '
+       'by the feature')
     to_u32 = body(c, 'static uint32_t to_u32(const char *s, uint32_t max)')
     ok("*s == '\\0' ? v : UINT32_MAX" in to_u32,
        'to_u32() rejects trailing junk rather than stopping at it')
@@ -982,9 +990,17 @@ def without_host_link():
     ok('default n' in kc, 'the host link is off unless a config turns it on')
     cm = read('CMakeLists.txt')
     for f in ('src/host/host_link.c', 'src/host/host_lines.c',
-              'src/host/host_link_usb.c', 'src/ui/host_screen.c'):
+              'src/ui/host_screen.c'):
         ok('zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK %s)' % f in cm,
            '%s is only compiled with it' % f)
+    ok('zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK_USB '
+       'src/host/host_link_usb.c)' in cm,
+       'src/host/host_link_usb.c is only compiled with the USB transport')
+    init = body(read('src', 'host', 'host_link.c'),
+                'int nexus_host_link_init(void)\n{')
+    ok('#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)' in init
+       and 'return 0;' in init,
+       'and with it off nothing calls into that file')
 
     only_there = re.compile(
         r'\b(nexus_host|nexus_host_clock|nexus_host_day|nexus_host_time_text|'
