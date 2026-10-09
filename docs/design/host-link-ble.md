@@ -170,7 +170,32 @@ beyond the copy.
 | With BLE | about +1.5 KB | about +350 B | 256 B ring, 72 B line buffer, the service's attributes, one observer. |
 
 Budgets from the brief: USB only at most +256 B flash and +64 B RAM; BLE at
-most +3 KB flash and +512 B RAM. Real figures will come from CI.
+most +3 KB flash and +512 B RAM.
+
+### Measured
+
+From CI at `6d5cba9`, the linker's figures for the two memory regions.
+
+| Build | Flash used | RAM used | Change |
+| --- | --- | --- | --- |
+| `nexus_dongle` | 367,168 B | 93,194 B | none |
+| `nexus_dongle_no_studio` | 357,212 B | 85,946 B | none |
+| `nexus_dongle_remote` | 382,208 B | 99,302 B | none |
+| `settings_reset` | 52,508 B | 12,840 B | none |
+| `nexus_dongle_host_usb` | 372,864 B | 96,154 B | +176 B flash, +8 B RAM against the same build before the refactor (372,688 / 96,146) |
+| `nexus_dongle_host_ble` | 372,784 B | 93,746 B | new: Bluetooth transport, no USB one |
+| `nexus_dongle_host_all` | 388,660 B | 102,654 B | new: both transports and Remote Input |
+
+The four builds without the host link are byte-identical to `main`.
+
+The Bluetooth transport's own cost is about **+756 B flash and +392 B RAM**:
+`host_all` less what `nexus_dongle` plus the USB host link plus Remote Input
+come to on their own (387,904 / 102,262). It is a difference between builds,
+so the linker's rounding is in it; the RAM is the 256-byte ring, the line
+buffer and the service's bookkeeping.
+
+Without the USB transport the host link needs no serial stack: the
+Bluetooth-only build uses 2,408 B less RAM than the USB one.
 
 ## Alternatives rejected
 
