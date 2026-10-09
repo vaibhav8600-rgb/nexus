@@ -34,6 +34,39 @@ jobs:
             shield: nexus_dongle nexus_dongle_demo
             snippet: studio-rpc-usb-uart
             extra: -DCONFIG_NEXUS_REMOTE_INPUT=y
+          # The host link over its USB serial port, as a real config sets it
+          # up: Studio's port and the companion's side by side. The link
+          # needs a devicetree node the module does not ship, so CI supplies
+          # one. Until this entry, nothing in CI compiled src/host at all.
+          - name: nexus_dongle_host_usb
+            board: nice_nano@2.0.0//zmk
+            shield: nexus_dongle nexus_dongle_demo
+            snippet: studio-rpc-usb-uart
+            extra: >-
+              -DCONFIG_NEXUS_HOST_LINK=y
+              -DEXTRA_DTC_OVERLAY_FILE=${GITHUB_WORKSPACE}/nexus/.github/ci/host-cdc.overlay
+          # The host link over Bluetooth alone: no USB transport and no
+          # devicetree node, which is the proof the node is only asked for by
+          # the transport that uses it.
+          - name: nexus_dongle_host_ble
+            board: nice_nano@2.0.0//zmk
+            shield: nexus_dongle nexus_dongle_demo
+            snippet: studio-rpc-usb-uart
+            extra: >-
+              -DCONFIG_NEXUS_HOST_LINK=y
+              -DCONFIG_NEXUS_HOST_LINK_USB=n
+              -DCONFIG_NEXUS_HOST_LINK_BLE=y
+          # Everything at once: both transports and Remote Input, whose GATT
+          # authorization callback the Bluetooth transport has to live beside.
+          - name: nexus_dongle_host_all
+            board: nice_nano@2.0.0//zmk
+            shield: nexus_dongle nexus_dongle_demo
+            snippet: studio-rpc-usb-uart
+            extra: >-
+              -DCONFIG_NEXUS_HOST_LINK=y
+              -DCONFIG_NEXUS_HOST_LINK_BLE=y
+              -DCONFIG_NEXUS_REMOTE_INPUT=y
+              -DEXTRA_DTC_OVERLAY_FILE=${GITHUB_WORKSPACE}/nexus/.github/ci/host-cdc.overlay
           # Section 81: a peripheral build must not drag in the UI, the games
           # or the display stack. If NEXUS ever leaks into this one, the size
           # check below fails.
@@ -130,6 +163,13 @@ jobs:
               head -n 40
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # And as annotations, which - unlike the log and the summary - can
+          # be read without signing in: the first errors, one per line.
+          grep -nE "error:|FAILED:|undefined reference" build-output.log |
+            head -n 10 | sed 's/%/%25/g' | while IFS= read -r line; do
+              echo "::error title=${{ matrix.name }}::${line}"
+            done
           exit 1
 
       - name: Upload full build log
@@ -150,6 +190,20 @@ jobs:
           tail -n 12 build/build.log 2>/dev/null || true
           arm-zephyr-eabi-size build/zephyr/zmk.elf | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # One annotation per memory region, for comparing a branch against
+          # main without opening the log. From the linker's own table in the
+          # build output ("FLASH: 412345 B 792 KB 52.06%") rather than the
+          # size tool, which is not always on this container's PATH.
+          grep -E '^[[:space:]]*(FLASH|RAM):' build-output.log |
+            awk '{ print "::notice title=size ${{ matrix.name }}::" $1 " " $2 " " $3 " of " $4 " " $5 " " $6 }'
+          # And, where the size tool is found, the split the table does not
+          # give: text, data, bss.
+          SIZE="$(command -v arm-zephyr-eabi-size ||
+                  find /opt /usr -name arm-zephyr-eabi-size -type f 2>/dev/null | head -n 1)"
+          if [ -n "$SIZE" ]; then
+            "$SIZE" build/zephyr/zmk.elf | awk 'NR == 2 {
+              print "::notice title=sections ${{ matrix.name }}::text=" $1 " data=" $2 " bss=" $3 }'
+          fi
 
       - name: Upload ${{ matrix.name }}
         uses: actions/upload-artifact@v4

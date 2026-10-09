@@ -2,17 +2,21 @@
 
 Everything else on this device comes from ZMK, which knows about the keyboard
 and nothing else. The host link is the other half: a small program on the
-machine the dongle is plugged into, telling it what only that machine knows.
+machine the dongle is connected to, telling it what only that machine knows.
 
 The clock is the reason it exists. The dongle has no RTC, so the only real time
 it will ever see is a time somebody hands it.
 
 ```
   companion (your PC)  ──USB serial──►  dongle   ──►  HOST screen
-     time, date, CPU,                    parses,       clock, meters,
+     time, date, CPU,    or Bluetooth    parses,       clock, meters,
      RAM, now playing                    forgets load  now playing
                                          after 5 s
 ```
+
+It arrives over a second USB serial port, or - [since the Bluetooth
+transport](#over-bluetooth) - over the Bluetooth connection the host already
+has, which is what makes it work with the dongle on a charger.
 
 **One way.** The dongle never writes back. The companion cannot type, press
 keys, read your keymap or ask the dongle anything -- it can only push these
@@ -48,8 +52,10 @@ in your repo rather than in the module because a module that references
 };
 ```
 
-The firmware will not build without it -- the `#error` in `host_link.c` points
-back here rather than failing somewhere confusing.
+The firmware will not build without it -- the `#error` in `host_link_usb.c`
+points back here rather than failing somewhere confusing. It is the USB
+transport that needs the node: a build with `CONFIG_NEXUS_HOST_LINK_USB=n`
+and the Bluetooth transport on does not.
 
 **3. The companion,** on the machine -- optional, and it runs with nothing
 installed on Windows, Linux or macOS.
@@ -139,6 +145,126 @@ A menu walk is no way to read a clock, so there is also a direct action,
 #define NX_HOST  &nexus_action NEXUS_ACT_HOST
 ```
 
+## Over Bluetooth
+
+With the dongle powered from a charger and reaching the laptop over Bluetooth
+alone, there is no USB serial port to write to. The Bluetooth transport gives
+the companion a second way in:
+
+```conf
+CONFIG_NEXUS_HOST_LINK=y
+CONFIG_NEXUS_HOST_LINK_BLE=y
+```
+
+It adds one small **write-only** service to the Bluetooth connection the host
+already has as a keyboard. The companion writes the same lines to it. Nothing
+else about the radio changes: no new connection, no advertising, no
+connection parameters, no extra bond.
+
+| | |
+| --- | --- |
+| Service | `bbb8ee45-91c5-40fb-8c33-1c8b9c4795cc` |
+| Characteristic | `40064c5a-dc78-4b9e-b148-9e13bcbd7708` |
+| Properties | Write Without Response. Nothing to read, notify or indicate |
+| Needs | The encrypted link every paired host has |
+
+**The HOST screen shows the host you are typing into.** With two ways in,
+the dongle believes one at a time:
+
+| Keys are going out over | Lines that count |
+| --- | --- |
+| USB | The USB serial port's |
+| Bluetooth | Bluetooth's, from the host on the active profile only |
+
+Lines from the other source are dropped. When you switch - `&out`, a
+different `&bt BT_SEL` profile, the cable coming out - the load and the track
+are cleared at once, because they were the other machine's; the clock and the
+date are kept. A second paired host, a Remote Input phone and the keyboard
+halves cannot write to the HOST screen at all.
+
+So with the dongle in one PC's USB port and typing into another over
+Bluetooth, HOST shows the second PC if it runs a companion, and dashes if it
+does not. That is intended: the alternative is two machines' numbers on one
+screen.
+
+This rule exists only in a build with the Bluetooth transport. Without
+`CONFIG_NEXUS_HOST_LINK_BLE`, the dongle listens to its USB port whatever the
+output, exactly as before.
+
+**The companion.** On Windows, the same `nexus_host.ps1`, still with nothing
+to install:
+
+```powershell
+nexus_host.ps1                   # Auto: USB if it is there, Bluetooth if it is there, both if both
+nexus_host.ps1 -Transport Ble    # Bluetooth only
+nexus_host.ps1 -Transport Usb    # USB only, as before
+nexus_host.ps1 -List             # also lists connected Bluetooth devices and whether they have the service
+```
+
+Run `install.cmd` again after updating, so the installed copy is the new one.
+It finds NEXUS among the devices Windows is already connected to - it scans
+for nothing and pairs with nothing - writes 20 bytes at a time, looks again
+every 10 seconds while the dongle is not there, and reconnects by itself
+after the PC sleeps.
+
+An older companion only knows the USB port. With the Bluetooth transport on
+and keys going out over Bluetooth it shows dashes, so update the companion
+when you turn the option on.
+
+The Python companion (Linux, macOS) is USB only for now, and says so if asked
+for `--transport ble`.
+
+Windows gives a Bluetooth service to one program at a time, as it does a
+serial port. With a companion already running, `-List` reads "host link
+service, in use", and a second copy waits rather than fighting over it.
+
+**If Windows does not find the service** after a reflash - `-List` says "no
+host link service" - Windows is using the list of services it remembered when
+it paired. The companion asks the dongle directly once each time it starts,
+which is normally enough. If it is not, remove NEXUS under Bluetooth settings
+and pair it again, once.
+
+### Test checklist (real hardware)
+
+The firmware builds in CI in all three combinations. Everything below needs
+the dongle. Ticked: run on the hardware, 2026-10-09 (Windows 11 laptop,
+nice!nano dongle with both transports and Remote Input built in).
+
+- [ ] Option off: everything as on `main` - typing, split, USB, BLE profiles,
+      Studio, display, games, sound. (CI: the four builds without the host
+      link are byte-identical to `main`.)
+- [ ] `HOST_LINK` with USB only: HOST and the companion exactly as before.
+- [x] Option on: typing, split, USB, BLE profiles, display and games as
+      before.
+- [x] Bluetooth on, dongle in the laptop's USB, output USB: data, via USB.
+- [x] The same, output switched to BLE on the same laptop: data continues.
+- [x] **Dongle on a wall charger, BLE only to the laptop: HOST shows clock,
+      date, CPU, RAM and track; pause and play follow.**
+- [x] Switch to a BLE profile whose host has no companion: load and track go
+      to dashes at once, the clock stays. Switch back: data returns in a
+      second or two, the track within ten.
+- [x] Laptop sleeps and wakes: dashes after the stale time, then it recovers
+      without restarting the companion.
+- [x] Bluetooth, then the dongle moved to USB, then back to a charger: the
+      data returns over Bluetooth by itself, the time within ten seconds.
+      (First run, the time took up to a minute and read as no data until the
+      companion was restarted: the clock was resent once a minute and the
+      dongle had just lost it with its power. Passed with the companion that
+      resends it every ten seconds.)
+- [x] After a reflash, Windows finds the new service with no re-pair.
+- [ ] Reflash the dongle while the new companion runs: it finds the dongle
+      again by itself.
+- [x] Remote Input on: the iPhone connects and types as before.
+- [ ] A second paired host that is not the active profile, or a phone, writes
+      to the characteristic (nRF Connect): nothing changes on screen.
+- [x] ZMK Studio connects over USB while the companion runs.
+- [x] Reset the dongle while the companion runs over BLE: both halves
+      reconnect, and the data comes back.
+- [x] Typing and a game of Tetris with the companion running over BLE: no
+      lag, no dropped keys, no split disconnects.
+- [ ] nRF Connect, from the active host: `C 4` and `2\n` as two writes shows
+      CPU 42.
+
 ## The protocol
 
 Lines of text, `\n` terminated, at any rate you like. One letter, a space, a
@@ -167,7 +293,13 @@ with anything after it -- `C 37abc` is a mangled line, not 37.
 
 Send lines as fast as you like, back to back in one write: the dongle queues
 bytes in a 256 byte ring and assembles lines off the interrupt, so a whole
-update in one USB packet arrives whole.
+update in one USB packet arrives whole. Over Bluetooth a line may be cut
+anywhere between writes; it is the same byte stream. A write the ring cannot
+take whole is dropped whole, and the line it was part of is skipped rather
+than read with a piece missing.
+
+A NUL byte is not part of any line. The dongle treats one as "bytes are
+missing here" and skips to the next newline.
 
 You can drive it by hand, which is the main reason it is text:
 
@@ -199,15 +331,19 @@ only how it is drawn -- the companion sends the same seconds-since-midnight
 either way, so changing it needs nothing on the host.
 
 Between updates the dongle counts forward with its kernel uptime, which drifts.
-The companion resends `T` and `D` every minute, so the drift never
-accumulates past that. Seconds are not displayed, on purpose: a seconds digit would repaint that
+The companion resends `T` and `D` every ten seconds, so the drift never
+accumulates past that - and a dongle that has just lost power, and with it
+the time, has it back within those ten seconds. Nothing can ask for it: the
+link is one way. Seconds are not displayed, on purpose: a seconds digit would repaint that
 card once a second forever, which is exactly what a screen sitting idle on a
 desk must not do.
 
 ## What it costs, and what it cannot do
 
-- **USB only.** On BLE to a phone or a TV there is no companion, and the HOST
-  screen reads `NO LINK`. That is correct, not a failure.
+- **A companion has to run on the host.** On BLE to a phone or a TV there is
+  none, and the HOST screen reads `NO LINK`. That is correct, not a failure.
+- **Over Bluetooth, Windows only so far.** The Linux and macOS companion
+  writes to the USB port.
 - **Now playing is per-OS and best effort.** The PowerShell companion reads
   Windows' own media session -- the one the volume flyout shows -- so any app
   that reports to it works with nothing installed. On macOS the Music and
@@ -225,8 +361,9 @@ desk must not do.
   ZMK Studio; this is a second. If your machine is short of USB endpoints,
   this is the thing to turn off first.
 - **About half a kilobyte of RAM** on the dongle: the 256 byte receive ring,
-  a line buffer, and the model with its title and artist. None of it is in the
-  compositor band that `UI STATIC` reports.
+  a line buffer, and the model with its title and artist. The Bluetooth
+  transport adds a ring and a line buffer of its own, about 350 bytes more.
+  None of it is in the compositor band that `UI STATIC` reports.
 
 ## Privacy
 

@@ -209,6 +209,27 @@ straight back - and check the build has
 
 ## Host link
 
+**On a charger, connected over Bluetooth, HOST says `NO LINK`.**
+The firmware needs `CONFIG_NEXUS_HOST_LINK_BLE=y`, and the companion has to
+be the one that knows Bluetooth: run `install.cmd` again. Then
+`nexus_host.ps1 -List` - under "Connected Bluetooth LE devices", NEXUS should
+read "host link service", or "host link service, in use" while a companion is
+running. "no host link service" with the right firmware means Windows is
+using what it remembered from pairing: remove NEXUS under Bluetooth settings
+and pair it again, once.
+
+**HOST data stops after the dongle was unplugged or the PC slept, and comes
+back only when the companion is restarted.**
+An early Bluetooth companion never got a lost link back. Run `install.cmd`
+again for the current one, which reconnects by itself within about ten
+seconds.
+
+**HOST shows dashes although a companion is running.**
+With the Bluetooth transport built, HOST shows the host you are typing into.
+Typing over Bluetooth into a machine with no companion - or with an old,
+USB-only one - is dashes, even while another PC feeds the USB port. See
+[host-link.md](host-link.md#over-bluetooth).
+
 **HOST says `NO LINK`.**
 Normal until a companion runs - flashing alone never links (see
 [host-link.md](host-link.md)). With one running, check its window: `open COM15`

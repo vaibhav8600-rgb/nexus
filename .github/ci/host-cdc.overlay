@@ -1,0 +1,13 @@
+/*
+ * CI only: the second USB serial port the host link's USB transport needs.
+ *
+ * A real config adds this node to its own overlay (docs/host-link.md); the
+ * module does not ship it enabled, because a new serial port appearing on
+ * someone's machine should be something they asked for. The CI builds that
+ * turn the USB transport on pass this file with EXTRA_DTC_OVERLAY_FILE.
+ */
+&zephyr_udc0 {
+	nexus_host_cdc: nexus_host_cdc {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};

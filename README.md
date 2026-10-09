@@ -35,7 +35,9 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 - **HOST screen** -- the time and date, CPU and RAM load, and the track and
   artist playing on the machine it is plugged into. The companion needs
   nothing installed on Windows, Linux or macOS, and with no companion at all
-  the screen still shows how long the host has been connected. The time and
+  the screen still shows how long the host has been connected. Over USB, or -
+  from Windows - over the Bluetooth connection the laptop already has, so it
+  works with the dongle on a charger. The time and
   date also sit either side of the name on the dashboard.
   ([details](docs/host-link.md))
 - **Remote Input** -- a phone as keyboard, trackpad and media remote from
