@@ -245,12 +245,12 @@ nice!nano dongle with both transports and Remote Input built in).
       second or two, the track within ten.
 - [x] Laptop sleeps and wakes: dashes after the stale time, then it recovers
       without restarting the companion.
-- [ ] Bluetooth, then the dongle moved to USB, then back to a charger: the
+- [x] Bluetooth, then the dongle moved to USB, then back to a charger: the
       data returns over Bluetooth by itself, the time within ten seconds.
-      (On 2026-10-09 the time took up to a minute, which read as no data
-      until the companion was restarted or the output toggled: the clock was
-      resent once a minute and the dongle had just lost it with its power.
-      The companion now resends it every ten seconds; to be run again.)
+      (First run, the time took up to a minute and read as no data until the
+      companion was restarted: the clock was resent once a minute and the
+      dongle had just lost it with its power. Passed with the companion that
+      resends it every ten seconds.)
 - [x] After a reflash, Windows finds the new service with no re-pair.
 - [ ] Reflash the dongle while the new companion runs: it finds the dongle
       again by itself.
