@@ -157,11 +157,20 @@ jobs:
           tail -n 12 build/build.log 2>/dev/null || true
           arm-zephyr-eabi-size build/zephyr/zmk.elf | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          # One annotation per build, for comparing a branch against main
-          # without opening the log: flash is text + data, RAM is data + bss.
-          arm-zephyr-eabi-size build/zephyr/zmk.elf | awk 'NR == 2 {
-            print "::notice title=size ${{ matrix.name }}::text=" $1 \
-              " data=" $2 " bss=" $3 " flash=" $1 + $2 " ram=" $2 + $3 }'
+          # One annotation per memory region, for comparing a branch against
+          # main without opening the log. From the linker's own table in the
+          # build output ("FLASH: 412345 B 792 KB 52.06%") rather than the
+          # size tool, which is not always on this container's PATH.
+          grep -E '^[[:space:]]*(FLASH|RAM):' build-output.log |
+            awk '{ print "::notice title=size ${{ matrix.name }}::" $1 " " $2 " " $3 " of " $4 " " $5 " " $6 }'
+          # And, where the size tool is found, the split the table does not
+          # give: text, data, bss.
+          SIZE="$(command -v arm-zephyr-eabi-size ||
+                  find /opt /usr -name arm-zephyr-eabi-size -type f 2>/dev/null | head -n 1)"
+          if [ -n "$SIZE" ]; then
+            "$SIZE" build/zephyr/zmk.elf | awk 'NR == 2 {
+              print "::notice title=sections ${{ matrix.name }}::text=" $1 " data=" $2 " bss=" $3 }'
+          fi
 
       - name: Upload ${{ matrix.name }}
         uses: actions/upload-artifact@v4
