@@ -130,6 +130,13 @@ jobs:
               head -n 40
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # And as annotations, which - unlike the log and the summary - can
+          # be read without signing in: the first errors, one per line.
+          grep -nE "error:|FAILED:|undefined reference" build-output.log |
+            head -n 10 | sed 's/%/%25/g' | while IFS= read -r line; do
+              echo "::error title=${{ matrix.name }}::${line}"
+            done
           exit 1
 
       - name: Upload full build log
@@ -150,6 +157,11 @@ jobs:
           tail -n 12 build/build.log 2>/dev/null || true
           arm-zephyr-eabi-size build/zephyr/zmk.elf | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # One annotation per build, for comparing a branch against main
+          # without opening the log: flash is text + data, RAM is data + bss.
+          arm-zephyr-eabi-size build/zephyr/zmk.elf | awk 'NR == 2 {
+            print "::notice title=size ${{ matrix.name }}::text=" $1 \
+              " data=" $2 " bss=" $3 " flash=" $1 + $2 " ram=" $2 + $3 }'
 
       - name: Upload ${{ matrix.name }}
         uses: actions/upload-artifact@v4
