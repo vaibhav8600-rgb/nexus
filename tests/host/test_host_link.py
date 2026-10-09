@@ -61,12 +61,23 @@ class Host:
         self.ring = bytearray()
         self.line_buf = ''
         self.skip = False
+        self.gapped = False
 
     # -- the wire
     def isr(self, data):
         """uart_cb(): into the ring, dropping what does not fit."""
         room = self.RING - len(self.ring)
         self.ring += data[:room]
+
+    def packet(self, data):
+        """host_source_put_whole(): a packet goes in whole or not at all,
+        and a dropped one leaves a single gap marker in its place."""
+        if self.RING - len(self.ring) > len(data):
+            self.ring += data
+            self.gapped = False
+        elif not self.gapped:
+            self.ring += b'\x00'
+            self.gapped = True
 
     def work(self):
         """parse_work_fn(): drain the ring, assemble, parse."""
@@ -725,6 +736,99 @@ def layout(s):
            % (name, K[wdef], K[hdef]))
 
 
+def ble_source(text_max, c, ble, priv, kconfig, cmake):
+    print('\nOver Bluetooth: packets, whole or not at all')
+    st = Host(text_max)
+    for part in (b'T 48720\nD 20709\nC 37\n', b'M 62\nN NEON NIGHTS\n',
+                 b'A RETROSYNTH\nP 1\n'):
+        st.packet(part)
+    st.work()
+    ok((st.clock_sec, st.cpu, st.mem, st.now_playing, st.artist)
+       == (48720, 37, 62, 'NEON NIGHTS', 'RETROSYNTH'),
+       'an update cut into 20-byte writes wherever they fall still parses')
+    st = Host(text_max)
+    st.packet(b'N ' + b'Z' * 240)       # 242 of 256: the title, unfinished
+    st.packet(b'Y' * 10 + b'\nC 1')     # 14 bytes into 14 free: dropped
+    ok(len(st.ring) == 243 and st.ring[-1] == 0,
+       'a packet that does not fit is dropped whole and leaves a gap marker '
+       '- which always fits, a byte of the ring being kept for it')
+    st.packet(b'5\nM 3')                # 5 bytes: fits behind the marker
+    st.work()
+    ok(st.now_playing == '' and st.cpu == UNKNOWN,
+       'so the title with a hole in it is never shown, and "5" - the tail of '
+       'the dropped "C 15" - is not read as a line')
+    st.packet(b'0\n')
+    st.packet(b'C 44\n')
+    st.work()
+    ok(st.mem == 30 and st.cpu == 44,
+       'while what arrived whole after the gap still counts: M 30, C 44')
+    st = Host(text_max)
+    st.packet(b'N ' + b'Z' * 248)       # 250 of 256
+    st.packet(b'A' * 10)
+    st.packet(b'B' * 10)
+    ok(st.ring.count(0) == 1 and len(st.ring) == 251,
+       'a run of dropped packets leaves one marker, not one each')
+
+    put = body(c, 'void host_source_put_whole(struct host_source *src, '
+                  'const uint8_t *buf,\n\t\t\t   uint32_t len)\n{')
+    ok('ring_buf_space_get(src->ring) > len' in put
+       and 'HOST_LINES_GAP' in put and 'src->gapped' in put
+       and 'k_spin_lock(&src->lock)' in put,
+       'the C does the same, under the ring\'s lock')
+    ok('bool gapped;' in priv.split('struct host_source {')[1].split('\n};')[0],
+       'and the marker state belongs to the source')
+
+    print('\nThe Bluetooth service')
+    svc = ble.split('BT_GATT_SERVICE_DEFINE(')[1].split(');')[0]
+    ok('BT_GATT_CHRC_WRITE_WITHOUT_RESP' in svc
+       and svc.count('BT_GATT_CHARACTERISTIC(') == 1,
+       'one characteristic, written without response')
+    for word in ('READ', 'NOTIFY', 'INDICATE', 'BT_GATT_CCC'):
+        ok(word not in svc, 'no %s: the dongle has no way to talk back' % word)
+    ok('BT_GATT_PERM_WRITE_ENCRYPT' in svc,
+       'writes need the encrypted link every bonded host has')
+    ok(svc.startswith('zz_nexus_host_svc,'),
+       'named to sort last, so no existing handle moves for a bonded host '
+       'or phone')
+    ok('bbb8ee45' in ble and '40064c5a' in ble and '7e4e' not in ble,
+       'its UUIDs are its own, not derived from Remote Input\'s')
+    wr = body(ble, 'static ssize_t write_rx(struct bt_conn *conn, '
+                   'const struct bt_gatt_attr *attr,')
+    ok('if (offset)' in wr and 'BT_ATT_ERR_INVALID_OFFSET' in wr,
+       'a write at an offset is refused')
+    ok('from_active_host(conn)' in wr
+       and 'host_source_put_whole(&host_ble, buf, len)' in wr
+       and 'host_link_kick()' in wr,
+       'the handler copies the packet into its own source and posts the work')
+    for forbidden in ('parse_line', 'LOG_', 'nexus_screen', 'k_sleep',
+                      'k_malloc'):
+        ok(forbidden not in ble,
+           'nothing on the Bluetooth thread touches %s' % forbidden)
+    who = body(ble, 'static bool from_active_host(struct bt_conn *conn)\n{')
+    ok('BT_CONN_ROLE_PERIPHERAL' in who
+       and 'zmk_ble_active_profile_addr()' in who
+       and 'bt_addr_le_cmp(' in who,
+       'only the host on the active profile is listened to - not another '
+       'bonded host, a phone, or a keyboard half')
+    ok('zmk_ble_active_profile_conn(' not in ble.split('*/', 1)[1]
+       .replace('..._conn()', ''),
+       'without zmk_ble_active_profile_conn(), which warns every time the '
+       'profile is not connected')
+    for banned in ('bt_conn_le_param_update', 'bt_le_adv', 'zmk_ble_prof_',
+                   'bt_conn_disconnect', 'zmk/events'):
+        ok(banned not in ble, 'the radio is left alone: no %s' % banned)
+
+    kble = kconfig.split('config NEXUS_HOST_LINK_BLE\n')[1].split('\nconfig ')[0]
+    ok('default n' in kble and 'depends on NEXUS_HOST_LINK && ZMK_BLE' in kble
+       and 'select' not in kble,
+       'off unless asked for, and it selects nothing')
+    ok('zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK_BLE '
+       'src/host/host_link_ble.c)' in cmake,
+       'src/host/host_link_ble.c is only compiled with it')
+    ok('DT_NODELABEL' not in ble and 'uart' not in ble,
+       'and it needs no devicetree node and no serial port')
+
+
 def companions():
     print('\nThe Python companion needs nothing but Python')
     py = read('tools', 'nexus-host', 'nexus_host.py')
@@ -1013,7 +1117,7 @@ def without_host_link():
             rel = os.path.relpath(os.path.join(dirpath, name), ROOT)
             rel = rel.replace(os.sep, '/')
             host_only = ('src/host/host_link.c', 'src/host/host_link_usb.c',
-                         'src/ui/host_screen.c')
+                         'src/host/host_link_ble.c', 'src/ui/host_screen.c')
             if not name.endswith('.c') or rel in host_only:
                 continue
             stack = []           # per open #if: does it select the host link?
@@ -1043,6 +1147,9 @@ def main():
     text_max = int(re.search(r'#define NEXUS_HOST_TEXT (\d+)', h).group(1))
 
     protocol(text_max)
+    ble_source(text_max, c, read('src', 'host', 'host_link_ble.c'),
+               read('src', 'host', 'host_priv.h'), read('Kconfig'),
+               read('CMakeLists.txt'))
     link_source(c, read('src', 'host', 'host_link_usb.c'),
                 read('src', 'host', 'host_priv.h'),
                 read('src', 'host', 'host_lines.c'),

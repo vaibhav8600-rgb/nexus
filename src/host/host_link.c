@@ -3,8 +3,8 @@
  *
  * This file is the part no wire knows about - the model, the parser, the
  * staleness rule. How the bytes arrive is a transport's business
- * (host_link_usb.c); each one copies them into its own source and posts the
- * work below.
+ * (host_link_usb.c, host_link_ble.c); each one copies them into its own
+ * source and posts the work below.
  *
  * Parsing happens on the NEXUS work queue, never where the bytes arrive. A
  * transport does the least it can: move bytes into a ring buffer and post
@@ -312,6 +312,25 @@ void host_source_put(struct host_source *src, const uint8_t *buf, uint32_t len)
 	k_spin_unlock(&src->lock, key);
 }
 
+void host_source_put_whole(struct host_source *src, const uint8_t *buf,
+			   uint32_t len)
+{
+	static const uint8_t gap = HOST_LINES_GAP;
+	k_spinlock_key_t key = k_spin_lock(&src->lock);
+
+	/* More than len, not len: the byte left over is the marker's. */
+	if (ring_buf_space_get(src->ring) > len) {
+		ring_buf_put(src->ring, buf, len);
+		src->gapped = false;
+	} else if (!src->gapped) {
+		/* Once per run of drops: one marker says all there is to
+		 * say, and a second would not fit. */
+		ring_buf_put(src->ring, &gap, 1);
+		src->gapped = true;
+	}
+	k_spin_unlock(&src->lock, key);
+}
+
 void host_link_kick(void)
 {
 	k_work_submit_to_queue(nexus_workq(), &g_parse);
@@ -344,6 +363,9 @@ static void parse_work_fn(struct k_work *work)
 
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
 	lines += drain(&host_usb);
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
+	lines += drain(&host_ble);
 #endif
 	if (lines == 0) {
 		return;

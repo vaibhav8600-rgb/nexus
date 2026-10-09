@@ -3,8 +3,8 @@
  * Not part of the module API.
  *
  * A transport's whole job is to get bytes off its wire and into its source:
- * host_source_put() and host_link_kick(), from whatever context the wire
- * calls it in. Assembling lines, parsing them, the model and the screen all
+ * host_source_put() or host_source_put_whole(), then host_link_kick(), from
+ * whatever context the wire calls it in. Assembling lines, parsing them, the model and the screen all
  * happen on the NEXUS work queue, in host_link.c.
  */
 #ifndef NEXUS_HOST_PRIV_H_
@@ -31,6 +31,8 @@ struct host_source {
 	struct k_spinlock lock;
 	/* The line being assembled. Work queue only. */
 	struct host_lines lines;
+	/* The last thing put was a gap marker. Under the lock. */
+	bool gapped;
 };
 
 #define HOST_SOURCE_DEFINE(name)                                               \
@@ -43,6 +45,15 @@ struct host_source {
  */
 void host_source_put(struct host_source *src, const uint8_t *buf, uint32_t len);
 
+/**
+ * The same, all or nothing, for a wire that delivers in packets. A packet
+ * the ring cannot take whole is dropped whole, and one HOST_LINES_GAP goes
+ * in its place, so the line it was part of is skipped rather than read with
+ * a hole in it. A byte of the ring is always kept free for that marker.
+ */
+void host_source_put_whole(struct host_source *src, const uint8_t *buf,
+			   uint32_t len);
+
 /** There are bytes to look at: run the parser on the NEXUS work queue. */
 void host_link_kick(void);
 
@@ -52,5 +63,9 @@ extern struct host_source host_usb;
 
 /** Bring the USB serial port up. @return 0, or a negative errno. */
 int host_link_usb_init(void);
+
+/* ---- host_link_ble.c, with CONFIG_NEXUS_HOST_LINK_BLE -------------------- */
+
+extern struct host_source host_ble;
 
 #endif /* NEXUS_HOST_PRIV_H_ */

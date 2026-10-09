@@ -28,6 +28,7 @@ string, and CI fails the build if one appears (Requirement B).
 | `CONFIG_NEXUS_UI_REFRESH_NORMAL_MS` | `200` | Status dashboard. |
 | `CONFIG_NEXUS_UI_REFRESH_IDLE_MS` | `1000` | Static screens. |
 | `CONFIG_NEXUS_HOST_LINK` | `n` | A companion on your PC pushes the time and date, CPU and RAM load, and the track and artist playing, shown on the HOST screen. With no companion the screen shows how long the host has been connected. See [host-link.md](host-link.md). |
+| `CONFIG_NEXUS_HOST_LINK_BLE` | `n` | The host link's Bluetooth transport: the companion writes to a small write-only service on the connection the host already has, so HOST works with the dongle on a charger. With it on, HOST shows the host you are typing into. See [host-link.md](host-link.md). |
 | `CONFIG_NEXUS_HOST_LINK_USB` | `y` | The host link's USB transport: a second USB serial port the companion writes to. On whenever the host link is, so a config that sets only `CONFIG_NEXUS_HOST_LINK` builds what it always has. Needs a devicetree node you add yourself -- see [host-link.md](host-link.md). |
 | `CONFIG_NEXUS_HOST_CLOCK_24H` | `n` | Draw the host clock as 14:32 rather than 2:32 PM. Drawing only -- the companion sends the same thing either way. |
 | `CONFIG_NEXUS_HOST_STALE_S` | `5` | After N silent seconds, CPU, RAM and the track go back to dashes and HOST reads `NO LINK`. The clock and date keep counting. |
