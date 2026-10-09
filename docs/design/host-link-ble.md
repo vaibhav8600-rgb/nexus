@@ -275,6 +275,10 @@ Bluetooth-only build uses 2,408 B less RAM than the USB one.
     running, a second one - and `-List` - got `AccessDenied` for the
     characteristic, which read as "no host link service". It is now reported
     as "in use". Found on the hardware.
+11. **The companion's messages.** A lost link was reported as PowerShell's
+    wrapping of the error; it now gives the error's own sentence. While
+    Bluetooth carries the data the USB port is looked for every 10 s, not
+    every 3.
 12. **A dropped link was never got back.** When the Bluetooth link was
     lost the companion disposed the device and let go of the rest. Windows
     keeps a service reserved for the object that opened it, and a .NET object
@@ -285,10 +289,6 @@ Bluetooth-only build uses 2,408 B less RAM than the USB one.
     again showed no data. Reproduced by ageing the objects before a simulated
     loss; the service is now disposed with the device, and one opened and not
     kept is closed on the spot.
-11. **The companion's messages.** A lost link was reported as PowerShell's
-    wrapping of the error; it now gives the error's own sentence. While
-    Bluetooth carries the data the USB port is looked for every 10 s, not
-    every 3.
 
 ## Open questions for Vaibhav
 
