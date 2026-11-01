@@ -213,7 +213,7 @@ def persona():
         ok(takes('E ' + f['emotion'].upper()) and takes('S ' + f['line']),
            'face command "%s" is lines the dongle takes' % f['emotion'])
     for a in c['actions']:
-        ok(a['steps'] and all(takes(l) for st in a['steps'] for l in st),
+        ok(a['steps'] and all(takes(line) for st in a['steps'] for line in st),
            'trick "%s" is lines the dongle takes' % a['words'][0])
     app = os.path.join(ROOT, '..', 'nexus-remote', 'src', 'buddy', 'persona.json')
     if os.path.exists(app):
