@@ -37,9 +37,11 @@ param(
     [switch]$Uninstall,
     # Seconds between updates.
     [double]$Interval = 1.0,
-    # Be Buddy's brain (docs/buddy.md): Gemini when the GEMINI_API_KEY
-    # environment variable is set, canned lines from persona.json when not.
-    # The key is never an argument - it would sit in the process list.
+    # Be Buddy's brain (docs/buddy.md): Gemini with a key, canned lines from
+    # persona.json without. The key comes from the GEMINI_API_KEY environment
+    # variable or %LOCALAPPDATA%\NEXUS\gemini.json, and a key in that file
+    # turns this on by itself. Never an argument: it would sit in the process
+    # list.
     [switch]$Buddy,
     # Minutes between unprompted lines, 5-60.
     [ValidateRange(5, 60)]
@@ -91,6 +93,28 @@ $RUN_NAME = 'NEXUS companion'
 # dies silently the next time you log in.
 $HOME_DIR = Join-Path $env:LOCALAPPDATA 'NEXUS'
 
+# Buddy's Gemini key, kept beside the installed copy and never in a repo -
+# a key in a file that gets pushed is a public key. A key here is all it
+# takes: the companion becomes Buddy's brain without -Buddy.
+$KEY_FILE = Join-Path $HOME_DIR 'gemini.json'
+$KEY_HELP = 'Paste your key from https://aistudio.google.com/apikey into "key". This file stays on this PC.'
+
+# @{ key; model } - the environment first, then gemini.json. $null for either
+# that neither says.
+function Get-GeminiConfig {
+    $cfg = @{ key = "$env:GEMINI_API_KEY".Trim(); model = $null }
+    if (Test-Path $KEY_FILE) {
+        try {
+            $j = Get-Content $KEY_FILE -Raw -ErrorAction Stop | ConvertFrom-Json
+            if (-not $cfg.key -and $j.key) { $cfg.key = "$($j.key)".Trim() }
+            if ($j.model) { $cfg.model = "$($j.model)".Trim() }
+        } catch {
+            Write-Warning "$KEY_FILE is not valid JSON - ignored"
+        }
+    }
+    $cfg
+}
+
 # Buddy's persona: beside the script once installed, else the repo's own copy.
 function Get-PersonaPath {
     foreach ($p in @((Join-Path $PSScriptRoot 'persona.json'),
@@ -138,8 +162,16 @@ if ($Uninstall) {
     if (-not $found) { Write-Output 'was not set to start with Windows' }
     Stop-Companions
     if (Test-Path $HOME_DIR) {
-        Remove-Item $HOME_DIR -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Output "removed $HOME_DIR"
+        # Everything but the Gemini key: reinstalling should not mean
+        # finding and pasting it again. Delete gemini.json by hand to forget it.
+        Get-ChildItem $HOME_DIR -Force | Where-Object { $_.FullName -ne $KEY_FILE } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path $KEY_FILE) {
+            Write-Output "removed $HOME_DIR, except your Gemini key ($KEY_FILE)"
+        } else {
+            Remove-Item $HOME_DIR -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Output "removed $HOME_DIR"
+        }
     }
     return
 }
@@ -159,6 +191,13 @@ if ($Install) {
         $persona = Get-PersonaPath
         if ($persona -and $persona -ne (Join-Path $HOME_DIR 'persona.json')) {
             Copy-Item $persona (Join-Path $HOME_DIR 'persona.json') -Force -ErrorAction Stop
+        }
+        # An empty key file to paste into, once. One that exists is left
+        # alone - it may hold a key.
+        if (-not (Test-Path $KEY_FILE)) {
+            @{ key = ''; help = $KEY_HELP } | ConvertTo-Json |
+                Set-Content $KEY_FILE -Encoding ascii -ErrorAction Stop
+            Write-Output "Gemini key file: $KEY_FILE (paste your key, then run this again)"
         }
 
         # $launch, not $args: $args is PowerShell's own automatic variable.
@@ -778,17 +817,36 @@ $lastClock = [datetime]::MinValue
 $lastNp = $null
 $lastNpAt = [datetime]::MinValue
 
+# Buddy's state, kept whether or not it is on: a key pasted into gemini.json
+# while this runs turns it on at the next look, with no restart.
+$script:bud = @{
+    key = ''; job = $null; said = ''; saidAt = $null
+    nextAsk = [datetime]::MinValue; leaseAt = [datetime]::MinValue; backoff = 0
+    song = ''; songAt = [datetime]::MinValue; busySince = $null
+    busyAt = [datetime]::MinValue; complained = @{}
+}
+$nextKeyLook = [datetime]::MinValue
+$modelGiven = $PSBoundParameters.ContainsKey('GeminiModel')
+
+# Look for a key: at start, then every 30 s until there is one. Never printed.
+function Update-BuddyKey {
+    $gem = Get-GeminiConfig
+    if (-not $gem.key -or $gem.key -eq $script:bud.key) { return }
+    $script:bud.key = $gem.key
+    if ($gem.model -and -not $modelGiven) { $script:GeminiModel = $gem.model }
+    if (-not $script:Buddy) {
+        $script:Buddy = [switch]::Present
+        $script:bud.leaseAt = [datetime]::MinValue
+    }
+    Write-Output "buddy: Gemini ($script:GeminiModel)"
+}
+
+Update-BuddyKey
 if ($Buddy) {
     $script:persona = Get-Content (Get-PersonaPath) -Raw -ErrorAction Stop | ConvertFrom-Json
-    # From the environment and nowhere else, and never printed.
-    $script:bud = @{
-        key = "$env:GEMINI_API_KEY".Trim(); job = $null; said = ''; saidAt = $null
-        nextAsk = [datetime]::MinValue; leaseAt = [datetime]::MinValue; backoff = 0
-        song = ''; songAt = [datetime]::MinValue; busySince = $null
-        busyAt = [datetime]::MinValue; complained = @{}
+    if (-not $script:bud.key) {
+        Write-Output "buddy: canned lines - put a Gemini key in $KEY_FILE for Gemini"
     }
-    if ($script:bud.key) { Write-Output "buddy: Gemini ($GeminiModel)" }
-    else { Write-Output 'buddy: canned lines - set GEMINI_API_KEY for Gemini' }
 }
 
 try {
@@ -924,6 +982,14 @@ try {
     if ($lines.Count -eq 0) {
         $now = Get-Date
         $lines.Add('T ' + [int]($now - $now.Date).TotalSeconds)
+    }
+
+    if (-not $script:bud.key -and (Get-Date) -ge $nextKeyLook) {
+        $nextKeyLook = (Get-Date).AddSeconds(30)
+        Update-BuddyKey
+        if ($Buddy -and -not $script:persona) {
+            $script:persona = Get-Content (Get-PersonaPath) -Raw -ErrorAction Stop | ConvertFrom-Json
+        }
     }
 
     # Buddy's lines go in the same write as the rest, so they share a packet.

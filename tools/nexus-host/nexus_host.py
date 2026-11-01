@@ -10,7 +10,9 @@ tell it things - it cannot type, press keys, or read anything back.
     python3 nexus_host.py --port /dev/ttyACM1
     python3 nexus_host.py --buddy         # and be Buddy's brain (docs/buddy.md)
 
---buddy talks to Gemini only with GEMINI_API_KEY set in the environment, and
+--buddy talks to Gemini only with a key - GEMINI_API_KEY in the environment,
+or "key" in gemini.json (%LOCALAPPDATA%\\NEXUS on Windows, ~/.config/nexus
+elsewhere; a key there turns --buddy on by itself) - and
 sends it the time of day, how busy this machine is (low / medium / high), the
 track playing and why it is asking - never keystrokes, windows or files.
 Without the key it says canned lines from persona/persona.json.
@@ -324,6 +326,33 @@ def load_persona(path=None):
         return json.load(f)
 
 
+def key_file():
+    """Where the Gemini key is kept: beside the installed Windows companion,
+    or the usual per-user config directory. Never in a repo - a key in a
+    file that gets pushed is a public key."""
+    if os.environ.get('LOCALAPPDATA'):
+        return os.path.join(os.environ['LOCALAPPDATA'], 'NEXUS', 'gemini.json')
+    return os.path.join(os.path.expanduser('~'), '.config', 'nexus',
+                        'gemini.json')
+
+
+def gemini_config(path=None):
+    """(key, model): the environment first, then gemini.json. '' and None
+    for what neither says. A broken file is said once and ignored."""
+    key = os.environ.get('GEMINI_API_KEY', '').strip()
+    model = None
+    path = path or key_file()
+    if os.path.exists(path):
+        try:
+            with open(path, encoding='utf-8') as f:
+                j = json.load(f)
+            key = key or str(j.get('key') or '').strip()
+            model = str(j['model']).strip() if j.get('model') else None
+        except (OSError, ValueError, AttributeError):
+            print('%s is not valid JSON - ignored' % path, file=sys.stderr)
+    return key, model
+
+
 def buddy_fold(text):
     return ''.join(c for c in text.upper() if 32 <= ord(c) <= 90)[:LINE_MAX]
 
@@ -544,8 +573,9 @@ def main():
                          'canned lines without)')
     ap.add_argument('--buddy-minutes', type=int, default=10,
                     help='minutes between unprompted lines, 5-60 (default 10)')
-    ap.add_argument('--gemini-model', default=GEMINI_MODEL,
-                    help='Gemini model (default %s)' % GEMINI_MODEL)
+    ap.add_argument('--gemini-model', default=None,
+                    help='Gemini model (default %s, or "model" in '
+                         'gemini.json)' % GEMINI_MODEL)
     args = ap.parse_args()
 
     if args.list:
@@ -569,14 +599,16 @@ def main():
 
     load = Load()
     brain = None
-    if args.buddy:
-        # The key from the environment and nowhere else: an argument would
-        # sit in the process list and the shell's history.
-        key = os.environ.get('GEMINI_API_KEY', '').strip()
-        brain = Brain(load_persona(), key, args.gemini_model,
-                      args.buddy_minutes)
-        print('buddy: %s' % ('Gemini (%s)' % args.gemini_model if key else
-                             'canned lines - set GEMINI_API_KEY for Gemini'))
+    # The key from the environment or gemini.json, never an argument: that
+    # would sit in the process list and the shell's history. A key in the
+    # file is all it takes - no --buddy needed.
+    key, file_model = gemini_config()
+    if args.buddy or key:
+        model = args.gemini_model or file_model or GEMINI_MODEL
+        brain = Brain(load_persona(), key, model, args.buddy_minutes)
+        print('buddy: %s' % ('Gemini (%s)' % model if key else
+                             'canned lines - put a Gemini key in %s'
+                             % key_file()))
     print('NEXUS companion running (ctrl-c to stop)')
     open_ = {}
     waiting = False

@@ -288,6 +288,44 @@ def pc_brain():
        'and never as an argument, where the process list shows it')
     ok("b'B 0\\n' if brain" in py and "@('B 0', 'X')" in ps,
        'both hand the face back (B 0) before saying goodbye (X)')
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    path = os.path.join(tmp, 'gemini.json')
+    saved = os.environ.pop('GEMINI_API_KEY', None)
+    try:
+        ok(m.gemini_config(path) == ('', None), 'no file, no variable: no key')
+        with open(path, 'w') as f:
+            json.dump({'key': ' file-key ', 'model': 'm-1'}, f)
+        ok(m.gemini_config(path) == ('file-key', 'm-1'),
+           'gemini.json gives the key and, if it says, the model')
+        os.environ['GEMINI_API_KEY'] = 'env-key'
+        ok(m.gemini_config(path)[0] == 'env-key', 'the environment wins over it')
+        del os.environ['GEMINI_API_KEY']
+        with open(path, 'w') as f:
+            f.write('{"key": ')
+        old, sys.stderr = sys.stderr, io.StringIO()
+        try:
+            broken = m.gemini_config(path)
+        finally:
+            sys.stderr = old
+        ok(broken == ('', None), 'a broken file is ignored, not fatal')
+    finally:
+        if saved is not None:
+            os.environ['GEMINI_API_KEY'] = saved
+    ok('LOCALAPPDATA' in py and "if args.buddy or key:" in py,
+       'the file lives outside any repo, and a key in it turns Buddy on')
+    ok("$KEY_FILE = Join-Path $HOME_DIR 'gemini.json'" in ps and
+       'Update-BuddyKey' in ps and 'AddSeconds(30)' in ps,
+       'the Windows companion reads the same file, and picks up a key pasted '
+       'while it runs')
+    un = ps.split('if ($Uninstall) {')[-1].split('\n}\n')[0]
+    ok('$_.FullName -ne $KEY_FILE' in un,
+       '-Uninstall keeps the key, so a reinstall needs nothing pasted again')
+    inst = ps.split('if ($Install) {')[-1].split('\n}\n')[0]
+    ok('if (-not (Test-Path $KEY_FILE))' in inst and 'Copy-Item $KEY_FILE' not in inst,
+       '-Install writes an empty key file once, and never copies a key anywhere')
+    ok('gemini.json' in read('.gitignore'), 'and git ignores one dropped in a repo')
+
     ok(py.count("'gemini-3.1-flash-lite'") == 1 and
        ps.count("'gemini-3.1-flash-lite'") == 1,
        'the model is named once in each')

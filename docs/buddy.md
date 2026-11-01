@@ -119,17 +119,28 @@ when a new song starts (at most every five minutes) and when the PC has been
 flat out for a minute. It sends `B 1` every 10 seconds to keep the face, and
 `B 0` before it quits.
 
-**Gemini.** Set `GEMINI_API_KEY` in the environment and it asks Gemini
-(`gemini-3.1-flash-lite` by default; `--gemini-model` / `-GeminiModel` to
-change it). The key is read from the environment and nowhere else - never an
-argument, which the process list would show, and never written to disk. On
-Windows, once, in a terminal:
+**Gemini.** Put a key in `gemini.json` and the companion asks Gemini
+(`gemini-3.1-flash-lite` by default). That file is all it takes: with a key
+in it the companion is Buddy's brain without `--buddy`, and a running one
+picks up a key pasted in within 30 seconds.
 
-```powershell
-[Environment]::SetEnvironmentVariable('GEMINI_API_KEY', '<your key>', 'User')
+| | Where |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\NEXUS\gemini.json` - `-Install` writes an empty one |
+| Linux, macOS | `~/.config/nexus/gemini.json` |
+
+```json
+{ "key": "<your key>", "model": "gemini-3.1-flash-lite" }
 ```
 
-then start a new terminal. Get a key at
+`model` is optional. The `GEMINI_API_KEY` environment variable works too and
+wins over the file; `--gemini-model` / `-GeminiModel` wins over `model`. The
+key is never an argument, which the process list would show, and never in a
+repo - the file lives beside the installed companion, `.gitignore` covers
+one dropped into the repo by mistake, and `-Uninstall` keeps it so a
+reinstall needs nothing pasted again.
+
+Get a key at
 [Google AI Studio](https://aistudio.google.com/apikey); restrict it to the
 Generative Language API and set a budget alert. A request goes out at most
 every 20 seconds and typically every 10 minutes, well inside the free tier.
