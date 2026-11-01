@@ -37,11 +37,24 @@ const struct face_params face_targets[FACE_EMOTIONS] = {
 			    FACE_C_WARNING, FACE_M_NONE, FACE_X_DOTS },
 	[FACE_LISTENING] = { { 58, 70, 22, 44, -6, 0, 0, 0, 0, 0 },
 			     FACE_C_GLOW_B, FACE_M_NONE, FACE_X_BARS },
+	[FACE_SINGING] = { { 58, 58, 26, 44, -8, 0, 0, 34, 0, 0 },
+			   FACE_C_ACCENT, FACE_M_NONE, FACE_X_MIC },
+	[FACE_HIGHFIVE] = { { 60, 60, 28, 44, -6, 0, 0, 30, -6, 0 },
+			    FACE_C_ACCENT, FACE_M_SMILE, FACE_X_HAND },
+	[FACE_HANDSUP] = { { 52, 72, 24, 44, -10, 0, 0, 0, 0, 0 },
+			   FACE_C_WARNING, FACE_M_O, FACE_X_HANDS },
+	[FACE_THUMBSUP] = { { 60, 56, 26, 44, -6, 0, 0, 26, -10, 0 },
+			    FACE_C_ACCENT, FACE_M_SMILE, FACE_X_THUMB },
+	[FACE_GAMING] = { { 56, 40, 14, 44, -4, 8, 8, 0, 0, 10 },
+			  FACE_C_ACCENT_ALT, FACE_M_NONE, FACE_X_PAD },
+	[FACE_BANG] = { { 50, 70, 22, 44, -6, 0, 0, 0, 10, 0 },
+			FACE_C_ERROR, FACE_M_O, FACE_X_CRACK },
 };
 
 const char *const face_emotion_names[FACE_EMOTIONS] = {
 	"NEUTRAL", "HAPPY", "SAD", "ANGRY", "SURPRISED",
-	"SLEEPY", "LOVE", "THINKING", "LISTENING",
+	"SLEEPY", "LOVE", "THINKING", "LISTENING", "SINGING",
+	"HIGHFIVE", "HANDSUP", "THUMBSUP", "GAMING", "BANG",
 };
 
 int face_emotion_parse(const char *s)
@@ -279,7 +292,10 @@ void face_anim_frame(const struct face_anim *a, uint32_t now,
 
 	uint8_t open = a->talk > a->talk_ext ? a->talk : a->talk_ext;
 
-	if (open > 24U) {
+	/* A mic or a gamepad is where the mouth would talk. */
+	bool prop_mouth = a->target.extra == FACE_X_MIC || a->target.extra == FACE_X_PAD;
+
+	if (open > 24U && !prop_mouth) {
 		f->mouth = FACE_M_TALK;
 		f->open = open;
 	} else {
@@ -287,8 +303,9 @@ void face_anim_frame(const struct face_anim *a, uint32_t now,
 	}
 
 	f->extra = a->target.extra;
-	if (f->extra == FACE_X_DOTS || f->extra == FACE_X_BARS ||
-	    f->extra == FACE_X_ZZZ) {
+	/* Every extra but hearts and the crack moves. */
+	if (f->extra != FACE_X_NONE && f->extra != FACE_X_HEARTS &&
+	    f->extra != FACE_X_CRACK) {
 		f->phase = (uint8_t)((now / 250U) & 7U);
 	}
 }
@@ -312,7 +329,11 @@ void face_eye_rows(const struct face_frame *f, int *y0, int *y1)
 	top -= 1;
 	bot += 1;
 
-	if (f->extra == FACE_X_ZZZ) {
+	/* The Zs climb above the eyes; the crack runs from there to the mouth. */
+	if (f->extra == FACE_X_CRACK && FACE_MOUTH_Y0 > bot) {
+		bot = FACE_MOUTH_Y0;
+	}
+	if (f->extra == FACE_X_ZZZ || f->extra == FACE_X_CRACK) {
 		if (FACE_EXTRA_Y0 < top) {
 			top = FACE_EXTRA_Y0;
 		}
@@ -364,6 +385,13 @@ uint16_t face_babble_hz(enum face_emotion e, char c)
 		break;
 	case FACE_SLEEPY:
 		base = 1300;
+		break;
+	case FACE_SINGING:
+		base = 2100;
+		break;
+	case FACE_BANG:
+	case FACE_HANDSUP:
+		base = 2400;
 		break;
 	default:
 		base = 1700;

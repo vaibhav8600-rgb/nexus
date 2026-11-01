@@ -153,6 +153,16 @@ static const struct note s_b_thinking[] = {
 /* G6 up to D7 in 120 ms. */
 static const struct note s_b_listening[] = {
 	{1568,20},{1700,20},{1843,20},{1998,20},{2166,20},{2349,20}, N_END };
+/* The tricks. A little tune; a slap; an alarm; a "yup"; a coin; a shot. */
+static const struct note s_b_singing[] = {
+	{E6,90},{G6,90},{C7,90},{E7,180}, N_END };
+static const struct note s_b_highfive[] = { {G6,40},{REST,30},{G7,90}, N_END };
+static const struct note s_b_handsup[] = {
+	{E7,80},{C7,80},{E7,80},{C7,80}, N_END };
+static const struct note s_b_thumbsup[] = { {G6,60},{D7,120}, N_END };
+static const struct note s_b_gaming[] = { {E7,50},{G7,130}, N_END };
+static const struct note s_b_bang[] = {
+	{3136,25},{2637,25},{2093,25},{1568,25},{1175,70}, N_END };
 #endif
 
 /* Index order must match enum nexus_sound. */
@@ -190,6 +200,12 @@ static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
 	[NEXUS_SOUND_BUDDY_LOVE]        = s_b_love,
 	[NEXUS_SOUND_BUDDY_THINKING]    = s_b_thinking,
 	[NEXUS_SOUND_BUDDY_LISTENING]   = s_b_listening,
+	[NEXUS_SOUND_BUDDY_SINGING]     = s_b_singing,
+	[NEXUS_SOUND_BUDDY_HIGHFIVE]    = s_b_highfive,
+	[NEXUS_SOUND_BUDDY_HANDSUP]     = s_b_handsup,
+	[NEXUS_SOUND_BUDDY_THUMBSUP]    = s_b_thumbsup,
+	[NEXUS_SOUND_BUDDY_GAMING]      = s_b_gaming,
+	[NEXUS_SOUND_BUDDY_BANG]        = s_b_bang,
 #endif
 };
 

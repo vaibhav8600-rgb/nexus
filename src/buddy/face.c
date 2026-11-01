@@ -18,6 +18,7 @@
 #include <nexus/gfx.h>
 #include <nexus/theme.h>
 #include <zephyr/kernel.h>
+#include <stdlib.h>
 
 #include "buddy_priv.h"
 
@@ -315,8 +316,64 @@ static const uint8_t k_bars[8][3] = {
 	{ 12, 14, 10 }, { 18, 8, 6 }, { 6, 12, 14 }, { 10, 16, 8 },
 };
 
-static void extras(const struct face_frame *f, gfx_color c, gfx_color dim)
+/* ---- props: what the tricks hold ---------------------------------------- */
+
+/* An open hand, fingers up, its top-left at (x, y): 26 x 36 px. */
+static void hand(int x, int y, gfx_color c)
 {
+	for (int i = 0; i < 4; i++) {
+		gfx_round_rect(x + 1 + i * 6, y + (i == 0 || i == 3 ? 4 : 0), 5, 18,
+			       2, c, GFX_OPAQUE);
+	}
+	gfx_round_rect(x, y + 14, 26, 22, 7, c, GFX_OPAQUE);
+}
+
+/* A quaver, its head at (x, y). */
+static void note(int x, int y, gfx_color c)
+{
+	gfx_disc(x, y, 4, c, GFX_OPAQUE);
+	gfx_rect(x + 2, y - 12, 2, 12, c, GFX_OPAQUE);
+	gfx_rect(x + 2, y - 12, 6, 2, c, GFX_OPAQUE);
+}
+
+/* A 2 px line, for the crack. */
+static void line2(int x0, int y0, int x1, int y1, gfx_color c)
+{
+	int dx = x1 - x0;
+	int dy = y1 - y0;
+	int n = MAX(abs(dx), abs(dy));
+
+	for (int i = 0; i <= n; i++) {
+		gfx_rect(x0 + dx * i / MAX(n, 1), y0 + dy * i / MAX(n, 1), 2, 2, c,
+			 GFX_OPAQUE);
+	}
+}
+
+/*
+ * The crack: jagged rays from a hit at (CRACK_X, CRACK_Y), and a few
+ * cross-pieces between them for the web. Segments, relative to the hit.
+ * Everything stays between the header and the mouth band's bottom.
+ */
+#define CRACK_X 70
+#define CRACK_Y 96
+static const int16_t k_crack[][4] = {
+	{ 0, 0, 40, -10 },   { 40, -10, 85, -6 },  { 85, -6, 150, -30 },
+	{ 0, 0, 30, 18 },    { 30, 18, 70, 30 },   { 70, 30, 130, 70 },
+	{ 0, 0, 8, 30 },     { 8, 30, -4, 60 },    { -4, 60, 10, 84 },
+	{ 0, 0, -30, 20 },   { -30, 20, -50, 52 }, { -50, 52, -64, 80 },
+	{ 0, 0, -34, -12 },  { -34, -12, -60, -10 },
+	{ 0, 0, -10, -30 },  { -10, -30, 4, -52 }, { 4, -52, -6, -64 },
+	{ 0, 0, 26, -34 },   { 26, -34, 30, -56 },
+	{ 40, -10, 26, -34 }, { 30, 18, 40, -10 }, { 8, 30, 30, 18 },
+	{ -30, 20, 8, 30 },  { -34, -12, -30, 20 }, { -10, -30, -34, -12 },
+	{ 85, -6, 70, 30 },  { -4, 60, -50, 52 },
+};
+
+static void extras(const struct face_frame *f, gfx_color c, gfx_color dim,
+		   gfx_color glass)
+{
+	int p = f->phase;
+
 	switch (f->extra) {
 	case FACE_X_ZZZ:
 		/* Three Zs climbing to the upper right, the newest one lit. */
@@ -343,6 +400,50 @@ static void extras(const struct face_frame *f, gfx_color c, gfx_color dim)
 			gfx_round_rect(FACE_CX - 17 + i * 13, FACE_MOUTH_Y + 2 - h / 2,
 				       8, h, 3, c, GFX_OPAQUE);
 		}
+		break;
+	case FACE_X_MIC: {
+		int y = 152 + ((p & 2) ? 1 : 0);
+
+		gfx_disc(FACE_CX, y, 11, c, GFX_OPAQUE);
+		for (int i = -1; i <= 1; i++) {
+			gfx_rect(FACE_CX - 8, y + i * 4, 16, 1, dim, GFX_OPAQUE);
+		}
+		gfx_round_rect(FACE_CX - 5, y + 10, 10, 20, 4, c, GFX_OPAQUE);
+		/* Two notes taking turns to bob up beside it. */
+		if (p < 4) {
+			note(62, 170 - p * 4, c);
+		} else {
+			note(172, 170 - (p - 4) * 4, c);
+		}
+		break;
+	}
+	case FACE_X_HAND:
+		hand(170 + (p & 1) * 3, 144 - ((p & 2) ? 2 : 0), c);
+		break;
+	case FACE_X_HANDS:
+		hand(26 + (p & 1), 144, c);
+		hand(188 - (p & 1), 144, c);
+		break;
+	case FACE_X_THUMB:
+		gfx_round_rect(160, 160, 30, 22, 7, c, GFX_OPAQUE);
+		gfx_round_rect(166, 141 - (p & 1), 10, 22, 4, c, GFX_OPAQUE);
+		gfx_rect(163, 167, 24, 1, dim, GFX_OPAQUE);
+		gfx_rect(163, 173, 24, 1, dim, GFX_OPAQUE);
+		break;
+	case FACE_X_PAD:
+		gfx_round_rect(70, 152, 100, 30, 13, c, GFX_OPAQUE);
+		gfx_rect(84, 165, 16, 4, dim, GFX_OPAQUE);
+		gfx_rect(90, 159, 4, 16, dim, GFX_OPAQUE);
+		/* The buttons being mashed, one lit at a time. */
+		gfx_disc(146, 163, 4, (p & 1) ? glass : dim, GFX_OPAQUE);
+		gfx_disc(156, 171, 4, (p & 1) ? dim : glass, GFX_OPAQUE);
+		break;
+	case FACE_X_CRACK:
+		for (size_t i = 0; i < ARRAY_SIZE(k_crack); i++) {
+			line2(CRACK_X + k_crack[i][0], CRACK_Y + k_crack[i][1],
+			      CRACK_X + k_crack[i][2], CRACK_Y + k_crack[i][3], glass);
+		}
+		gfx_disc(CRACK_X, CRACK_Y, 5, glass, GFX_OPAQUE);
 		break;
 	default:
 		break;
@@ -373,5 +474,5 @@ void face_draw(const struct face_frame *f)
 	if (gfx_hits(FACE_MOUTH_Y0, FACE_MOUTH_Y1 - FACE_MOUTH_Y0)) {
 		mouth(f, c);
 	}
-	extras(f, c, gfx_mix(t->bg_bot, c, 110));
+	extras(f, c, gfx_mix(t->bg_bot, c, 110), t->value);
 }

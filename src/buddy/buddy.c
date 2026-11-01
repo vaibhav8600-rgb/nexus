@@ -189,8 +189,8 @@ static void remark(const char *text, enum face_emotion e, bool urgent)
 
 /* ---- sound -------------------------------------------------------------- */
 
-BUILD_ASSERT(NEXUS_SOUND_BUDDY_LISTENING - NEXUS_SOUND_BUDDY_NEUTRAL ==
-		     FACE_LISTENING - FACE_NEUTRAL,
+BUILD_ASSERT(NEXUS_SOUND_BUDDY_BANG - NEXUS_SOUND_BUDDY_NEUTRAL ==
+		     FACE_BANG - FACE_NEUTRAL,
 	     "Buddy's cues follow enum face_emotion");
 
 /* The host's clock is the only one the dongle has; without it, never. */
@@ -685,7 +685,7 @@ static void repaint(bool bubble)
 	bool mouth = colour || f->mouth != d->mouth || f->open != d->open ||
 		     f->extra != d->extra ||
 		     f->g[F_GAZE_X] / 3 != d->g[F_GAZE_X] / 3 ||
-		     (phase && (f->extra == FACE_X_BARS || f->extra == FACE_X_DOTS));
+		     (phase && f->extra != FACE_X_ZZZ); /* the props move here */
 	int y0, y1;
 
 	face_eye_rows(f, &y0, &y1);

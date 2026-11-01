@@ -55,8 +55,10 @@ They are saved with SAVE like everything else, under their own key.
 
 ## The faces
 
-Nine of them, each a row of numbers in `src/buddy/face_anim.c` and drawn
-from geometry - no sprites. Every colour is a theme slot, so they read on
+Fifteen of them, each a row of numbers in `src/buddy/face_anim.c` and drawn
+from geometry - no sprites. The last six hold a drawn prop for the tricks:
+a microphone with notes, a waving hand, both hands up, a thumbs-up, a
+gamepad, and a screen cracked from a hit. Every colour is a theme slot, so they read on
 every palette, DAYLIGHT's light ground included. A slot too close to the
 background (AMOLED and CLAY have no glow colour, which sad and listening
 use) is drawn in the theme's text colour instead.
@@ -69,6 +71,10 @@ use) is drawn in the theme's text colour instead.
 | angry | surprised | sleepy |
 | ![love](images/screens/buddy-love.png) | ![thinking](images/screens/buddy-thinking.png) | ![listening](images/screens/buddy-listening.png) |
 | love | thinking | listening |
+| ![singing](images/screens/buddy-singing.png) | ![high five](images/screens/buddy-highfive.png) | ![hands up](images/screens/buddy-handsup.png) |
+| singing | highfive | handsup |
+| ![thumbs up](images/screens/buddy-thumbsup.png) | ![gaming](images/screens/buddy-gaming.png) | ![bang](images/screens/buddy-bang.png) |
+| thumbsup | gaming | bang |
 
 | ![nexus](images/screens/buddy-theme-nexus.png) | ![daylight](images/screens/buddy-theme-daylight.png) | ![amoled](images/screens/buddy-theme-amoled.png) | ![sunset](images/screens/buddy-theme-sunset.png) |
 | --- | --- | --- | --- |

@@ -1578,6 +1578,72 @@ def bud_visible(t, c):
     return t['value'] if abs(luma(c) - luma(mix(t['bg_top'], t['bg_bot'], 128))) < 48 else c
 
 
+# face.c's props, piece for piece.
+BUD_CRACK = [(0, 0, 40, -10), (40, -10, 85, -6), (85, -6, 150, -30),
+             (0, 0, 30, 18), (30, 18, 70, 30), (70, 30, 130, 70),
+             (0, 0, 8, 30), (8, 30, -4, 60), (-4, 60, 10, 84),
+             (0, 0, -30, 20), (-30, 20, -50, 52), (-50, 52, -64, 80),
+             (0, 0, -34, -12), (-34, -12, -60, -10),
+             (0, 0, -10, -30), (-10, -30, 4, -52), (4, -52, -6, -64),
+             (0, 0, 26, -34), (26, -34, 30, -56),
+             (40, -10, 26, -34), (30, 18, 40, -10), (8, 30, 30, 18),
+             (-30, 20, 8, 30), (-34, -12, -30, 20), (-10, -30, -34, -12),
+             (85, -6, 70, 30), (-4, 60, -50, 52)]
+
+
+def bud_hand(cv, x, y, c):
+    for i in range(4):
+        cv.round_rect(x + 1 + i * 6, y + (4 if i in (0, 3) else 0), 5, 18, 2, c)
+    cv.round_rect(x, y + 14, 26, 22, 7, c)
+
+
+def bud_note(cv, x, y, c):
+    cv.disc(x, y, 4, c)
+    cv.rect(x + 2, y - 12, 2, 12, c)
+    cv.rect(x + 2, y - 12, 6, 2, c)
+
+
+def bud_line2(cv, x0, y0, x1, y1, c):
+    dx, dy = x1 - x0, y1 - y0
+    n = max(abs(dx), abs(dy))
+    for i in range(n + 1):
+        cv.rect(x0 + cdiv(dx * i, max(n, 1)), y0 + cdiv(dy * i, max(n, 1)), 2, 2, c)
+
+
+def bud_props(cv, t, extra, cx, p, c, dim):
+    glass = t['value']
+    if extra == 'MIC':
+        y = 152 + (1 if p & 2 else 0)
+        cv.disc(cx, y, 11, c)
+        for i in (-1, 0, 1):
+            cv.rect(cx - 8, y + i * 4, 16, 1, dim)
+        cv.round_rect(cx - 5, y + 10, 10, 20, 4, c)
+        if p < 4:
+            bud_note(cv, 62, 170 - p * 4, c)
+        else:
+            bud_note(cv, 172, 170 - (p - 4) * 4, c)
+    elif extra == 'HAND':
+        bud_hand(cv, 170 + (p & 1) * 3, 144 - (2 if p & 2 else 0), c)
+    elif extra == 'HANDS':
+        bud_hand(cv, 26 + (p & 1), 144, c)
+        bud_hand(cv, 188 - (p & 1), 144, c)
+    elif extra == 'THUMB':
+        cv.round_rect(160, 160, 30, 22, 7, c)
+        cv.round_rect(166, 141 - (p & 1), 10, 22, 4, c)
+        cv.rect(163, 167, 24, 1, dim)
+        cv.rect(163, 173, 24, 1, dim)
+    elif extra == 'PAD':
+        cv.round_rect(70, 152, 100, 30, 13, c)
+        cv.rect(84, 165, 16, 4, dim)
+        cv.rect(90, 159, 4, 16, dim)
+        cv.disc(146, 163, 4, glass if p & 1 else dim)
+        cv.disc(156, 171, 4, dim if p & 1 else glass)
+    elif extra == 'CRACK':
+        for x0, y0, x1, y1 in BUD_CRACK:
+            bud_line2(cv, 70 + x0, 96 + y0, 70 + x1, 96 + y1, glass)
+        cv.disc(70, 96, 5, glass)
+
+
 def buddy(cv, t, emotion='NEUTRAL', line='', brain='LOCAL', phase=0):
     """src/buddy: the face at rest, its header and its bubble."""
     UI(cv, t).ground()
@@ -1611,6 +1677,7 @@ def buddy(cv, t, emotion='NEUTRAL', line='', brain='LOCAL', phase=0):
         bud_arc(cv, mx, my + 2, 9, 4, 3, c)
 
     dim = mix(t['bg_bot'], c, 110)
+    bud_props(cv, t, p['extra'], cx, phase, c, dim)
     if p['extra'] == 'ZZZ':
         for i in range(3):
             y = BUD['FACE_EXTRA_Y1'] - 20 - i * 15 - (phase & 1)
@@ -1652,7 +1719,12 @@ BUDDY_SHOTS = [('NEUTRAL', '', 'LOCAL'), ('HAPPY', 'NICE STREAK!', 'LOCAL'),
                ('SURPRISED', 'NEW BEST!', 'LOCAL'),
                ('SLEEPY', 'ITS LATE... BED?', 'LOCAL'),
                ('LOVE', 'AWW, THANK YOU!', 'PHONE'),
-               ('THINKING', '', 'PC'), ('LISTENING', '', 'PHONE')]
+               ('THINKING', '', 'PC'), ('LISTENING', '', 'PHONE'),
+               ('SINGING', 'LA LA LA LAAA', 'PHONE'),
+               ('HIGHFIVE', 'UP TOP...', 'PC'),
+               ('HANDSUP', 'EEK! HANDS UP!', 'PC'),
+               ('THUMBSUP', 'YOU GOT IT!', 'PHONE'),
+               ('GAMING', 'GAME ON!', 'PC'), ('BANG', 'OW!!', 'PC')]
 
 
 # ------------------------------------------------------------------ main

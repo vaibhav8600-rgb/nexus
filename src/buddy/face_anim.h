@@ -43,6 +43,13 @@ enum face_emotion {
 	FACE_LOVE,
 	FACE_THINKING,
 	FACE_LISTENING,
+	/* The tricks: a face holding a prop (face.c draws it). */
+	FACE_SINGING,
+	FACE_HIGHFIVE,
+	FACE_HANDSUP,
+	FACE_THUMBSUP,
+	FACE_GAMING,
+	FACE_BANG,
 	FACE_EMOTIONS,
 };
 
@@ -72,6 +79,12 @@ enum face_extra {
 	FACE_X_DOTS,
 	FACE_X_BARS,
 	FACE_X_ZZZ,
+	FACE_X_MIC,   /* a microphone where the mouth is, notes beside it */
+	FACE_X_HAND,  /* one hand up, waving: high five                    */
+	FACE_X_HANDS, /* both hands up, shaking                            */
+	FACE_X_THUMB, /* a thumbs-up                                       */
+	FACE_X_PAD,   /* a gamepad held under the face                     */
+	FACE_X_CRACK, /* the screen cracked from a hit, eyes and all       */
 };
 
 /* The geometry, as an array so one loop tweens all of it. Pixels. */
