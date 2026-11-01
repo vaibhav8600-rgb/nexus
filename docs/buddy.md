@@ -178,8 +178,15 @@ face is on screen.
 ## Cost
 
 Nothing at all unless `CONFIG_NEXUS_BUDDY=y`: every line of it is behind that
-symbol, and CI builds the same images as before with it off. With it on, CI's
-`nexus_dongle_buddy` build prints its size beside the others.
+symbol, and CI builds the same images as before with it off. With it on, as
+CI measured it on a nice!nano:
+
+| | Flash | RAM |
+| --- | --- | --- |
+| The face and its moods (`nexus_dongle_buddy_local` over `nexus_dongle`) | +8,012 B | +384 B |
+| With the PC and phone brains and the idle face (`nexus_dongle_buddy` over `nexus_dongle_host_all`) | +9,200 B | +768 B |
+
+The second includes the phone's 256-byte line ring.
 
 Inside it: no heap, no thread, no float, no second frame buffer. The face
 draws through the same 12-row band as everything else and repaints only the
