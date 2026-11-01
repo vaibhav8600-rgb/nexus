@@ -50,7 +50,13 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define CUE_GAP M_MS(3)
 #define STREAK_GAP M_MS(10)
 #define IDLE_SLEEPY M_MS(5)
-#define BUBBLE_HOLD S_MS(4)
+/* A line stays up after it is fully shown for this, plus a little per
+ * letter, so a long one can be read before it goes. */
+#define BUBBLE_HOLD S_MS(2)
+#define BUBBLE_PER_CHAR 150
+/* A brain's emotion with no line to go with it - THINKING while it waits
+ * for an answer - eases back to neutral after this. */
+#define BRAIN_MOOD_HOLD S_MS(30)
 /* A cue that waits for the typing to stop gives up after this. */
 #define CUE_PATIENCE S_MS(10)
 /* Frames: 20 per second with a computer on USB, 10 on a charger or a
@@ -74,6 +80,7 @@ static uint8_t g_pin = NEXUS_BUDDY_BRAIN_AUTO;
 static enum nexus_buddy_source g_brain = NEXUS_BUDDY_LOCAL;
 static int64_t g_lease_until;
 static enum face_emotion g_brain_mood = FACE_NEUTRAL;
+static int64_t g_brain_mood_until;
 static bool g_brain_spoke;
 
 static char g_line[FACE_LINE_MAX + 1];
@@ -216,6 +223,16 @@ static bool typing(void)
 	return nexus_status_get()->wpm > 0;
 }
 
+/*
+ * Typing mutes Buddy's own chatter, not a brain's: an answer arrives a
+ * second after the question was typed, while WPM has yet to decay, and
+ * an answer that comes back silent feels broken.
+ */
+static bool hush(void)
+{
+	return g_brain == NEXUS_BUDDY_LOCAL && typing();
+}
+
 /* A cue for @p e. @p prompted: the user or a brain asked, so no rate limit.
  * Settling back to neutral on its own is not news, so only a brain's
  * neutral is heard. */
@@ -247,7 +264,7 @@ static void cue_pump(int64_t now)
 		g_cue = -1;
 		return;
 	}
-	if (typing()) {
+	if (hush()) {
 		return;
 	}
 	nexus_sound_play((enum nexus_sound)(NEXUS_SOUND_BUDDY_NEUTRAL + g_cue));
@@ -256,7 +273,7 @@ static void cue_pump(int64_t now)
 
 static void babble(char c)
 {
-	if (g_sound != NEXUS_BUDDY_SOUND_CHATTY || quiet_hours() || typing()) {
+	if (g_sound != NEXUS_BUDDY_SOUND_CHATTY || quiet_hours() || hush()) {
 		return;
 	}
 
@@ -376,6 +393,7 @@ bool nexus_buddy_line(enum nexus_buddy_source from, char key, const char *val)
 			break; /* a newer brain's emotion: not an error */
 		}
 		take(from, now);
+		g_brain_mood_until = now + BRAIN_MOOD_HOLD;
 		if (g_brain_mood != (enum face_emotion)e) {
 			g_brain_mood = (enum face_emotion)e;
 			cue(g_brain_mood, true);
@@ -630,10 +648,13 @@ static bool reveal(int64_t now)
 		return true;
 	}
 	if (!g_line_until) {
-		g_line_until = now + BUBBLE_HOLD;
+		g_line_until = now + BUBBLE_HOLD + (int64_t)len * BUBBLE_PER_CHAR;
 	} else if (now > g_line_until) {
 		g_line[0] = '\0';
 		g_line_until = 0;
+		/* Said and read: the face goes back to its resting look, though
+		 * the brain keeps it. */
+		g_brain_mood_until = now;
 		return true;
 	}
 	return false;
@@ -716,6 +737,12 @@ static void anim_fn(struct k_work *work)
 	night(now);
 
 	bool bubble = reveal(now);
+
+	/* Back to neutral itself, so the next answer's emotion is a change
+	 * and gets its sound - even the same emotion as last time. */
+	if (g_brain_mood != FACE_NEUTRAL && now >= g_brain_mood_until) {
+		g_brain_mood = FACE_NEUTRAL;
+	}
 	enum face_emotion e = evaluate(now);
 
 	if (e != g_mood) {

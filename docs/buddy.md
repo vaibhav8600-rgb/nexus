@@ -105,6 +105,11 @@ sends the host link's lines (`E` an emotion, `S` a line - see
 face for `CONFIG_NEXUS_BUDDY_LEASE_S`; quiet that long, or `B 0`, and the face
 is Buddy's own again.
 
+A line stays up for 2 seconds after it is fully shown, plus 0.15 s per
+letter, so a long one can be read. Then the face goes back to neutral, even
+though the brain still holds it. An emotion sent with no line, such as
+THINKING while an answer is on its way, goes back after 30 seconds.
+
 ### The PC
 
 Either companion, with `--buddy`:
@@ -201,8 +206,10 @@ neutral on its own is not news). A brain's answer always follows its
 THINKING face, so each one plays its face's cue. `CHATTY` adds a blip per
 letter, pitched by the emotion. Buddy's sounds are the one soft
 class: they only play into silence, and any other effect cuts them off, so
-a chirp can never eat a disconnect cue. Nothing plays while you type - a cue
-waits for a pause, and gives up after 10 seconds - nothing in quiet hours,
+a chirp can never eat a disconnect cue. Buddy's own chatter waits while you
+type - a cue waits for a pause, and gives up after 10 seconds. A brain's
+answer does not wait: it arrives a second after you typed the question, and
+a silent answer feels broken. Nothing plays in quiet hours,
 and nothing with the sound off in Settings. Buddy only makes sounds while its
 face is on screen.
 
