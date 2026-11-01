@@ -174,8 +174,11 @@ that says more ("why are you sad?", "sing about cats") still goes to Gemini.
 The phrases are `commands` in `persona/persona.json`; add your own there.
 
 **Voice.** Press Win+H in the chat window and talk: Windows' own voice
-typing fills in the message. On the phone, the keyboard's microphone does
-the same in the Buddy tab.
+typing fills in the message. On the phone, hold the Buddy tab's microphone
+button and speak (push to talk). The dongle shows the listening face, and
+when you let go, Gemini writes down what you said and the app sends it like
+a typed message, so a spoken "show me a sad face" is still instant. The
+clip is 16 kHz WAV and goes only to Gemini.
 
 ### The phone
 
@@ -248,9 +251,9 @@ is a NORMAL screen, not a game, so the display still blanks on its timeout.
 ## Limits
 
 - The phone is a brain only while NEXUS Remote is open on screen.
-- Gemini Live (spoken conversation) needs tokens minted by a server, so it is
-  not here. A local program can still drive the mouth with `V` while it plays
-  its own speech.
+- Voice is push to talk, not a live spoken conversation: a clip is written
+  down when you let go, and Buddy answers in text. A local program can still
+  drive the mouth with `V` while it plays its own speech.
 - Buddy's sounds play only while its face is up; elsewhere it stays quiet.
 - Typing speed is the only typing signal: the dongle never looks at which
   keys you press.
