@@ -165,6 +165,18 @@ companion listens on `127.0.0.1` only, so nothing outside this PC can talk
 to it. Chat needs a key: without one, or while out of quota, Buddy says so
 instead of giving a canned line.
 
+**Faces and tricks, instantly.** A message that only asks for a face
+("show me a sad face", "smile", "be angry") or a trick ("high five", "sing a
+song", "dance", "hands up", "shoo", "good night", "wake up", "I love you",
+"good job") is acted out on the spot, without Gemini and without a key.
+A trick is a few faces, lines and glances, about two seconds apart. Anything
+that says more ("why are you sad?", "sing about cats") still goes to Gemini.
+The phrases are `commands` in `persona/persona.json`; add your own there.
+
+**Voice.** Press Win+H in the chat window and talk: Windows' own voice
+typing fills in the message. On the phone, the keyboard's microphone does
+the same in the Buddy tab.
+
 ### The phone
 
 NEXUS Remote's Buddy tab (☺) is the same chat on the phone. Gemini answers

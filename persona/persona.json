@@ -32,5 +32,49 @@
     "busy": [["surprised", "WHOA, BUSY PC!"], ["thinking", "WORKING HARD..."]],
     "late": [["sleepy", "ITS LATE... BED?"], ["sleepy", "YAWN..."]],
     "bye": [["sad", "BYE FOR NOW!"]]
+  },
+  "commands": {
+    "about": "Acted out at once, without Gemini. A message that is only a face ('show me a sad face') or a trick ('high five'), plus filler words, matches; one that says more ('why are you sad', 'sing about cats') goes to Gemini. Steps are host-link lines, about two seconds apart.",
+    "filler": ["show", "me", "a", "an", "the", "your", "face", "faces", "be", "make", "look", "looking", "do", "please", "pls", "buddy", "can", "you", "u", "give", "put", "on", "now", "some", "expression", "act", "get", "go", "and", "so", "very", "little", "bit", "hey", "hi", "hello", "oh", "ok", "okay", "lets", "let's", "us", "again", "one", "more", "time", "for", "with", "just", "quick", "quickly", "really"],
+    "faces": [
+      {"emotion": "neutral", "words": ["neutral", "normal", "calm", "default", "straight"], "line": "OKAY, NORMAL ME."},
+      {"emotion": "happy", "words": ["happy", "smile", "smiling", "smiley", "glad", "joy"], "line": "HEHE, LIKE THIS?"},
+      {"emotion": "sad", "words": ["sad", "cry", "crying", "unhappy", "upset"], "line": "SNIFF... SO SAD."},
+      {"emotion": "angry", "words": ["angry", "mad", "grumpy", "furious", "annoyed"], "line": "GRRR! SO MAD!"},
+      {"emotion": "surprised", "words": ["surprised", "surprise", "shocked", "shock", "wow", "amazed"], "line": "WHOA! NO WAY!"},
+      {"emotion": "sleepy", "words": ["sleepy", "tired", "yawn", "drowsy"], "line": "YAWN... SO SLEEPY."},
+      {"emotion": "love", "words": ["love", "loving", "heart", "hearts", "cute"], "line": "AWW, HEARTS!"},
+      {"emotion": "thinking", "words": ["thinking", "think", "thoughtful", "hmm"], "line": "HMM, LET ME THINK."},
+      {"emotion": "listening", "words": ["listening", "listen", "ears"], "line": "I AM ALL EARS!"}
+    ],
+    "actions": [
+      {"words": ["high five", "highfive", "hi5", "hi 5", "high 5", "gimme five", "give me five"],
+       "reply": "Up top... *slap*! Nice one.",
+       "steps": [["E SURPRISED", "S HIGH FIVE? OKAY!"], ["L 0,-14", "S UP TOP..."], ["E HAPPY", "S *SLAP* YEAH!"]]},
+      {"words": ["sing", "sing a song", "song", "sing me a song", "sing for me"],
+       "reply": "Ahem... la la la laaa, doo be doo be doo... ta-daaa!",
+       "steps": [["E LISTENING", "S AHEM..."], ["E HAPPY", "S LA LA LA LAAA"], ["E LOVE", "S DOO BE DOO BE DOO"], ["E HAPPY", "S TA-DAAA!"]]},
+      {"words": ["dance", "dancing", "boogie", "party"],
+       "reply": "*wiggles left, right, left, right* Whew, that was fun!",
+       "steps": [["E HAPPY", "S DANCE TIME!"], ["L -18,4"], ["L 18,-4"], ["L -18,-4"], ["L 18,4"], ["E LOVE", "S WHEW, FUN!"]]},
+      {"words": ["hands up", "hand up", "stick em up", "freeze"],
+       "reply": "Eek! Hands up - I didn't do it!",
+       "steps": [["E SURPRISED", "S EEK! HANDS UP!"], ["L 0,-16", "S DON'T SHOOT!"], ["E SAD", "S I DIDN'T DO IT..."]]},
+      {"words": ["shoo", "go away", "get lost", "scram", "leave me alone"],
+       "reply": "Oh... okay. I'll be quiet over here.",
+       "steps": [["E SAD", "S OH... OKAY."], ["L 18,6", "S *SHUFFLES AWAY*"], ["E SLEEPY", "S I'LL BE QUIET."]]},
+      {"words": ["sleep", "go to sleep", "good night", "goodnight", "nap", "night night"],
+       "reply": "Yawn... night night.",
+       "steps": [["E SLEEPY", "S YAWN... NIGHT NIGHT"]]},
+      {"words": ["wake up", "rise and shine", "good morning"],
+       "reply": "Huh?! I'm up! Good morning!",
+       "steps": [["E SURPRISED", "S HUH?! I'M UP!"], ["E HAPPY", "S GOOD MORNING!"]]},
+      {"words": ["love you", "i love you", "love ya", "luv you"],
+       "reply": "Aww! Love you too!",
+       "steps": [["E LOVE", "S AWW! LOVE YOU TOO!"]]},
+      {"words": ["pat", "good job", "good boy", "good girl", "good buddy", "well done"],
+       "reply": "Hehe, thank you!",
+       "steps": [["E LOVE", "S HEHE, THANK YOU!"]]}
+    ]
   }
 }

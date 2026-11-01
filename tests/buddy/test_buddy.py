@@ -197,6 +197,29 @@ def persona():
                all(32 <= ord(ch) <= 90 for ch in line),
                'canned %s "%s" fits the font and the bubble' % (reason, line))
 
+    def takes(line):
+        k, v = line[0], line[2:]
+        if line[1:2] != ' ' or k not in 'ESL':
+            return False
+        if k == 'E':
+            return v.lower() in p['emotions']
+        if k == 'S':
+            return 0 < len(v) <= 24 and all(32 <= ord(ch) <= 90 for ch in v)
+        m = re.fullmatch(r'(-?\d+),(-?\d+)', v)
+        return bool(m) and all(abs(int(n)) <= 20 for n in m.groups())
+
+    c = p['commands']
+    for f in c['faces']:
+        ok(takes('E ' + f['emotion'].upper()) and takes('S ' + f['line']),
+           'face command "%s" is lines the dongle takes' % f['emotion'])
+    for a in c['actions']:
+        ok(a['steps'] and all(takes(l) for st in a['steps'] for l in st),
+           'trick "%s" is lines the dongle takes' % a['words'][0])
+    app = os.path.join(ROOT, '..', 'nexus-remote', 'src', 'buddy', 'persona.json')
+    if os.path.exists(app):
+        ok(json.load(open(app, encoding='utf-8')) == p,
+           'NEXUS Remote\'s copy of persona.json is this one')
+
 
 class FakeGemini:
     def __init__(self, answers):

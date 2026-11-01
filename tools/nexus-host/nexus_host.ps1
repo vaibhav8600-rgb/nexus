@@ -596,6 +596,7 @@ $REASONS = @{
     chat  = 'the owner is talking to you; answer them'
 }
 $HISTORY = 12         # turns of conversation Gemini is shown, six each way
+$STEP_MS = 1800       # between a trick's steps
 
 function ConvertTo-BuddyLine([string]$text) {
     $s = -join ($text.Trim().ToUpper().ToCharArray() |
@@ -690,6 +691,42 @@ function Send-BuddyChat($ep, $got) {
         ConvertTo-Json -Compress
     $bytes = [Text.Encoding]::UTF8.GetBytes($json)
     try { [void]$script:chatUdp.Send($bytes, $bytes.Length, $ep) } catch {}
+}
+
+# ---- commands: faces and tricks that need no Gemini -----------------------
+
+# A message that is only a face ("show me a sad face", "smile") or a trick
+# ("high five", "sing") plus filler words is acted out from persona.json at
+# once, key or no key: @{ reply; steps }. $null for a real conversation -
+# "why are you sad" says more than a face, and goes to Gemini.
+function Get-BuddyCommand([string]$text) {
+    $c = $script:persona.commands
+    if (-not $c) { return $null }
+    $t = ' ' + (($text.ToLower() -replace "[^a-z0-9' ]", ' ') -replace '\s+', ' ').Trim() + ' '
+    $filler = @($c.filler) + "$($script:persona.name)".ToLower()
+    $only = {
+        param($w)
+        if (-not $t.Contains(" $w ")) { return $false }
+        $rest = @($t.Replace(" $w ", ' ').Trim().Split(' ') |
+            Where-Object { $_ -and $filler -notcontains $_ })
+        $rest.Count -eq 0
+    }
+    foreach ($a in $c.actions) {
+        foreach ($w in $a.words) {
+            if (& $only $w) { return @{ reply = $a.reply; steps = @($a.steps) } }
+        }
+    }
+    foreach ($f in $c.faces) {
+        foreach ($w in $f.words) {
+            if (& $only $w) {
+                return @{
+                    reply = "($($script:persona.name) makes a $($f.emotion) face)"
+                    steps = @(, @("E $($f.emotion.ToUpper())", "S $($f.line)"))
+                }
+            }
+        }
+    }
+    $null
 }
 
 function Write-BuddyWarning([string]$kind, [string]$text) {
@@ -843,7 +880,19 @@ function Get-BuddyLines($cpu, $mem, $np) {
     # remarks - only to Gemini's own quota. One message waits while another
     # is being answered.
     $msg = Receive-BuddyChat
-    if ($msg) { $script:bud.chatWaiting = $msg }
+    $cmd = if ($msg) { Get-BuddyCommand $msg.text }
+    if ($cmd) {
+        # A face or a trick: no Gemini, no wait. A new one replaces any
+        # still playing.
+        $script:bud.steps.Clear()
+        foreach ($st in $cmd.steps) { $script:bud.steps.Enqueue($st) }
+        $script:bud.stepAt = $now
+        $first = @($cmd.steps[0]) -like 'E *' | Select-Object -First 1
+        $emo = if ($first) { $first.Substring(2).ToLower() } else { 'happy' }
+        Send-BuddyChat $msg.ep @($emo, '', $cmd.reply)
+    } elseif ($msg) {
+        $script:bud.chatWaiting = $msg
+    }
     $msg = $script:bud.chatWaiting
     if ($msg -and -not $script:bud.job -and -not $got) {
         $script:bud.chatWaiting = $null
@@ -861,7 +910,8 @@ function Get-BuddyLines($cpu, $mem, $np) {
         }
     }
 
-    if (-not $script:bud.job -and -not $got -and $now -ge $script:bud.nextAsk) {
+    if (-not $script:bud.job -and -not $got -and $script:bud.steps.Count -eq 0 -and
+        $now -ge $script:bud.nextAsk) {
         $reason = Get-BuddyTrigger $cpu $np
         if ($reason) {
             if (-not $script:bud.saidAt) { $script:bud.saidAt = $now }
@@ -879,6 +929,12 @@ function Get-BuddyLines($cpu, $mem, $np) {
         $script:bud.saidAt = $now
         $out.Add('E ' + $got[0].ToUpper())
         $out.Add('S ' + $got[1])
+    }
+    # A trick plays one step a round, about two seconds apart.
+    if ($script:bud.steps.Count -and $now -ge $script:bud.stepAt) {
+        foreach ($l in $script:bud.steps.Dequeue()) { $out.Add("$l") }
+        $script:bud.stepAt = $now.AddMilliseconds($STEP_MS)
+        $script:bud.saidAt = $now
     }
     , $out
 }
@@ -956,6 +1012,7 @@ $script:bud = @{
     nextAsk = [datetime]::MinValue; leaseAt = [datetime]::MinValue; backoff = 0
     song = ''; songAt = [datetime]::MinValue; busySince = $null
     busyAt = [datetime]::MinValue; complained = @{}; history = @(); chatWaiting = $null
+    steps = New-Object System.Collections.Queue; stepAt = [datetime]::MinValue
 }
 $nextKeyLook = [datetime]::MinValue
 Open-BuddyChat
