@@ -188,8 +188,11 @@ default and the JSON disagree, or if their emotion lists do.
 
 ## Sound
 
-Each emotion has a short cue inside the buzzer's loud band; `CHATTY` adds a
-blip per letter, pitched by the emotion. Buddy's sounds are the one soft
+Every face has its own short cue inside the buzzer's loud band, neutral's
+a soft "mm-hm" that plays only when a brain sends it (settling back to
+neutral on its own is not news). A brain's answer always follows its
+THINKING face, so each one plays its face's cue. `CHATTY` adds a blip per
+letter, pitched by the emotion. Buddy's sounds are the one soft
 class: they only play into silence, and any other effect cuts them off, so
 a chirp can never eat a disconnect cue. Nothing plays while you type - a cue
 waits for a pause, and gives up after 10 seconds - nothing in quiet hours,

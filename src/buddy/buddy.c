@@ -182,9 +182,9 @@ static void remark(const char *text, enum face_emotion e, bool urgent)
 
 /* ---- sound -------------------------------------------------------------- */
 
-BUILD_ASSERT(NEXUS_SOUND_BUDDY_LISTENING - NEXUS_SOUND_BUDDY_HAPPY ==
-		     FACE_LISTENING - FACE_HAPPY,
-	     "Buddy's cues follow enum face_emotion from HAPPY");
+BUILD_ASSERT(NEXUS_SOUND_BUDDY_LISTENING - NEXUS_SOUND_BUDDY_NEUTRAL ==
+		     FACE_LISTENING - FACE_NEUTRAL,
+	     "Buddy's cues follow enum face_emotion");
 
 /* The host's clock is the only one the dongle has; without it, never. */
 static bool hour_in(uint32_t from, uint32_t to)
@@ -216,12 +216,15 @@ static bool typing(void)
 	return nexus_status_get()->wpm > 0;
 }
 
-/* A cue for @p e. @p prompted: the user or a brain asked, so no rate limit. */
+/* A cue for @p e. @p prompted: the user or a brain asked, so no rate limit.
+ * Settling back to neutral on its own is not news, so only a brain's
+ * neutral is heard. */
 static void cue(enum face_emotion e, bool prompted)
 {
 	int64_t now = k_uptime_get();
 
-	if (e == FACE_NEUTRAL || !g_enabled || g_sound == NEXUS_BUDDY_SOUND_OFF) {
+	if ((e == FACE_NEUTRAL && !prompted) || !g_enabled ||
+	    g_sound == NEXUS_BUDDY_SOUND_OFF) {
 		return;
 	}
 	if (!prompted) {
@@ -247,8 +250,7 @@ static void cue_pump(int64_t now)
 	if (typing()) {
 		return;
 	}
-	nexus_sound_play((enum nexus_sound)(NEXUS_SOUND_BUDDY_HAPPY + g_cue -
-					    FACE_HAPPY));
+	nexus_sound_play((enum nexus_sound)(NEXUS_SOUND_BUDDY_NEUTRAL + g_cue));
 	g_cue = -1;
 }
 

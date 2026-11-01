@@ -47,10 +47,11 @@ enum nexus_sound {
 
 #if IS_ENABLED(CONFIG_NEXUS_BUDDY)
 	/*
-	 * Buddy's emotion cues, in enum face_emotion order from HAPPY. The
+	 * Buddy's emotion cues, in enum face_emotion order. The
 	 * one soft class of effect: they only play into silence, and anything
 	 * else cuts them off - a chirp must never eat a disconnect cue.
 	 */
+	NEXUS_SOUND_BUDDY_NEUTRAL,
 	NEXUS_SOUND_BUDDY_HAPPY,
 	NEXUS_SOUND_BUDDY_SAD,
 	NEXUS_SOUND_BUDDY_ANGRY,

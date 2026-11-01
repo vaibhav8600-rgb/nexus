@@ -132,6 +132,8 @@ static const struct note s_wake[] = {
  * exists plays it, so not one existing table had to change shape.
  */
 #define D6 1175
+/* "Mm-hm": two even beats, the face at rest. */
+static const struct note s_b_neutral[] = { {G6,70},{REST,40},{G6,70}, N_END };
 static const struct note s_b_happy[] = { {G6,60},{C7,60},{E7,110}, N_END };
 /* C7 down to C6 over 420 ms, a semitone a step. */
 static const struct note s_b_sad[] = {
@@ -179,6 +181,7 @@ static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
 	[NEXUS_SOUND_SLEEP]             = s_sleep,
 	[NEXUS_SOUND_WAKE]              = s_wake,
 #if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	[NEXUS_SOUND_BUDDY_NEUTRAL]     = s_b_neutral,
 	[NEXUS_SOUND_BUDDY_HAPPY]       = s_b_happy,
 	[NEXUS_SOUND_BUDDY_SAD]         = s_b_sad,
 	[NEXUS_SOUND_BUDDY_ANGRY]       = s_b_angry,
@@ -247,7 +250,7 @@ void nexus_sound_play(enum nexus_sound id)
 	}
 
 #if IS_ENABLED(CONFIG_NEXUS_BUDDY)
-	bool soft = id >= NEXUS_SOUND_BUDDY_HAPPY;
+	bool soft = id >= NEXUS_SOUND_BUDDY_NEUTRAL;
 
 	if (soft && g_seq != NULL && !g_soft) {
 		return; /* never over a real effect */
