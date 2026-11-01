@@ -312,7 +312,7 @@ void face_eye_rows(const struct face_frame *f, int *y0, int *y1)
 	top -= 1;
 	bot += 1;
 
-	if (f->extra == FACE_X_ZZZ || f->extra == FACE_X_DOTS) {
+	if (f->extra == FACE_X_ZZZ) {
 		if (FACE_EXTRA_Y0 < top) {
 			top = FACE_EXTRA_Y0;
 		}

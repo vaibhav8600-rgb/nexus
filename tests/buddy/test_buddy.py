@@ -132,6 +132,15 @@ def compiled_out():
        'four observers with everything built, of %d slots' % slots)
 
 
+def face_colours():
+    face = read('src', 'buddy', 'face.c')
+    ok('t->value : col' in face and 'theme_slot(t, c)' in face,
+       'a face colour that would vanish into the ground (AMOLED has no glow) '
+       'is drawn in the text colour')
+    ok('bud_visible' in read('scripts', 'render_ui.py'),
+       'and the docs renderer does the same')
+
+
 def protocol():
     print('\nThe brain\'s keys belong to the face, never to the HOST screen')
     c = read('src', 'host', 'host_link.c')
@@ -345,6 +354,7 @@ def pc_brain():
 
 def main():
     compiled_out()
+    face_colours()
     protocol()
     persona()
     pc_brain()

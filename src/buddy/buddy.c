@@ -68,7 +68,7 @@ static int g_eye_y0, g_eye_y1;
 static int64_t g_last_step;
 
 static bool g_enabled = true;
-static uint8_t g_sound = NEXUS_BUDDY_SOUND_CHIRPS;
+static uint8_t g_sound = NEXUS_BUDDY_SOUND_CHATTY;
 static uint8_t g_pin = NEXUS_BUDDY_BRAIN_AUTO;
 
 static enum nexus_buddy_source g_brain = NEXUS_BUDDY_LOCAL;
@@ -660,11 +660,11 @@ static void repaint(bool bubble)
 	bool phase = f->phase != d->phase;
 	bool eyes = colour || f->extra != d->extra ||
 		    memcmp(f->g, d->g, sizeof(f->g)) != 0 ||
-		    (phase && (f->extra == FACE_X_ZZZ || f->extra == FACE_X_DOTS));
+		    (phase && f->extra == FACE_X_ZZZ);
 	bool mouth = colour || f->mouth != d->mouth || f->open != d->open ||
 		     f->extra != d->extra ||
 		     f->g[F_GAZE_X] / 3 != d->g[F_GAZE_X] / 3 ||
-		     (phase && f->extra == FACE_X_BARS);
+		     (phase && (f->extra == FACE_X_BARS || f->extra == FACE_X_DOTS));
 	int y0, y1;
 
 	face_eye_rows(f, &y0, &y1);
@@ -761,22 +761,60 @@ static void draw_header(const struct nexus_theme *t)
 	gfx_text(x, 12, brain, NEXUS_TXT_CAPTION, t->value, GFX_OPAQUE);
 }
 
+/* One row of the bubble: @p n characters of the line from @p from, centred
+ * for all of them, of which the first @p shown are drawn. */
+static void bubble_row(const struct nexus_theme *t, size_t from, size_t n,
+		       size_t shown, int y)
+{
+	char buf[FACE_LINE_MAX + 1];
+
+	memcpy(buf, &g_line[from], n);
+	buf[n] = '\0';
+	int x = GFX_W / 2 - gfx_text_w(buf, NEXUS_TXT_BODY) / 2;
+
+	buf[MIN(shown, n)] = '\0';
+	gfx_text(x, y, buf, NEXUS_TXT_BODY, t->value, GFX_OPAQUE);
+}
+
+/*
+ * Every line at one size: body text, on one row if it fits and two if not,
+ * broken at the space nearest the middle that lets both rows fit (a word
+ * longer than a row is broken where it must). Laid out for the whole
+ * line, so the words already shown stay put while the rest arrives.
+ */
 static void draw_bubble(const struct nexus_theme *t)
 {
-	char shown[FACE_LINE_MAX + 1];
-	/* Laid out for the whole line, so the words already shown stay put
-	 * while the rest arrives. */
-	int scale = gfx_text_w(g_line, NEXUS_TXT_BODY) <= NEXUS_CONTENT_W - 16
-			    ? NEXUS_TXT_BODY
-			    : NEXUS_TXT_CAPTION;
-	int x = GFX_W / 2 - gfx_text_w(g_line, scale) / 2;
-
-	memcpy(shown, g_line, g_shown);
-	shown[g_shown] = '\0';
+	size_t len = strlen(g_line);
+	int adv = gfx_text_w("AA", NEXUS_TXT_BODY) - gfx_text_w("A", NEXUS_TXT_BODY);
+	size_t fit = (size_t)((NEXUS_CONTENT_W - 16 + NEXUS_TXT_BODY) / adv);
+	int h = gfx_text_h(NEXUS_TXT_BODY);
 
 	nexus_draw_card(NEXUS_PAD, FACE_BUBBLE_Y, NEXUS_CONTENT_W, FACE_BUBBLE_H);
-	gfx_text(x, FACE_BUBBLE_Y + (FACE_BUBBLE_H - gfx_text_h(scale)) / 2,
-		 shown, scale, t->value, GFX_OPAQUE);
+	if (len <= fit) {
+		bubble_row(t, 0, len, g_shown, FACE_BUBBLE_Y + (FACE_BUBBLE_H - h) / 2);
+		return;
+	}
+
+	size_t cut = fit; /* no space that works: break mid-word */
+	size_t next = fit;
+
+	size_t best = len;
+
+	for (size_t i = 1; i <= fit; i++) {
+		size_t longer = MAX(i, len - i - 1);
+
+		if (g_line[i] == ' ' && longer <= fit && longer < best) {
+			best = longer;
+			cut = i;
+			next = i + 1;
+		}
+	}
+
+	int y = FACE_BUBBLE_Y + (FACE_BUBBLE_H - 2 * h - 2) / 2;
+
+	bubble_row(t, 0, cut, g_shown, y);
+	bubble_row(t, next, len - next, g_shown > next ? g_shown - next : 0,
+		   y + h + 2);
 }
 
 static void buddy_draw(void)

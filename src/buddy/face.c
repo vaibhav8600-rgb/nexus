@@ -21,7 +21,7 @@
 
 #include "buddy_priv.h"
 
-static gfx_color slot(const struct nexus_theme *t, uint8_t c)
+static gfx_color theme_slot(const struct nexus_theme *t, uint8_t c)
 {
 	switch (c) {
 	case FACE_C_GLOW_B:
@@ -37,6 +37,30 @@ static gfx_color slot(const struct nexus_theme *t, uint8_t c)
 	default:
 		return t->accent;
 	}
+}
+
+/* Rough brightness of an RGB565 colour, 0-255. */
+static int luma(gfx_color c)
+{
+	int r = (c >> 11) * 255 / 31;
+	int g = ((c >> 5) & 63) * 255 / 63;
+	int b = (c & 31) * 255 / 31;
+
+	return (2 * r + 5 * g + b) / 8;
+}
+
+/*
+ * A slot's colour, or the text colour where the slot would vanish. A theme
+ * with no glows sets glow_b to black - AMOLED, CLAY - and a sad face drawn
+ * in it disappears into the ground. Too close to the middle of the gradient,
+ * where the face sits, it is drawn in the theme's text colour instead.
+ */
+static gfx_color slot(const struct nexus_theme *t, uint8_t c)
+{
+	gfx_color col = theme_slot(t, c);
+	int d = luma(col) - luma(gfx_mix(t->bg_top, t->bg_bot, 128));
+
+	return (d < 0 ? -d : d) < 48 ? t->value : col;
 }
 
 /*
@@ -306,8 +330,9 @@ static void extras(const struct face_frame *f, gfx_color c, gfx_color dim)
 		}
 		break;
 	case FACE_X_DOTS:
+		/* "..." where the mouth would be, one dot lit at a time. */
 		for (int i = 0; i < 3; i++) {
-			gfx_disc(202 + i * 12, FACE_EXTRA_Y0 + 10, 4,
+			gfx_disc(FACE_CX - 14 + i * 14, FACE_MOUTH_Y, 4,
 				 (f->phase % 3) == i ? c : dim, GFX_OPAQUE);
 		}
 		break;

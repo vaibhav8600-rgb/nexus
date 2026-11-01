@@ -48,7 +48,7 @@ On the face, a **tap** pokes it (a giggle and a line) and a **hold** goes back.
 | --- | --- |
 | `SHOW` | Open the face. |
 | `BUDDY` | `ON`, or `OFF`: asleep, silent, ignoring every brain. |
-| `SOUND` | `OFF`, `CHIRPS` (a cue per emotion, at most one unprompted every three minutes; the default) or `CHATTY` (and a blip per letter it says). |
+| `SOUND` | `OFF`, `CHIRPS` (a cue per emotion, at most one unprompted every three minutes) or `CHATTY` (and a typing blip per letter as a line appears; the default). |
 | `BRAIN` | Who may drive the face: `AUTO` (whoever spoke last - the row also shows who that is), `PC`, `PHONE`, or `LOCAL` (nobody; its own moods only). |
 
 They are saved with SAVE like everything else, under their own key.
@@ -57,7 +57,9 @@ They are saved with SAVE like everything else, under their own key.
 
 Nine of them, each a row of numbers in `src/buddy/face_anim.c` and drawn
 from geometry - no sprites. Every colour is a theme slot, so they read on
-every palette, DAYLIGHT's light ground included.
+every palette, DAYLIGHT's light ground included. A slot too close to the
+background (AMOLED and CLAY have no glow colour, which sad and listening
+use) is drawn in the theme's text colour instead.
 
 | | | |
 | --- | --- | --- |

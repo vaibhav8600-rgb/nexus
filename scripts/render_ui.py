@@ -1570,12 +1570,20 @@ def bud_arc(cv, cx, cy, rad, th, which, c):
             q_span(cv, y, cx * 16 + inn, cx * 16 + out, c)
 
 
+def bud_visible(t, c):
+    """face.c slot(): a colour too close to the ground takes the text colour."""
+    def luma(v):
+        r, g, b = (v >> 11) * 255 // 31, ((v >> 5) & 63) * 255 // 63, (v & 31) * 255 // 31
+        return (2 * r + 5 * g + b) // 8
+    return t['value'] if abs(luma(c) - luma(mix(t['bg_top'], t['bg_bot'], 128))) < 48 else c
+
+
 def buddy(cv, t, emotion='NEUTRAL', line='', brain='LOCAL', phase=0):
     """src/buddy: the face at rest, its header and its bubble."""
     UI(cv, t).ground()
     p = BUD_T[emotion]
     g = p['g']
-    c = t[p['colour']]
+    c = bud_visible(t, t[p['colour']])
     cx, my = BUD['FACE_CX'], BUD['FACE_MOUTH_Y']
 
     cv.text(PAD, 8, BUD_NAME, LABEL, t['accent'])
@@ -1610,7 +1618,7 @@ def buddy(cv, t, emotion='NEUTRAL', line='', brain='LOCAL', phase=0):
                     c if (phase // 2) % 3 == i else dim)
     elif p['extra'] == 'DOTS':
         for i in range(3):
-            cv.disc(202 + i * 12, BUD['FACE_EXTRA_Y0'] + 10, 4,
+            cv.disc(cx - 14 + i * 14, BUD['FACE_MOUTH_Y'], 4,
                     c if phase % 3 == i else dim)
     elif p['extra'] == 'BARS':
         for i in range(3):
@@ -1620,9 +1628,22 @@ def buddy(cv, t, emotion='NEUTRAL', line='', brain='LOCAL', phase=0):
     if line:
         by, bh = BUD['FACE_BUBBLE_Y'], BUD['FACE_BUBBLE_H']
         UI(cv, t).card(PAD, by, CONTENT_W, bh)
-        s = BODY if text_w(line, BODY) <= CONTENT_W - 16 else CAPTION
-        cv.text(W // 2 - text_w(line, s) // 2, by + (bh - text_h(s)) // 2,
-                line, s, t['value'])
+        # buddy.c's draw_bubble: body text, wrapped to two rows if needed.
+        fit = (CONTENT_W - 16 + BODY) // (text_w('AA', BODY) - text_w('A', BODY))
+        h = text_h(BODY)
+        if len(line) <= fit:
+            rows, y = [line], by + (bh - h) // 2
+        else:
+            cut = nxt = fit
+            best = len(line)
+            for i in range(1, fit + 1):
+                longer = max(i, len(line) - i - 1)
+                if line[i] == ' ' and longer <= fit and longer < best:
+                    best, cut, nxt = longer, i, i + 1
+            rows, y = [line[:cut], line[nxt:]], by + (bh - 2 * h - 2) // 2
+        for r in rows:
+            cv.text(W // 2 - text_w(r, BODY) // 2, y, r, BODY, t['value'])
+            y += h + 2
 
 
 # What each emotion says in the docs' pictures, and who is driving it.
@@ -1647,7 +1668,7 @@ SETTINGS_REMOTE_ROWS = (SETTINGS_ROWS[:8] + [('PHONE', 'LINKED')] +
 PHONE_ROWS = [('PAIR', ''), ('REMOTE', 'ON'), ('FORGET', '1 PHONE'),
               ('BACK', '')]
 # Settings > BUDDY, the list menus.c pushes (buddy_rows)
-BUDDY_ROWS = [('SHOW', ''), ('BUDDY', 'ON'), ('SOUND', 'CHIRPS'),
+BUDDY_ROWS = [('SHOW', ''), ('BUDDY', 'ON'), ('SOUND', 'CHATTY'),
               ('BRAIN', 'AUTO PC'), ('BACK', '')]
 DIAG_ROWS = [('FIRMWARE', 'V1.0.0'), ('BOARD', 'NICE_NANO'),
              ('DISPLAY', 'OK'), ('BACKLIGHT', 'OK'), ('BUZZER', 'OK'),

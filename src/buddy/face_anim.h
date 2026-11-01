@@ -22,7 +22,7 @@
 #define FACE_EYE_Y 96    /* the eyes' centre line, before an emotion moves it */
 #define FACE_MOUTH_Y 160
 #define FACE_HEADER_H 28 /* name and brain, rows 0..27 */
-#define FACE_EXTRA_Y0 28 /* ZZZ and the thinking dots, up and to the right */
+#define FACE_EXTRA_Y0 28 /* ZZZ, up and to the right */
 #define FACE_EXTRA_Y1 80
 #define FACE_MOUTH_Y0 140
 #define FACE_MOUTH_Y1 184
