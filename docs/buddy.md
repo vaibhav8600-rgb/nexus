@@ -1,0 +1,199 @@
+# Buddy
+
+A small animated face on the dongle, with moods, short lines and chirps. It
+blinks and glances around on its own, cheers a typing streak, sulks when a
+half drops out and nods along to music. A brain on the PC or the phone can
+drive it with an emotion and a line - from Gemini, or canned - and with no
+brain at all it runs on moods of its own.
+
+![Buddy, happy](images/screens/buddy-happy.png)
+
+Off by default, and off adds nothing to the build.
+
+## Turning it on
+
+In your config's `nexus_dongle.conf`:
+
+```
+CONFIG_NEXUS_BUDDY=y
+CONFIG_NEXUS_BUDDY_OWNER="VAIBHAV"
+# Optional: Buddy asleep instead of a blank screen, with a computer on USB.
+# CONFIG_NEXUS_BUDDY_IDLE_FACE=y
+```
+
+Then **Settings > BUDDY > SHOW**, or bind a key:
+
+```c
+&nexus_action NEXUS_ACT_BUDDY     /* opens the face; again closes it */
+```
+
+On the face, a **tap** pokes it (a giggle and a line) and a **hold** goes back.
+
+| Option | Default | |
+| --- | --- | --- |
+| `CONFIG_NEXUS_BUDDY_NAME` | `"NIKU"` | The name above the face. |
+| `CONFIG_NEXUS_BUDDY_OWNER` | `""` | Your name, for a greeting and the odd line. |
+| `CONFIG_NEXUS_BUDDY_IDLE_FACE` | `n` | Sleep on screen instead of blanking, with a computer on USB. |
+| `CONFIG_NEXUS_BUDDY_PHONE` | `y` | NEXUS Remote may be the brain. |
+| `CONFIG_NEXUS_BUDDY_LEASE_S` | `60` | How long a silent brain keeps the face. |
+| `CONFIG_NEXUS_BUDDY_QUIET_START` / `_END` | `23` / `8` | No sounds in these hours. |
+
+[configuration.md](configuration.md#buddy) has the details.
+
+## Settings > BUDDY
+
+![The BUDDY list](images/screens/buddy-menu.png)
+
+| Row | |
+| --- | --- |
+| `SHOW` | Open the face. |
+| `BUDDY` | `ON`, or `OFF`: asleep, silent, ignoring every brain. |
+| `SOUND` | `OFF`, `CHIRPS` (a cue per emotion, at most one unprompted every three minutes; the default) or `CHATTY` (and a blip per letter it says). |
+| `BRAIN` | Who may drive the face: `AUTO` (whoever spoke last - the row also shows who that is), `PC`, `PHONE`, or `LOCAL` (nobody; its own moods only). |
+
+They are saved with SAVE like everything else, under their own key.
+
+## The faces
+
+Nine of them, each a row of numbers in `src/buddy/face_anim.c` and drawn
+from geometry - no sprites. Every colour is a theme slot, so they read on
+every palette, DAYLIGHT's light ground included.
+
+| | | |
+| --- | --- | --- |
+| ![neutral](images/screens/buddy-neutral.png) | ![happy](images/screens/buddy-happy.png) | ![sad](images/screens/buddy-sad.png) |
+| neutral | happy | sad |
+| ![angry](images/screens/buddy-angry.png) | ![surprised](images/screens/buddy-surprised.png) | ![sleepy](images/screens/buddy-sleepy.png) |
+| angry | surprised | sleepy |
+| ![love](images/screens/buddy-love.png) | ![thinking](images/screens/buddy-thinking.png) | ![listening](images/screens/buddy-listening.png) |
+| love | thinking | listening |
+
+| ![nexus](images/screens/buddy-theme-nexus.png) | ![daylight](images/screens/buddy-theme-daylight.png) | ![amoled](images/screens/buddy-theme-amoled.png) | ![sunset](images/screens/buddy-theme-sunset.png) |
+| --- | --- | --- | --- |
+
+Between emotions the face tweens rather than cuts. It blinks every 2.5 to 5
+seconds (one in six is a double), glances around every second or two, and
+talks with its mouth while a line is revealed letter by letter. The top
+corner says who is driving it: `BRAIN: LOCAL`, `PC` or `PHONE`.
+
+## Its own moods
+
+With no brain connected, the face follows the keyboard. Highest first:
+
+| When | Face | Says |
+| --- | --- | --- |
+| A half drops out | sad | `WHERE DID LEFT GO?` - then `YAY, BACK!` when it returns |
+| A half's battery is under 15 % | sleepy | `LOW BATTERY`, once |
+| A brain is connected | the brain's | the brain's |
+| 20 seconds typing 30 % faster than your own average | happy | `NICE STREAK!`, at most every 10 minutes |
+| Beating a WPM best that stood for two minutes | surprised | `NEW BEST!` |
+| Five minutes without a key | sleepy, with Zs | - |
+| Music playing (with a companion) | neutral, nodding along | - |
+| After 23:00 (with a companion's clock) | slower blinks, a yawn now and then | `ITS LATE... BED?`, once a night |
+
+Unprompted lines are at most one every three minutes; a half dropping out is
+not chatter and is always said. A disconnect and a flat battery outrank even
+a brain: the face never smiles over a keyboard that has stopped working.
+
+## A brain
+
+The dongle never runs AI. A brain is a program on the PC or the phone that
+sends the host link's lines (`E` an emotion, `S` a line - see
+[host-link.md](host-link.md#the-protocol)). Every line renews its hold on the
+face for `CONFIG_NEXUS_BUDDY_LEASE_S`; quiet that long, or `B 0`, and the face
+is Buddy's own again.
+
+### The PC
+
+Either companion, with `--buddy`:
+
+```sh
+python3 tools/nexus-host/nexus_host.py --buddy
+```
+```powershell
+.\tools\nexus-host\nexus_host.ps1 -Buddy          # -Install -Buddy to start with Windows
+```
+
+It speaks when you sit down, every 10 minutes (`--buddy-minutes`, 5-60),
+when a new song starts (at most every five minutes) and when the PC has been
+flat out for a minute. It sends `B 1` every 10 seconds to keep the face, and
+`B 0` before it quits.
+
+**Gemini.** Set `GEMINI_API_KEY` in the environment and it asks Gemini
+(`gemini-3.1-flash-lite` by default; `--gemini-model` / `-GeminiModel` to
+change it). The key is read from the environment and nowhere else - never an
+argument, which the process list would show, and never written to disk. On
+Windows, once, in a terminal:
+
+```powershell
+[Environment]::SetEnvironmentVariable('GEMINI_API_KEY', '<your key>', 'User')
+```
+
+then start a new terminal. Get a key at
+[Google AI Studio](https://aistudio.google.com/apikey); restrict it to the
+Generative Language API and set a budget alert. A request goes out at most
+every 20 seconds and typically every 10 minutes, well inside the free tier.
+Out of quota, it rests - a minute, then longer each time - and says so once.
+
+Without a key it says canned lines from `persona/persona.json`.
+
+### The phone
+
+NEXUS Remote can be the brain when the dongle is on a power bank or a laptop
+with no companion: its Buddy tab sends the same lines over a Companion
+characteristic ([remote-input-protocol.md](remote-input-protocol.md)). The
+phone only works as a brain while the app is open - phones suspend a page in
+the background. From the phone only Buddy's lines and the clock are taken,
+so the HOST screen still describes the PC.
+
+### What a brain is told
+
+Gemini hears the time of day, how busy the PC is as low / medium / high, the
+track playing and why it is being asked - and on the phone, what you type to
+it. Never keystrokes, window titles, screen contents or files. The dongle
+sends nothing back at all.
+
+Every answer is checked before the dongle sees it: an emotion it does not
+have, a line over 24 characters or with characters the font cannot draw, or
+JSON that does not parse, and a canned line goes instead.
+
+## The persona
+
+`persona/persona.json` is the one description of who Buddy is - name, owner,
+traits, voice, a never-list and the canned lines - and both companions and
+the app build Gemini's instructions from it. The firmware takes its name
+from `CONFIG_NEXUS_BUDDY_NAME`; `tests/buddy/test_buddy.py` fails if the
+default and the JSON disagree, or if their emotion lists do.
+
+## Sound
+
+Each emotion has a short cue inside the buzzer's loud band; `CHATTY` adds a
+blip per letter, pitched by the emotion. Buddy's sounds are the one soft
+class: they only play into silence, and any other effect cuts them off, so
+a chirp can never eat a disconnect cue. Nothing plays while you type - a cue
+waits for a pause, and gives up after 10 seconds - nothing in quiet hours,
+and nothing with the sound off in Settings. Buddy only makes sounds while its
+face is on screen.
+
+## Cost
+
+Nothing at all unless `CONFIG_NEXUS_BUDDY=y`: every line of it is behind that
+symbol, and CI builds the same images as before with it off. With it on, CI's
+`nexus_dongle_buddy` build prints its size beside the others.
+
+Inside it: no heap, no thread, no float, no second frame buffer. The face
+draws through the same 12-row band as everything else and repaints only the
+rows that moved - a blink is the eyes' rows, a word the bubble's, and a face
+at rest paints nothing. It animates at 20 frames a second with a computer on
+USB, 10 on a charger or battery, and two while the display is blanked; it
+is a NORMAL screen, not a game, so the display still blanks on its timeout.
+
+## Limits
+
+- The phone is a brain only while NEXUS Remote is open on screen.
+- Gemini Live (spoken conversation) needs tokens minted by a server, so it is
+  not here. A local program can still drive the mouth with `V` while it plays
+  its own speech.
+- Buddy's sounds play only while its face is up; elsewhere it stays quiet.
+- Typing speed is the only typing signal: the dongle never looks at which
+  keys you press.

@@ -208,6 +208,83 @@ config NEXUS_BACKLIGHT_TIMEOUT_S
 	  even when they are not pressing anything. Any action wakes it, and
 	  the press that wakes it still does its job.
 
+config NEXUS_BUDDY
+	bool "Buddy: an animated face with moods, short lines and chirps"
+	default n
+	help
+	  A face on the dongle that blinks, glances around and reacts to the
+	  keyboard: happy on a typing streak, sad when a half drops out,
+	  sleepy when the desk goes quiet. Settings > BUDDY, or a key bound
+	  to &nexus_action NEXUS_ACT_BUDDY, opens it.
+
+	  With the host link, the PC companion can be its brain (--buddy),
+	  and with Remote Input so can the phone: they send an emotion and a
+	  short line, and the face shows them. No AI runs on the dongle.
+
+	  Off adds nothing to the build. docs/buddy.md has the whole of it.
+
+if NEXUS_BUDDY
+
+config NEXUS_BUDDY_NAME
+	string "Buddy's name (upper case, up to 10 characters)"
+	default "NIKU"
+	help
+	  Shown above the face and as the title of its settings list. The
+	  PC companion and the app take the name from persona/persona.json;
+	  set both if you rename it.
+
+config NEXUS_BUDDY_OWNER
+	string "Your name, for Buddy's lines (upper case, may be empty)"
+	default ""
+	help
+	  Used in a greeting and now and then when poked: HI VAIBHAV! Empty
+	  leaves the name out of every line.
+
+config NEXUS_BUDDY_IDLE_FACE
+	bool "Show Buddy asleep instead of blanking, with a computer on USB"
+	default n
+	help
+	  When NEXUS_BACKLIGHT_TIMEOUT_S would blank the display, Buddy's
+	  sleeping face takes the screen instead, and the first key pressed
+	  after puts back the screen that was there. Only while a computer
+	  has the dongle on USB; on a charger or a battery the display
+	  blanks as before. Needs NEXUS_BACKLIGHT_TIMEOUT_S above 0.
+
+config NEXUS_BUDDY_PHONE
+	bool "Let NEXUS Remote be Buddy's brain"
+	default y
+	depends on NEXUS_REMOTE_INPUT && NEXUS_HOST_LINK
+	help
+	  Adds a Companion characteristic, write only, at the end of the
+	  Remote Input service. The app writes the same lines the PC
+	  companion does; only E, S, V, L, B and the clock (T, D) are taken
+	  from it. It works with remote mode off, since nothing written there
+	  can type.
+
+config NEXUS_BUDDY_LEASE_S
+	int "Seconds a brain keeps the face after its last line"
+	default 60
+	range 5 600
+	help
+	  A PC or phone that goes quiet for this long hands the face back to
+	  Buddy's own moods. A brain sending B 0 hands it back at once.
+
+config NEXUS_BUDDY_QUIET_START
+	int "Quiet hours start, hour 0-23"
+	default 23
+	range 0 23
+	help
+	  No chirps and no babble from this hour until NEXUS_BUDDY_QUIET_END,
+	  once a companion has sent the time. Equal start and end means no
+	  quiet hours.
+
+config NEXUS_BUDDY_QUIET_END
+	int "Quiet hours end, hour 0-23"
+	default 8
+	range 0 23
+
+endif # NEXUS_BUDDY
+
 endif # NEXUS_DISPLAY
 
 # --------------------------------------------------------------------------

@@ -58,6 +58,15 @@ int nexus_button_init(void);
 int nexus_backlight_init(void);
 int nexus_host_link_init(void);
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+/**
+ * Host-link lines from NEXUS Remote's Companion characteristic. Bluetooth RX
+ * thread: copies and kicks, nothing more, like the host link's own
+ * transports.
+ */
+void nexus_host_phone_put(const uint8_t *buf, uint16_t len);
+#endif
+
 /*
  * One field of the host model changed. The HOST screen repaints the card that
  * shows it, and nothing at all when it is not the screen you are looking at.

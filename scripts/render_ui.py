@@ -1442,6 +1442,198 @@ def remote(cv, t, view, number=''):
               CAPTION, t['muted'])
 
 
+# ----------------------------------------------------------------- buddy
+BUD_SRC = read('src/buddy/face_anim.c')
+BUD = defines(read('src/buddy/face_anim.h'),
+              ['FACE_CX', 'FACE_EYE_Y', 'FACE_MOUTH_Y', 'FACE_EXTRA_Y0',
+               'FACE_EXTRA_Y1', 'FACE_BUBBLE_Y', 'FACE_BUBBLE_H'])
+BUD_NAME = re.search(r'config NEXUS_BUDDY_NAME\n(?:\t.*\n)*?\tdefault "(\w+)"',
+                     read('Kconfig')).group(1)
+_fbars = re.search(r'k_bars\[8\]\[3\] = \{(.*?)\};', read('src/buddy/face.c'),
+                   re.S)
+_fbv = [int(v) for v in re.findall(r'\d+', _fbars.group(1))]
+BUD_BARS = [_fbv[i:i + 3] for i in range(0, len(_fbv), 3)]
+
+
+def bud_targets():
+    """face_targets[] in face_anim.c, so a retuned emotion re-renders."""
+    out = {}
+    for m in re.finditer(r'\[FACE_(\w+)\] = \{ \{ ([^}]*) \},\s*FACE_C_(\w+), '
+                         r'FACE_M_(\w+), FACE_X_(\w+) \}', BUD_SRC):
+        out[m.group(1)] = dict(g=[int(v) for v in m.group(2).split(',')],
+                               colour=m.group(3).lower(), mouth=m.group(4),
+                               extra=m.group(5))
+    return out
+
+
+BUD_T = bud_targets()
+
+
+def cdiv(a, b):
+    """C's integer division, which truncates toward zero."""
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b > 0) else -q
+
+
+def chord(r16, dy16):
+    if dy16 <= -r16 or dy16 >= r16:
+        return -1
+    return isqrt32(r16 * r16 - dy16 * dy16)
+
+
+def q_span(cv, y, lft, rgt, c):
+    """face.c span(): one row over [lft, rgt) in 1/16 px, AA at both ends."""
+    lft, rgt = max(lft, 0), min(rgt, W * 16)
+    if rgt <= lft:
+        return
+    xl, xr = lft >> 4, rgt >> 4
+    if xl == xr:
+        cv.px(xl, y, c, (rgt - lft) * 255 // 16)
+        return
+    if lft & 15:
+        cv.px(xl, y, c, (16 - (lft & 15)) * 255 // 16)
+        xl += 1
+    cv.rect(xl, y, xr - xl, 1, c)
+    if rgt & 15:
+        cv.px(xr, y, c, (rgt & 15) * 255 // 16)
+
+
+def bud_eye(cv, g, cx, cy, side, c):
+    w, h = g[0], g[1]
+    r = min(g[2], w // 2, h // 2)
+    top = cy - h // 2
+    bot = top + h
+    x0 = cx * 16 - w * 8
+    x1 = x0 + w * 16
+    a, b = (g[6], g[5]) if side > 0 else (g[5], g[6])
+    cut_r = w * 3 // 4 * 16
+    cut_y = (bot - g[7]) * 16 + cut_r
+    for y in range(max(top, 0), min(bot, H)):
+        yq = y * 16 + 8
+        lft, rgt, dy = x0, x1, 0
+        if yq < (top + r) * 16:
+            dy = (top + r) * 16 - yq
+        elif yq > (bot - r) * 16:
+            dy = yq - (bot - r) * 16
+        if dy:
+            half = chord(r * 16, dy)
+            if half < 0:
+                continue
+            lft += r * 16 - half
+            rgt -= r * 16 - half
+        d = yq - top * 16
+        if a == b:
+            if d < a * 16:
+                continue
+        elif b > a:
+            rgt = min(rgt, x0 + cdiv((d - a * 16) * w, b - a))
+        else:
+            lft = max(lft, x0 + cdiv((a * 16 - d) * w, a - b))
+        if rgt <= lft:
+            continue
+        if g[7] > 0:
+            half = chord(cut_r, yq - cut_y)
+            if half >= 0:
+                q_span(cv, y, lft, min(rgt, cx * 16 - half), c)
+                q_span(cv, y, max(lft, cx * 16 + half), rgt, c)
+                continue
+        q_span(cv, y, lft, rgt, c)
+
+
+def bud_heart(cv, cx, cy, w, c):
+    r = w // 4
+    lobe_y = cy - r // 2
+    tip = cy + w // 2 - 2
+    for y in range(max(lobe_y - r, 0), min(tip, H)):
+        yq = y * 16 + 8
+        half = chord(r * 16, yq - lobe_y * 16)
+        if half >= 0:
+            q_span(cv, y, (cx - r) * 16 - half, (cx - r) * 16 + half, c)
+            q_span(cv, y, (cx + r) * 16 - half, (cx + r) * 16 + half, c)
+        if yq > lobe_y * 16:
+            w16 = cdiv(2 * r * (tip * 16 - yq), tip - lobe_y)
+            q_span(cv, y, cx * 16 - w16, cx * 16 + w16, c)
+
+
+def bud_arc(cv, cx, cy, rad, th, which, c):
+    top = cy - rad if which & 2 else cy
+    bot = cy + rad if which & 1 else cy
+    for y in range(max(top, 0), min(bot, H)):
+        dy = y * 16 + 8 - cy * 16
+        out, inn = chord(rad * 16, dy), chord((rad - th) * 16, dy)
+        if out < 0:
+            continue
+        if inn < 0:
+            q_span(cv, y, cx * 16 - out, cx * 16 + out, c)
+        else:
+            q_span(cv, y, cx * 16 - out, cx * 16 - inn, c)
+            q_span(cv, y, cx * 16 + inn, cx * 16 + out, c)
+
+
+def buddy(cv, t, emotion='NEUTRAL', line='', brain='LOCAL', phase=0):
+    """src/buddy: the face at rest, its header and its bubble."""
+    UI(cv, t).ground()
+    p = BUD_T[emotion]
+    g = p['g']
+    c = t[p['colour']]
+    cx, my = BUD['FACE_CX'], BUD['FACE_MOUTH_Y']
+
+    cv.text(PAD, 8, BUD_NAME, LABEL, t['accent'])
+    bx = W - PAD - text_w(brain, CAPTION)
+    cv.text(bx - text_w('BRAIN: ', CAPTION), 12, 'BRAIN: ', CAPTION,
+            t['caption'])
+    cv.text(bx, 12, brain, CAPTION, t['value'])
+
+    cy = BUD['FACE_EYE_Y'] + g[4] + g[9]
+    for side in (-1, 1):
+        ex = cx + side * g[3] + g[8]
+        if p['extra'] == 'HEARTS':
+            bud_heart(cv, ex, cy, g[0], c)
+        else:
+            bud_eye(cv, g, ex, cy, side, c)
+
+    mx = cx + cdiv(g[8], 3)
+    if p['mouth'] == 'LINE':
+        cv.round_rect(mx - 14, my - 2, 28, 5, 2, c)
+    elif p['mouth'] == 'SMILE':
+        bud_arc(cv, mx, my - 8, 15, 5, 1, c)
+    elif p['mouth'] == 'FROWN':
+        bud_arc(cv, mx, my + 10, 15, 5, 2, c)
+    elif p['mouth'] == 'O':
+        bud_arc(cv, mx, my + 2, 9, 4, 3, c)
+
+    dim = mix(t['bg_bot'], c, 110)
+    if p['extra'] == 'ZZZ':
+        for i in range(3):
+            y = BUD['FACE_EXTRA_Y1'] - 20 - i * 15 - (phase & 1)
+            cv.text(188 + i * 13, y, 'Z', 3 if i == 1 else 2,
+                    c if (phase // 2) % 3 == i else dim)
+    elif p['extra'] == 'DOTS':
+        for i in range(3):
+            cv.disc(202 + i * 12, BUD['FACE_EXTRA_Y0'] + 10, 4,
+                    c if phase % 3 == i else dim)
+    elif p['extra'] == 'BARS':
+        for i in range(3):
+            h = BUD_BARS[phase][i]
+            cv.round_rect(cx - 17 + i * 13, my + 2 - h // 2, 8, h, 3, c)
+
+    if line:
+        by, bh = BUD['FACE_BUBBLE_Y'], BUD['FACE_BUBBLE_H']
+        UI(cv, t).card(PAD, by, CONTENT_W, bh)
+        s = BODY if text_w(line, BODY) <= CONTENT_W - 16 else CAPTION
+        cv.text(W // 2 - text_w(line, s) // 2, by + (bh - text_h(s)) // 2,
+                line, s, t['value'])
+
+
+# What each emotion says in the docs' pictures, and who is driving it.
+BUDDY_SHOTS = [('NEUTRAL', '', 'LOCAL'), ('HAPPY', 'NICE STREAK!', 'LOCAL'),
+               ('SAD', 'WHERE DID LEFT GO?', 'LOCAL'), ('ANGRY', '', 'PC'),
+               ('SURPRISED', 'NEW BEST!', 'LOCAL'),
+               ('SLEEPY', 'ITS LATE... BED?', 'LOCAL'),
+               ('LOVE', 'AWW, THANK YOU!', 'PHONE'),
+               ('THINKING', '', 'PC'), ('LISTENING', '', 'PHONE')]
+
+
 # ------------------------------------------------------------------ main
 SETTINGS_ROWS = [('SOUND', 'ON'), ('BRIGHT', '80%'), ('THEME', 'NEXUS'),
                  ('ANIM', 'ON'), ('SPEED', 'NORMAL'), ('SNAKE WALL', 'OFF'),
@@ -1454,6 +1646,9 @@ SETTINGS_REMOTE_ROWS = (SETTINGS_ROWS[:8] + [('PHONE', 'LINKED')] +
 # Settings > PHONE, the list menus.c pushes (phone_rows)
 PHONE_ROWS = [('PAIR', ''), ('REMOTE', 'ON'), ('FORGET', '1 PHONE'),
               ('BACK', '')]
+# Settings > BUDDY, the list menus.c pushes (buddy_rows)
+BUDDY_ROWS = [('SHOW', ''), ('BUDDY', 'ON'), ('SOUND', 'CHIRPS'),
+              ('BRAIN', 'AUTO PC'), ('BACK', '')]
 DIAG_ROWS = [('FIRMWARE', 'V1.0.0'), ('BOARD', 'NICE_NANO'),
              ('DISPLAY', 'OK'), ('BACKLIGHT', 'OK'), ('BUZZER', 'OK'),
              ('BUTTON', 'OK'), ('HOST', 'BLE 1'), ('L/R LINK', 'OK/OK'),
@@ -1512,7 +1707,15 @@ def main():
         ('remote-connected', lambda cv: remote(cv, nx, 'CONNECTED')),
         ('remote-noroom', lambda cv: remote(cv, nx, 'FULL')),
         ('remote-hello', lambda cv: remote(cv, nx, 'HELLO')),
+        ('buddy-menu', lambda cv: menu(cv, nx, BUD_NAME, BUDDY_ROWS, 3)),
     ]
+    for emo, line, brain in BUDDY_SHOTS:
+        shots.append(('buddy-' + emo.lower(),
+                      lambda cv, e=emo, s=line, b=brain: buddy(cv, nx, e, s, b)))
+    # one face in every palette: it has to read on DAYLIGHT's light ground too
+    for name, t in th.items():
+        shots.append(('buddy-theme-' + name.lower(),
+                      lambda cv, t=t: buddy(cv, t, 'HAPPY')))
     for name, fn in shots:
         cv = Canvas()
         fn(cv)

@@ -226,6 +226,7 @@ Include `<dt-bindings/nexus.h>` and bind any of:
 | `NEXUS_ACT_SAVE` | commit settings, from any screen |
 | `NEXUS_ACT_THEME_NEXT` / `THEME_PREV` | cycle themes without opening Settings; saves itself once you stop |
 | `NEXUS_ACT_HOST` | open the HOST screen - the clock and the companion's data - from any screen. Needs `CONFIG_NEXUS_HOST_LINK`. |
+| `NEXUS_ACT_BUDDY` | open Buddy's face, or close it if it is up. Needs `CONFIG_NEXUS_BUDDY`; a no-op without. |
 
 Verbs are context-sensitive by design (Section 13): the screen decides what
 `SELECT` means, not the key.
@@ -258,6 +259,25 @@ sensor-bindings = <&nexus_theme_enc NEXUS_ACT_THEME_NEXT NEXUS_ACT_THEME_PREV
                    &inc_dec_kp C_VOL_UP C_VOL_DN>;
 ```
 
+## Buddy
+
+An animated face with moods, short lines and chirps; [buddy.md](buddy.md) has
+the whole of it. Off adds nothing to the build.
+
+| Option | Default | |
+| --- | --- | --- |
+| `CONFIG_NEXUS_BUDDY` | `n` | The face, its mood engine and Settings > BUDDY. |
+| `CONFIG_NEXUS_BUDDY_NAME` | `"NIKU"` | Shown above the face. Upper case, 10 characters at most. The companions and the app read the name from `persona/persona.json`; change both. |
+| `CONFIG_NEXUS_BUDDY_OWNER` | `""` | Your name, for a greeting and the odd line when poked. Empty leaves it out. |
+| `CONFIG_NEXUS_BUDDY_IDLE_FACE` | `n` | When the display would blank for idleness, show Buddy asleep instead - only with a computer on USB, and only with `CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S` above 0. |
+| `CONFIG_NEXUS_BUDDY_PHONE` | `y` | NEXUS Remote may be the brain. Needs `CONFIG_NEXUS_REMOTE_INPUT` and `CONFIG_NEXUS_HOST_LINK`; adds one write-only characteristic at the end of the Remote Input service. |
+| `CONFIG_NEXUS_BUDDY_LEASE_S` | `60` | A brain that goes quiet this long hands the face back to Buddy's own moods. |
+| `CONFIG_NEXUS_BUDDY_QUIET_START` / `CONFIG_NEXUS_BUDDY_QUIET_END` | `23` / `8` | No chirps or babble between these hours, once a companion has sent the time. Equal means none. |
+
+Its three settings - on or off, SOUND, BRAIN - are saved under their own key,
+`nexus/buddy/prefs`, so turning Buddy off again later leaves `nexus/ui/prefs`
+exactly as it was.
+
 ## Split status
 
 | Option | Default | |
@@ -274,7 +294,8 @@ both cards read `--` forever, which is correct: unknown is not zero.
 
 **`UI STATIC`** is the UI's own compile-time footprint - the 5,760-byte
 compositor band plus the 224-byte menu value cache, 5,984 B in total. It is a
-constant, not a live reading, and it is neither free nor used memory.
+constant, not a live reading, and it is neither free nor used memory. A build
+with Buddy has one Settings row more, and reads 6,000 B.
 
 There is no free-RAM row because NEXUS has no heap to watch: every buffer it
 owns is static, so the UI cannot run out of memory at an awkward moment.

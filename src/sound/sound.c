@@ -123,6 +123,36 @@ static const struct note s_sleep[] = {
 static const struct note s_wake[] = {
 	{C6,70},{REST,20},{E6,70},{REST,20},{A6,160}, N_END };
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+/*
+ * Buddy's cues, one per emotion, all inside the buzzer's loud band.
+ *
+ * A glide is written out as steps rather than given an engine of its own:
+ * at 20-35 ms a step the ear hears a slide, and the player that already
+ * exists plays it, so not one existing table had to change shape.
+ */
+#define D6 1175
+static const struct note s_b_happy[] = { {G6,60},{C7,60},{E7,110}, N_END };
+/* C7 down to C6 over 420 ms, a semitone a step. */
+static const struct note s_b_sad[] = {
+	{2093,35},{1976,35},{1865,35},{1760,35},{1661,35},{1568,35},
+	{1480,35},{1397,35},{1319,35},{1245,35},{1175,35},{1047,35}, N_END };
+static const struct note s_b_angry[] = {
+	{C6,45},{D6,45},{C6,45},{D6,45},{C6,45},{D6,45}, N_END };
+/* E6 up to G7 in 160 ms. */
+static const struct note s_b_surprised[] = {
+	{1319,20},{1493,20},{1690,20},{1913,20},{2166,20},{2452,20},
+	{2776,20},{3136,20}, N_END };
+static const struct note s_b_sleepy[] = { {A6,120},{G6,140},{E6,240}, N_END };
+static const struct note s_b_love[] = {
+	{C7,70},{E7,70},{C7,70},{E7,70}, N_END };
+static const struct note s_b_thinking[] = {
+	{D7,40},{REST,200},{D7,40}, N_END };
+/* G6 up to D7 in 120 ms. */
+static const struct note s_b_listening[] = {
+	{1568,20},{1700,20},{1843,20},{1998,20},{2166,20},{2349,20}, N_END };
+#endif
+
 /* Index order must match enum nexus_sound. */
 static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
 	[NEXUS_SOUND_STARTUP]       = s_startup,
@@ -148,6 +178,16 @@ static const struct note *const s_table[NEXUS_SOUND_COUNT] = {
 	[NEXUS_SOUND_HALF_R_DISCONNECT] = s_half_r_gone,
 	[NEXUS_SOUND_SLEEP]             = s_sleep,
 	[NEXUS_SOUND_WAKE]              = s_wake,
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	[NEXUS_SOUND_BUDDY_HAPPY]       = s_b_happy,
+	[NEXUS_SOUND_BUDDY_SAD]         = s_b_sad,
+	[NEXUS_SOUND_BUDDY_ANGRY]       = s_b_angry,
+	[NEXUS_SOUND_BUDDY_SURPRISED]   = s_b_surprised,
+	[NEXUS_SOUND_BUDDY_SLEEPY]      = s_b_sleepy,
+	[NEXUS_SOUND_BUDDY_LOVE]        = s_b_love,
+	[NEXUS_SOUND_BUDDY_THINKING]    = s_b_thinking,
+	[NEXUS_SOUND_BUDDY_LISTENING]   = s_b_listening,
+#endif
 };
 
 /*
@@ -172,6 +212,11 @@ static bool effect_enabled(enum nexus_sound id)
 static const struct note *g_seq;
 static uint8_t g_pos;
 static bool g_muted;
+
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+/* What is playing is one of Buddy's, and anything may cut it. */
+static bool g_soft;
+#endif
 
 static void step(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(g_step, step);
@@ -201,6 +246,15 @@ void nexus_sound_play(enum nexus_sound id)
 		return;
 	}
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	bool soft = id >= NEXUS_SOUND_BUDDY_HAPPY;
+
+	if (soft && g_seq != NULL && !g_soft) {
+		return; /* never over a real effect */
+	}
+	g_soft = soft;
+#endif
+
 	/* Last effect wins. Queueing them would lag behind fast gameplay and
 	 * sound worse than simply cutting to the newest event. */
 	/*
@@ -214,6 +268,31 @@ void nexus_sound_play(enum nexus_sound id)
 	g_seq = s_table[id];
 	k_work_reschedule(&g_step, K_NO_WAIT);
 }
+
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+/* The babble's one note, rewritten per blip. Position first, as above. */
+static struct note g_blip[3];
+
+void nexus_sound_blip(uint16_t hz, uint16_t ms, uint16_t hz_end)
+{
+	if (g_muted || !nexus_buzzer_ready() || !IS_ENABLED(CONFIG_NEXUS_UI_SOUND)) {
+		return;
+	}
+	if (g_seq != NULL && !g_soft) {
+		return;
+	}
+
+	uint16_t first = hz_end ? ms / 2U : ms;
+
+	g_pos = 0;
+	g_blip[0] = (struct note){ hz, first };
+	g_blip[1] = (struct note){ hz_end, hz_end ? (uint16_t)(ms - first) : 0U };
+	g_blip[2] = (struct note)N_END;
+	g_soft = true;
+	g_seq = g_blip;
+	k_work_reschedule(&g_step, K_NO_WAIT);
+}
+#endif
 
 void nexus_sound_stop(void)
 {

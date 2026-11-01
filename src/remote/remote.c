@@ -100,6 +100,9 @@ static const struct bt_uuid_128 k_key = BT_UUID_INIT_128(REMOTE_UUID(3));
 static const struct bt_uuid_128 k_text = BT_UUID_INIT_128(REMOTE_UUID(4));
 static const struct bt_uuid_128 k_ctrl = BT_UUID_INIT_128(REMOTE_UUID(5));
 static const struct bt_uuid_128 k_status = BT_UUID_INIT_128(REMOTE_UUID(6));
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+static const struct bt_uuid_128 k_companion = BT_UUID_INIT_128(REMOTE_UUID(7));
+#endif
 
 static bool g_on = true; /* remote mode, persisted */
 static uint16_t g_hids_start, g_hids_end;
@@ -234,9 +237,11 @@ static void status_bytes(uint8_t v[STATUS_LEN])
 	       (st->scroll_lock ? BIT(2) : 0);
 	v[3] = (uint8_t)free;
 	v[4] = (uint8_t)(free >> 8);
-	/* text, consumer, hwheel, dongle controls, the HOST screen, batteries */
+	/* text, consumer, hwheel, dongle controls, the HOST screen, batteries,
+	 * Buddy's Companion characteristic */
 	v[5] = BIT(0) | BIT(1) | BIT(2) | BIT(3) |
-	       (IS_ENABLED(CONFIG_NEXUS_HOST_LINK) ? BIT(4) : 0) | BIT(5);
+	       (IS_ENABLED(CONFIG_NEXUS_HOST_LINK) ? BIT(4) : 0) | BIT(5) |
+	       (IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE) ? BIT(6) : 0);
 	/* What &out would show: the preferred transport, not the fallback. */
 	v[6] = (uint8_t)zmk_endpoint_get_preferred_transport();
 	/* The halves, as the dashboard shows them: 0-100, or 0xFF unknown. */
@@ -387,6 +392,24 @@ static ssize_t write_ctrl(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	return len;
 }
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+/*
+ * Buddy's lines from the app - the host link's text protocol, several lines
+ * to a write. Not behind gate()'s remote-mode check: nothing written here can
+ * type, so a phone talking to the face does not need permission to type.
+ */
+static ssize_t write_companion(struct bt_conn *conn,
+			       const struct bt_gatt_attr *attr, const void *buf,
+			       uint16_t len, uint16_t offset, uint8_t flags)
+{
+	if (offset) {
+		return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
+	}
+	nexus_host_phone_put(buf, len);
+	return len;
+}
+#endif
+
 static ssize_t read_status(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			   void *buf, uint16_t len, uint16_t offset)
 {
@@ -465,6 +488,22 @@ static struct _bt_gatt_ccc g_status_ccc =
 	BT_GATT_CCC_INITIALIZER(NULL, status_ccc_write, NULL);
 
 /*
+ * Buddy's Companion characteristic, last, so every attribute before it keeps
+ * its handle. A macro rather than an #if inside the service's argument list,
+ * where a directive is undefined behaviour.
+ */
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+#define COMPANION_ATTRS                                                        \
+	BT_GATT_CHARACTERISTIC(&k_companion.uuid,                              \
+			       BT_GATT_CHRC_WRITE |                            \
+				       BT_GATT_CHRC_WRITE_WITHOUT_RESP,        \
+			       BT_GATT_PERM_WRITE_LESC, NULL, write_companion, \
+			       NULL),
+#else
+#define COMPANION_ATTRS
+#endif
+
+/*
  * LESC permissions: an encrypted, MITM-protected link - which on this
  * service means a passkey read off the NEXUS screen. A phone that is merely
  * encrypted (Just Works) gets an authentication error, and pairs properly.
@@ -484,6 +523,7 @@ BT_GATT_SERVICE_DEFINE(nexus_remote_svc,
 			       BT_GATT_PERM_READ_LESC, read_status, NULL, NULL),
 	BT_GATT_CCC_MANAGED(&g_status_ccc,
 			    BT_GATT_PERM_READ_LESC | BT_GATT_PERM_WRITE_LESC),
+	COMPANION_ATTRS
 );
 
 /* Primary service, then two attributes per characteristic: Status is 10. */

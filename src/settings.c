@@ -5,6 +5,7 @@
  * writes for one SAVE and three chances to come back half-applied.
  */
 
+#include <nexus/buddy.h>
 #include <nexus/display.h>
 /* Unguarded: game.h is declarations only, and a guard here would have to be
  * an #if IS_ENABLED() before <zephyr/kernel.h> has defined IS_ENABLED - which
@@ -155,6 +156,14 @@ int nexus_settings_save(void)
 			ret);
 		return ret;
 	}
+
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	ret = nexus_buddy_prefs_save();
+	if (ret) {
+		LOG_WRN("buddy settings save failed (%d)", ret);
+		return ret;
+	}
+#endif
 
 	g_dirty = false;
 	return 0;

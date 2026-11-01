@@ -31,6 +31,10 @@ Base UUID `7e4e0000-5c1a-4b2e-9d3f-8a6b4c2d1e0f`; each UUID below replaces the
 | Text | `7e4e0004-…` | Write | 1-244 |
 | Control | `7e4e0005-…` | Write | 1-3 |
 | Status | `7e4e0006-…` | Read, Notify | 9 |
+| Companion | `7e4e0007-…` | Write, Write Without Response | 1-244 |
+
+Companion exists only in firmware built with `CONFIG_NEXUS_BUDDY_PHONE`; ask
+for it as optional, and check `features` bit 6.
 
 The dongle advertises as the keyboard it is, under ZMK's keyboard name
 (`CONFIG_ZMK_KEYBOARD_NAME`, "NEXUS" by default), without this service's
@@ -154,7 +158,7 @@ u8  host_leds   bit0 Num Lock, bit1 Caps Lock, bit2 Scroll Lock
 u16 text_free   free bytes in the text queue
 u8  features    bit0 text, bit1 consumer keys, bit2 horizontal scroll,
                 bit3 actions and output (Control 06, 07), bit4 HOST screen,
-                bit5 batteries
+                bit5 batteries, bit6 Companion (Buddy)
 u8  output      the output keys go to: 1 USB, 2 BLE
 u8  batt_left   left half's battery, 0-100, 0xFF unknown
 u8  batt_right  right half's battery, the same
@@ -172,6 +176,22 @@ the HOST screen, output to USB, left half at 78 %, right not heard from:
 Older firmware sends fewer bytes - six before actions, seven before
 batteries. An app reads only what is there and checks `features` before
 offering anything.
+
+## Companion (1-244 bytes, Write)
+
+Lines for [Buddy](buddy.md), in the host link's text protocol
+([host-link.md](host-link.md#the-protocol)): `\n` terminated, several to a
+write, a line never split across two. From the phone only Buddy's own lines
+(`E S V L B`) and the clock (`T D`) are taken; anything else is ignored.
+
+Works with remote mode off - nothing written here can type - but needs the
+same paired, encrypted link as the rest of the service.
+
+Example -- look happy, then say hello:
+
+```
+45 20 48 41 50 50 59 0A 53 20 48 49 21 0A        E HAPPY\nS HI!\n
+```
 
 ## ATT errors
 

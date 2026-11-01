@@ -11,6 +11,7 @@
  * Studio on this part (see include/nexus/gfx.h).
  */
 
+#include <nexus/buddy.h>
 #include <nexus/display.h>
 #include <nexus/gfx.h>
 #include <nexus/screen.h>
@@ -225,6 +226,18 @@ void nexus_screen_render_now(void)
 	render_dirty();
 }
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+void nexus_screen_paint(void)
+{
+	render_dirty();
+}
+
+bool nexus_screen_dimmed(void)
+{
+	return g_dimmed;
+}
+#endif
+
 /* ---- scheduler --------------------------------------------------------- */
 
 /*
@@ -294,6 +307,15 @@ static void idle_display(void)
 
 	int64_t quiet = k_uptime_get() - MAX(g_last_input, g_idle_since);
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_IDLE_FACE)
+	/* Buddy asleep on the panel instead of a blank one - its call, since
+	 * it only does it with a computer on USB. */
+	if (quiet > (int64_t)CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S * MSEC_PER_SEC &&
+	    nexus_buddy_idle_face()) {
+		set_dimmed(false);
+		return;
+	}
+#endif
 	set_dimmed(quiet > (int64_t)CONFIG_NEXUS_BACKLIGHT_TIMEOUT_S *
 				   MSEC_PER_SEC);
 }
