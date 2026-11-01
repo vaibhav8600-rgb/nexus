@@ -43,6 +43,8 @@ param(
     # turns this on by itself. Never an argument: it would sit in the process
     # list.
     [switch]$Buddy,
+    # Talk to Buddy through the copy already running (chat.cmd).
+    [switch]$Chat,
     # Minutes between unprompted lines, 5-60.
     [ValidateRange(5, 60)]
     [int]$BuddyMinutes = 10,
@@ -99,6 +101,11 @@ $HOME_DIR = Join-Path $env:LOCALAPPDATA 'NEXUS'
 $KEY_FILE = Join-Path $HOME_DIR 'gemini.json'
 $KEY_HELP = 'Paste your key from https://aistudio.google.com/apikey into "key". This file stays on this PC.'
 
+# chat.cmd talks to this copy on a localhost UDP port. Bound to 127.0.0.1, so
+# nothing off this PC can reach it.
+$CHAT_PORT = 47801
+$CHAT_MAX = 500       # characters of a message kept
+
 # @{ key; model } - the environment first, then gemini.json. $null for either
 # that neither says.
 function Get-GeminiConfig {
@@ -139,11 +146,42 @@ function Stop-Companions {
     Get-CimInstance Win32_Process `
             -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" |
         Where-Object { $_.CommandLine -like '*nexus_host.ps1*' -and
+                       $_.CommandLine -notlike '*-Chat*' -and
                        $_.ProcessId -ne $PID } |
         ForEach-Object {
             Write-Output "stopping the copy already running (pid $($_.ProcessId))"
             try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {}
         }
+}
+
+if ($Chat) {
+    # One message out, one answer back, through the running copy's localhost
+    # inbox. Connected, so a companion that is not running shows up as a
+    # reset rather than a silent wait.
+    $udp = New-Object Net.Sockets.UdpClient(
+        (New-Object Net.IPEndPoint([Net.IPAddress]::Loopback, 0)))
+    $udp.Client.ReceiveTimeout = 45000
+    $udp.Connect([Net.IPAddress]::Loopback, $CHAT_PORT)
+    Write-Output 'Talk to Buddy. An empty line ends it.'
+    while ($true) {
+        $text = Read-Host 'you'
+        if (-not "$text".Trim()) { break }
+        $bytes = [Text.Encoding]::UTF8.GetBytes((@{ text = $text } | ConvertTo-Json -Compress))
+        [void]$udp.Send($bytes, $bytes.Length)
+        try {
+            $ep = New-Object Net.IPEndPoint([Net.IPAddress]::Any, 0)
+            $j = [Text.Encoding]::UTF8.GetString($udp.Receive([ref]$ep)) | ConvertFrom-Json
+            Write-Output "$($j.name) ($("$($j.emotion)".ToLower())): $($j.reply)"
+        } catch {
+            if ("$($_.Exception.GetBaseException().SocketErrorCode)" -eq 'ConnectionReset') {
+                Write-Output 'The companion is not running - start it with install.cmd.'
+            } else {
+                Write-Output 'No answer. Buddy answers while the companion is running and the dongle is connected.'
+            }
+        }
+    }
+    $udp.Close()
+    return
 }
 
 if ($Uninstall) {
@@ -555,7 +593,9 @@ $REASONS = @{
     music = 'a new song just started'
     busy  = 'the computer has been very busy for a minute'
     late  = 'it is late at night'
+    chat  = 'the owner is talking to you; answer them'
 }
+$HISTORY = 12         # turns of conversation Gemini is shown, six each way
 
 function ConvertTo-BuddyLine([string]$text) {
     $s = -join ($text.Trim().ToUpper().ToCharArray() |
@@ -572,24 +612,27 @@ function Get-BuddyPrompt($p) {
     $out += "Voice: $($v.style). A line is at most $($v.max_chars) characters, $($v.case) case, $($v.charset)."
     $out += 'Never:'
     $out += $p.never | ForEach-Object { "- $_" }
-    $out += 'Reply only as JSON matching the schema: "emotion" is how the face looks, "line" goes on the dongle, "reply" is a slightly longer version for a screen.'
+    $out += 'Reply only as JSON matching the schema: "emotion" is how the face looks, "line" goes on the dongle, "reply" is what you say on a screen - when the owner talks to you, a real answer in normal sentence case, at most 200 characters.'
     $out -join "`n"
 }
 
-# (emotion, line) from a generateContent response, or $null for anything the
-# dongle should not be sent: bad JSON, an emotion it does not have, a line too
-# long or with characters the font cannot draw.
+# (emotion, line, reply) from a generateContent response, or $null for
+# anything the dongle should not be sent: bad JSON, an emotion it does not
+# have, a line too long or with characters the font cannot draw.
 function Read-GeminiReply([string]$raw, $p) {
     try {
         $text = ($raw | ConvertFrom-Json).candidates[0].content.parts[0].text
         $obj = $text | ConvertFrom-Json
         $emotion = "$($obj.emotion)".ToLower()
         $line = "$($obj.line)".Trim()
+        $reply = "$($obj.reply)".Trim()
     } catch { return $null }
     if ($p.emotions -notcontains $emotion) { return $null }
     if (-not $line -or $line.Length -gt $LINE_MAX -or
         (ConvertTo-BuddyLine $line) -ne $line.ToUpper()) { return $null }
-    return @($emotion, $line.ToUpper())
+    if (-not $reply) { $reply = $line }
+    if ($reply.Length -gt 400) { $reply = $reply.Substring(0, 400) }
+    return @($emotion, $line.ToUpper(), $reply)
 }
 
 function Get-Bucket($pct) {
@@ -604,7 +647,49 @@ function Get-Canned([string]$reason) {
     $idx = @(0..($pool.Count - 1) | Where-Object { $pool[$_][1] -ne $script:bud.said })
     if ($idx.Count -eq 0) { $idx = @(0..($pool.Count - 1)) }
     $c = $pool[($idx | Get-Random)]
-    @($c[0], (ConvertTo-BuddyLine $c[1]))
+    $line = ConvertTo-BuddyLine $c[1]
+    @($c[0], $line, $line)
+}
+
+# ---- chat: chat.cmd on this PC talks to Buddy through this copy -------------
+
+function Open-BuddyChat {
+    try {
+        $ep = New-Object Net.IPEndPoint([Net.IPAddress]::Loopback, $CHAT_PORT)
+        $script:chatUdp = New-Object Net.Sockets.UdpClient($ep)
+        # SIO_UDP_CONNRESET off: a chat window closed before its answer
+        # arrived would otherwise make every later Receive throw.
+        [void]$script:chatUdp.Client.IOControl(-1744830452, [byte[]](0, 0, 0, 0), $null)
+    } catch {
+        $script:chatUdp = $null
+        Write-Warning "chat: port $CHAT_PORT is in use - chat.cmd cannot reach this copy"
+    }
+}
+
+# The newest message waiting, as @{ ep; text }, or $null. Older ones in the
+# same round are dropped: an answer to the last thing said is what is wanted.
+function Receive-BuddyChat {
+    if (-not $script:chatUdp) { return $null }
+    $msg = $null
+    while ($script:chatUdp.Available -gt 0) {
+        $ep = New-Object Net.IPEndPoint([Net.IPAddress]::Any, 0)
+        try {
+            $bytes = $script:chatUdp.Receive([ref]$ep)
+            $j = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
+            $text = "$($j.text)".Trim()
+            if ($text.Length -gt $CHAT_MAX) { $text = $text.Substring(0, $CHAT_MAX) }
+            if ($text) { $msg = @{ ep = $ep; text = $text } }
+        } catch {}
+    }
+    $msg
+}
+
+function Send-BuddyChat($ep, $got) {
+    if (-not $script:chatUdp -or -not $ep) { return }
+    $json = @{ name = "$($script:persona.name)"; emotion = $got[0]; line = $got[1]; reply = $got[2] } |
+        ConvertTo-Json -Compress
+    $bytes = [Text.Encoding]::UTF8.GetBytes($json)
+    try { [void]$script:chatUdp.Send($bytes, $bytes.Length, $ep) } catch {}
 }
 
 function Write-BuddyWarning([string]$kind, [string]$text) {
@@ -617,9 +702,10 @@ function Write-BuddyWarning([string]$kind, [string]$text) {
 
 # Ask Gemini in a second runspace, so the round that sends C and M never waits
 # on an answer: a HOST screen gone stale for a slow reply is a regression.
-function Start-BuddyAsk([string]$reason, $cpu, $mem, $np) {
+function Start-BuddyAsk([string]$reason, $cpu, $mem, $np, $chat = $null) {
     $now = Get-Date
     $ctx = @("Why: $($REASONS[$reason]).")
+    if ($chat) { $ctx += "The owner says: $($chat.text)" }
     $h = $now.Hour
     $part = if ($h -lt 5 -or $h -ge 23) { 'night' } elseif ($h -lt 12) { 'morning' }
             elseif ($h -lt 18) { 'afternoon' } else { 'evening' }
@@ -631,9 +717,13 @@ function Start-BuddyAsk([string]$reason, $cpu, $mem, $np) {
         $mins = [int](($now - $script:bud.saidAt).TotalMinutes)
         $ctx += "Minutes since your last line: $mins. It was `"$($script:bud.said)`"; do not repeat it."
     }
+    # A conversation remembers its last few turns; a remark needs none.
+    $contents = @()
+    if ($chat) { $contents += @($script:bud.history) }
+    $contents += @{ role = 'user'; parts = @(@{ text = ($ctx -join "`n") }) }
     $body = @{
         systemInstruction = @{ parts = @(@{ text = (Get-BuddyPrompt $script:persona) }) }
-        contents = @(@{ role = 'user'; parts = @(@{ text = ($ctx -join "`n") }) })
+        contents = $contents
         generationConfig = @{
             responseMimeType = 'application/json'
             responseSchema = @{
@@ -646,7 +736,7 @@ function Start-BuddyAsk([string]$reason, $cpu, $mem, $np) {
                 required = @('emotion', 'line', 'reply')
             }
             temperature = 1.0
-            maxOutputTokens = 200
+            maxOutputTokens = 400
         }
     } | ConvertTo-Json -Depth 10 -Compress
 
@@ -665,7 +755,17 @@ function Start-BuddyAsk([string]$reason, $cpu, $mem, $np) {
             @{ ok = $false; code = $code; err = $_.Exception.Message }
         }
     }).AddArgument(($GEMINI_URL -f $GeminiModel)).AddArgument($script:bud.key).AddArgument($body)
-    $script:bud.job = @{ ps = $ps; handle = $ps.BeginInvoke(); reason = $reason }
+    $script:bud.job = @{ ps = $ps; handle = $ps.BeginInvoke(); reason = $reason; chat = $chat }
+}
+
+# Keep a chat exchange for the next one, as Gemini's own turns, capped.
+function Add-BuddyHistory([string]$said, $got) {
+    $h = @($script:bud.history)
+    $h += @{ role = 'user'; parts = @(@{ text = "The owner says: $said" }) }
+    $answer = @{ emotion = $got[0].ToUpper(); line = $got[1]; reply = $got[2] } | ConvertTo-Json -Compress
+    $h += @{ role = 'model'; parts = @(@{ text = $answer }) }
+    if ($h.Count -gt $HISTORY) { $h = $h[($h.Count - $HISTORY)..($h.Count - 1)] }
+    $script:bud.history = $h
 }
 
 function Receive-BuddyAsk {
@@ -686,6 +786,15 @@ function Receive-BuddyAsk {
         $script:bud.nextAsk = (Get-Date).AddSeconds(120)
         $why = if ($res) { if ($res.code) { "HTTP $($res.code)" } else { $res.err } } else { 'no answer' }
         Write-BuddyWarning "$why" "Gemini unreachable: $why"
+    }
+    if ($job.chat) {
+        if ($got) {
+            Add-BuddyHistory $job.chat.text $got
+        } else {
+            # Someone asked a question: a canned remark is not an answer.
+            $got = @('sad', 'MY BRAIN IS FOGGY...', "I can't reach my brain right now - Gemini did not answer. Try again in a minute?")
+        }
+        Send-BuddyChat $job.chat.ep $got
     }
     if (-not $got) { $got = Get-Canned $job.reason }
     $got
@@ -729,6 +838,29 @@ function Get-BuddyLines($cpu, $mem, $np) {
     }
     $got = $null
     if ($script:bud.job -and $script:bud.job.handle.IsCompleted) { $got = Receive-BuddyAsk }
+
+    # Someone talking to it comes first, and is not held to the gap between
+    # remarks - only to Gemini's own quota. One message waits while another
+    # is being answered.
+    $msg = Receive-BuddyChat
+    if ($msg) { $script:bud.chatWaiting = $msg }
+    $msg = $script:bud.chatWaiting
+    if ($msg -and -not $script:bud.job -and -not $got) {
+        $script:bud.chatWaiting = $null
+        $resting = $script:bud.backoff -gt 0 -and $now -lt $script:bud.nextAsk
+        if (-not $script:bud.key) {
+            $got = @('sad', 'I NEED A KEY...', "I need a Gemini key in $KEY_FILE before I can talk.")
+            Send-BuddyChat $msg.ep $got
+        } elseif ($resting) {
+            $got = @('sleepy', 'RESTING...', "I'm out of Gemini quota for now - give me a few minutes.")
+            Send-BuddyChat $msg.ep $got
+        } else {
+            $script:bud.nextAsk = $now.AddSeconds($ASK_GAP)
+            Start-BuddyAsk 'chat' $cpu $mem $np $msg
+            $out.Add('E THINKING')
+        }
+    }
+
     if (-not $script:bud.job -and -not $got -and $now -ge $script:bud.nextAsk) {
         $reason = Get-BuddyTrigger $cpu $np
         if ($reason) {
@@ -823,9 +955,10 @@ $script:bud = @{
     key = ''; job = $null; said = ''; saidAt = $null
     nextAsk = [datetime]::MinValue; leaseAt = [datetime]::MinValue; backoff = 0
     song = ''; songAt = [datetime]::MinValue; busySince = $null
-    busyAt = [datetime]::MinValue; complained = @{}
+    busyAt = [datetime]::MinValue; complained = @{}; history = @(); chatWaiting = $null
 }
 $nextKeyLook = [datetime]::MinValue
+Open-BuddyChat
 $modelGiven = $PSBoundParameters.ContainsKey('GeminiModel')
 
 # Look for a key: at start, then every 30 s until there is one. Never printed.
@@ -1051,5 +1184,6 @@ try {
         try { Send-BleLines $ble $bye } catch {}
         Close-BleLink $ble
     }
+    if ($script:chatUdp) { try { $script:chatUdp.Close() } catch {} }
     Write-Output 'stopped'
 }

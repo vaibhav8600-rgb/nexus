@@ -326,6 +326,18 @@ def pc_brain():
        '-Install writes an empty key file once, and never copies a key anywhere')
     ok('gemini.json' in read('.gitignore'), 'and git ignores one dropped in a repo')
 
+    ok('IPEndPoint([Net.IPAddress]::Loopback, $CHAT_PORT)' in ps and
+       'IPAddress]::Any, $CHAT_PORT' not in ps,
+       'chat listens on 127.0.0.1 only: nothing off this PC can talk to it')
+    ok('IOControl(-1744830452' in ps,
+       'a chat window closed early cannot break the inbox (UDP reset off)')
+    ok("-notlike '*-Chat*'" in ps.split('function Stop-Companions')[1].split('\n}\n')[0],
+       '-Install stops other companions, not an open chat window')
+    ok('"%~dp0nexus_host.ps1" -Chat' in read('tools', 'nexus-host', 'chat.cmd'),
+       'chat.cmd is the double-click for -Chat')
+    ok('$CHAT_MAX' in ps.split('function Receive-BuddyChat')[1].split('\n}\n')[0],
+       'a chat message is capped before it reaches Gemini')
+
     ok(py.count("'gemini-3.1-flash-lite'") == 1 and
        ps.count("'gemini-3.1-flash-lite'") == 1,
        'the model is named once in each')

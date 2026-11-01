@@ -148,6 +148,16 @@ Out of quota, it rests - a minute, then longer each time - and says so once.
 
 Without a key it says canned lines from `persona/persona.json`.
 
+**Talking to it.** Double-click `tools/nexus-host/chat.cmd` (or run
+`nexus_host.ps1 -Chat`) while the Windows companion is running, and type.
+The full answer comes back in that window, and the dongle shows the face,
+a short line and its sound. Buddy remembers the last six exchanges until
+the companion restarts. A message is answered straight away, not held to
+the gap between remarks; only Gemini's quota can make it wait. The
+companion listens on `127.0.0.1` only, so nothing outside this PC can talk
+to it. Chat needs a key: without one, or while out of quota, Buddy says so
+instead of giving a canned line.
+
 ### The phone
 
 NEXUS Remote can be the brain when the dongle is on a power bank or a laptop
