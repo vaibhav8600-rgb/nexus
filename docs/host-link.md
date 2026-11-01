@@ -288,7 +288,7 @@ HOST screen, and firmware without Buddy ignores them like any unknown letter.
 
 | Line | Meaning |
 | --- | --- |
-| `E HAPPY` | Buddy's emotion: `NEUTRAL`, `HAPPY`, `SAD`, `ANGRY`, `SURPRISED`, `SLEEPY`, `LOVE`, `THINKING` or `LISTENING`. Another name is ignored. |
+| `E HAPPY` | Buddy's emotion: `NEUTRAL`, `HAPPY`, `SAD`, `ANGRY`, `SURPRISED`, `SLEEPY`, `LOVE`, `THINKING`, `LISTENING`, or a trick face that holds a prop: `SINGING`, `HIGHFIVE`, `HANDSUP`, `THUMBSUP`, `GAMING`, `BANG`. Another name is ignored. |
 | `S NICE ONE!` | Something to say, folded like a title and cut at 24 characters. Replaces a line still being spoken. |
 | `V 3` | Mouth open 0-4, for a brain playing speech of its own. `V 0` closes it. |
 | `L -12,8` | Look there, each -20..20, for two seconds. |
