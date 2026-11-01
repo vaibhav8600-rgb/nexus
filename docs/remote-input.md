@@ -121,6 +121,7 @@ nothing else, so either side can change as long as that page holds.
   <img src="images/remote-app/keys-light.png" width="200" alt="NEXUS Remote: keys panel, light">
   <img src="images/remote-app/media-dark.png" width="200" alt="NEXUS Remote: media panel, dark">
   <img src="images/remote-app/dongle-dark.png" width="200" alt="NEXUS Remote: NEXUS controls, dark">
+  <img src="images/remote-app/buddy-dark.png" width="200" alt="NEXUS Remote: Buddy chat, dark">
 </p>
 
 A full-screen trackpad with a scroll strip down the right edge; the toolbar
@@ -138,6 +139,10 @@ these; it cannot switch Remote Input off, open pairing or forget phones.
 Switching to BLE moves the phone's typing too: it goes wherever the Sofle's
 does. Light, dark or automatic, following the phone. More in the
 app's own README.
+
+**Buddy** (☺), with `CONFIG_NEXUS_BUDDY`: chat with the face on the dongle,
+by text or by voice (tap or hold the mic), and play its tricks. See
+[buddy.md](buddy.md#the-phone).
 
 When the phone backgrounds the app the link drops, NEXUS releases
 everything, and the app reconnects when it comes back.

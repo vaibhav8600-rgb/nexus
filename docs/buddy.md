@@ -173,9 +173,11 @@ instead of giving a canned line.
 
 **Faces and tricks, instantly.** A message that only asks for a face
 ("show me a sad face", "smile", "be angry") or a trick ("high five", "sing a
-song", "dance", "hands up", "shoo", "good night", "wake up", "I love you",
-"good job") is acted out on the spot, without Gemini and without a key.
-A trick is a few faces, lines and glances, about two seconds apart. Anything
+song", "dance", "hands up", "bang", "thumbs up", "let's play a game",
+"shoo", "good night", "wake up", "I love you", "good job") is acted out on
+the spot, without Gemini and without a key. A trick is a few faces, lines
+and glances about two seconds apart, using the six trick faces where one
+fits. Anything
 that says more ("why are you sad?", "sing about cats") still goes to Gemini.
 The phrases are `commands` in `persona/persona.json`; add your own there.
 
@@ -183,8 +185,10 @@ The phrases are `commands` in `persona/persona.json`; add your own there.
 typing fills in the message. On the phone, hold the Buddy tab's microphone
 button and speak, and letting go sends; or tap it, speak and tap again. The
 dongle shows the listening face, then Gemini writes down what you said and
-the app sends it like a typed message, so a spoken "show me a sad face" is still instant. The
-clip is 16 kHz WAV and goes only to Gemini.
+the app sends it like a typed message, so a spoken "show me a sad face" is
+still instant. The clip is 16 kHz WAV and goes only to Gemini. Listening
+stops by itself after 30 seconds, and closing the tab turns the mic off and
+drops the clip.
 
 ### The phone
 
@@ -213,11 +217,13 @@ JSON that does not parse, and a canned line goes instead.
 ## The persona
 
 `persona/persona.json` is the one description of who Buddy is - name, owner,
-traits, voice, a never-list and the canned lines - and both companions and
-the app build Gemini's instructions from it. The app keeps a copy in its
-`src/buddy/persona.json`; change both together. The firmware takes its name
-from `CONFIG_NEXUS_BUDDY_NAME`; `tests/buddy/test_buddy.py` fails if the
-default and the JSON disagree, or if their emotion lists do.
+traits, voice, a never-list, the canned lines and the face and trick
+`commands` - and both companions and the app build Gemini's instructions
+from it. The app keeps a copy in its `src/buddy/persona.json`; change both
+together. The firmware takes its name from `CONFIG_NEXUS_BUDDY_NAME`.
+`tests/buddy/test_buddy.py` fails if the default and the JSON disagree, if
+their emotion lists do, if any command sends a line the dongle would refuse,
+or if the app's copy differs (when the app is checked out beside this repo).
 
 ## Sound
 
@@ -245,7 +251,8 @@ CI measured it on a nice!nano:
 | The face and its moods (`nexus_dongle_buddy_local` over `nexus_dongle`) | +8,012 B | +384 B |
 | With the PC and phone brains and the idle face (`nexus_dongle_buddy` over `nexus_dongle_host_all`) | +9,200 B | +768 B |
 
-The second includes the phone's 256-byte line ring.
+The second includes the phone's 256-byte line ring. Both were measured
+before the six trick faces, which add roughly 2-3 KB of flash and no RAM.
 
 Inside it: no heap, no thread, no float, no second frame buffer. The face
 draws through the same 12-row band as everything else and repaints only the
@@ -257,9 +264,13 @@ is a NORMAL screen, not a game, so the display still blanks on its timeout.
 ## Limits
 
 - The phone is a brain only while NEXUS Remote is open on screen.
-- Voice is push to talk, not a live spoken conversation: a clip is written
-  down when you let go, and Buddy answers in text. A local program can still
+- Voice is a recorded clip (tap or hold), not a live spoken conversation:
+  it is written down when you finish, and Buddy answers in text. A local program can still
   drive the mouth with `V` while it plays its own speech.
 - Buddy's sounds play only while its face is up; elsewhere it stays quiet.
 - Typing speed is the only typing signal: the dongle never looks at which
   keys you press.
+- Chat and the face commands are in the Windows companion and the app; the
+  Linux and macOS companion is a brain for remarks only.
+- With both the PC and the phone driving it, `BRAIN:` shows whichever spoke
+  last, so it can flip between `PC` and `PHONE`.

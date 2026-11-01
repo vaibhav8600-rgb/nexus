@@ -50,8 +50,10 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
 - **Buddy** -- an animated face that blinks, glances around and reacts to the
   keyboard: happy on a typing streak, sad when a half drops out, asleep when
   the desk goes quiet. The PC companion or the phone can be its brain, with
-  Gemini or canned lines; the dongle itself runs no AI. Off unless you build
-  it in. ([details](docs/buddy.md))
+  Gemini or canned lines; the dongle itself runs no AI. Chat with it from
+  the PC or the phone, by text or voice, and ask for a face or a trick -
+  sing, high five, hands up, bang - which plays at once without AI. Off
+  unless you build it in. ([details](docs/buddy.md))
 - **Display blanking** after a configurable idle time, woken by typing on
   either half -- on any backlight wiring.
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
