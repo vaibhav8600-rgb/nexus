@@ -160,17 +160,21 @@ instead of giving a canned line.
 
 ### The phone
 
-NEXUS Remote can be the brain when the dongle is on a power bank or a laptop
-with no companion: its Buddy tab sends the same lines over a Companion
-characteristic ([remote-input-protocol.md](remote-input-protocol.md)). The
-phone only works as a brain while the app is open - phones suspend a page in
-the background. From the phone only Buddy's lines and the clock are taken,
-so the HOST screen still describes the PC.
+NEXUS Remote's Buddy tab (☺) is the same chat on the phone. Gemini answers
+there, with a key you paste into the tab once. The key stays on the phone
+and goes only to Google; Settings → Buddy removes it. When a message goes
+out, the app sends `B 1`, the clock and `E THINKING` over the Companion
+characteristic ([remote-input-protocol.md](remote-input-protocol.md)).
+The answer's face and line follow, so the dongle shows them with the face's
+sound, even with no PC companion running. From the phone only Buddy's lines
+and the clock are taken, so the HOST screen still describes the PC. The
+phone is a brain only while the app is open, because phones suspend a page
+in the background.
 
 ### What a brain is told
 
 Gemini hears the time of day, how busy the PC is as low / medium / high, the
-track playing and why it is being asked - and on the phone, what you type to
+track playing and why it is being asked - and in a chat, what you type to
 it. Never keystrokes, window titles, screen contents or files. The dongle
 sends nothing back at all.
 
@@ -182,7 +186,8 @@ JSON that does not parse, and a canned line goes instead.
 
 `persona/persona.json` is the one description of who Buddy is - name, owner,
 traits, voice, a never-list and the canned lines - and both companions and
-the app build Gemini's instructions from it. The firmware takes its name
+the app build Gemini's instructions from it. The app keeps a copy in its
+`src/buddy/persona.json`; change both together. The firmware takes its name
 from `CONFIG_NEXUS_BUDDY_NAME`; `tests/buddy/test_buddy.py` fails if the
 default and the JSON disagree, or if their emotion lists do.
 
