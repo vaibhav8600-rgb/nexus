@@ -175,9 +175,9 @@ The phrases are `commands` in `persona/persona.json`; add your own there.
 
 **Voice.** Press Win+H in the chat window and talk: Windows' own voice
 typing fills in the message. On the phone, hold the Buddy tab's microphone
-button and speak (push to talk). The dongle shows the listening face, and
-when you let go, Gemini writes down what you said and the app sends it like
-a typed message, so a spoken "show me a sad face" is still instant. The
+button and speak, and letting go sends; or tap it, speak and tap again. The
+dongle shows the listening face, then Gemini writes down what you said and
+the app sends it like a typed message, so a spoken "show me a sad face" is still instant. The
 clip is 16 kHz WAV and goes only to Gemini.
 
 ### The phone
