@@ -54,4 +54,8 @@
 #define NEXUS_ACT_REMOTE_PAIR   22 /* open the 60 s pairing window        */
 #define NEXUS_ACT_REMOTE_CLEAR  23 /* forget the phones - never the halves */
 
+/* Open Buddy's face, or close it if it is already up (CONFIG_NEXUS_BUDDY).
+ * A harmless no-op without it, like the Remote Input actions. */
+#define NEXUS_ACT_BUDDY         24
+
 #endif /* DT_BINDINGS_NEXUS_H_ */

@@ -13,6 +13,7 @@ Start at [installation](installation.md) if you want it working, or
 - [zmk-studio](zmk-studio.md)
 - [host-link](host-link.md)
 - [remote-input](remote-input.md) - [protocol](remote-input-protocol.md)
+- [buddy](buddy.md) - an animated face with moods, and a brain on the PC or phone
 - [architecture](architecture.md)
 - [development](development.md)
 - [troubleshooting](troubleshooting.md)

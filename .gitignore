@@ -3,4 +3,7 @@ build/
 *.uf2
 *.hex
 __pycache__/
+# A Gemini key belongs in %LOCALAPPDATA%\NEXUS, never here - but if one is
+# dropped in by mistake, it is not committed.
+gemini.json
 *.pyc

@@ -146,6 +146,14 @@ def test_downscale_halves_and_averages():
     w, h, out = png2c.box_downscale(4, 4, px, 8)
     check((w, h, len(out)) == (4, 4, 16), "downscale ran when it should not")
 
+    # Any ratio, not just whole factors: 240 at 216 is 216, not 120.
+    big = [(x % 256, 0, 0, 255) for y in range(240) for x in range(240)]
+    w, h, out = png2c.box_downscale(240, 240, big, 216)
+    check((w, h, len(out)) == (216, 216, 216 * 216),
+          "240 at 216 came out %dx%d" % (w, h))
+    w, h, _ = png2c.box_downscale(300, 150, [(9, 9, 9, 9)] * 45000, 200)
+    check((w, h) == (200, 100), "aspect ratio lost: %dx%d" % (w, h))
+
 
 def test_rejects_interlaced():
     png = make_png(2, 1, 2, [bytes((1, 2, 3, 4, 5, 6))], [0])

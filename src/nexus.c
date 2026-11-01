@@ -7,6 +7,7 @@
  * these inits return an error to Zephyr (Sections 87, 113, 141-A).
  */
 
+#include <nexus/buddy.h>
 #include <nexus/nexus.h>
 #include <nexus/sound.h>
 #include <nexus/status.h>
@@ -94,6 +95,14 @@ static int nexus_init(void)
 	 * dashes. */
 	if (nexus_host_link_init()) {
 		LOG_WRN("host link unavailable; HOST screen will show no data");
+	}
+#endif
+
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	/* Without its observer the face still draws and still takes a brain;
+	 * it just has no moods of its own. */
+	if (nexus_buddy_init()) {
+		LOG_WRN("buddy has no status observer; local moods off");
 	}
 #endif
 

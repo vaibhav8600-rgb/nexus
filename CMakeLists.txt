@@ -81,6 +81,13 @@ zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK_USB src/host/host_link_usb.c
 zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK_BLE src/host/host_link_ble.c)
 zephyr_library_sources_ifdef(CONFIG_NEXUS_HOST_LINK src/ui/host_screen.c)
 
+# Buddy: none of it exists unless asked for (docs/buddy.md).
+zephyr_library_sources_ifdef(CONFIG_NEXUS_BUDDY
+  src/buddy/buddy.c
+  src/buddy/face.c
+  src/buddy/face_anim.c
+)
+
 # Remote Input: none of it exists unless asked for (docs/remote-input.md).
 zephyr_library_sources_ifdef(CONFIG_NEXUS_REMOTE_INPUT
   src/remote/remote.c

@@ -282,6 +282,22 @@ firmware without breaking it.
 | `P 1` | Playing (`1`) or paused (`0`). The level bars move only while it plays. Never sent means playing. |
 | `X` | The companion is quitting. Load and track read unknown again immediately; the clock and date keep counting. |
 
+With `CONFIG_NEXUS_BUDDY` five more letters drive [Buddy's face](buddy.md).
+They belong to the face only: they never mark the companion as linked on the
+HOST screen, and firmware without Buddy ignores them like any unknown letter.
+
+| Line | Meaning |
+| --- | --- |
+| `E HAPPY` | Buddy's emotion: `NEUTRAL`, `HAPPY`, `SAD`, `ANGRY`, `SURPRISED`, `SLEEPY`, `LOVE`, `THINKING`, `LISTENING`, or a trick face that holds a prop: `SINGING`, `HIGHFIVE`, `HANDSUP`, `THUMBSUP`, `GAMING`, `BANG`. Another name is ignored. |
+| `S NICE ONE!` | Something to say, folded like a title and cut at 24 characters. Replaces a line still being spoken. |
+| `V 3` | Mouth open 0-4, for a brain playing speech of its own. `V 0` closes it. |
+| `L -12,8` | Look there, each -20..20, for two seconds. |
+| `B 1` / `B 0` | The brain says hello / goodbye. `B 0` hands the face back at once. |
+
+Each of them renews the brain's hold on the face; silence for
+`CONFIG_NEXUS_BUDDY_LEASE_S` hands it back. `--buddy` (`-Buddy` on Windows)
+makes either companion send them.
+
 `D`, `A` and `P` are newer than the rest. Firmware from before them ignores
 them, and shows the title alone. A companion from before them sends `N Artist -
 Title`, which newer firmware shows as the title, with no artist line, and

@@ -91,6 +91,19 @@ void nexus_screen_render_now(void);
 /** Raise the refresh class until the next screen change (e.g. mid-animation). */
 void nexus_screen_request_refresh(enum nexus_refresh rate);
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+/**
+ * Paint any pending dirty range now - and, unlike nexus_screen_render_now(),
+ * without counting as input. For an animation that runs on its own clock: a
+ * face blinking at an empty desk must not keep the display from blanking.
+ * NEXUS work queue only.
+ */
+void nexus_screen_paint(void);
+
+/** The display is blanked for idleness. */
+bool nexus_screen_dimmed(void);
+#endif
+
 #if IS_ENABLED(CONFIG_NEXUS_DEBUG)
 /**
  * Frames actually pushed to the panel in the last second (Section 64).

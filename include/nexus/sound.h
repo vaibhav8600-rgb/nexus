@@ -45,6 +45,29 @@ enum nexus_sound {
 	NEXUS_SOUND_SLEEP,
 	NEXUS_SOUND_WAKE,
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	/*
+	 * Buddy's emotion cues, in enum face_emotion order. The
+	 * one soft class of effect: they only play into silence, and anything
+	 * else cuts them off - a chirp must never eat a disconnect cue.
+	 */
+	NEXUS_SOUND_BUDDY_NEUTRAL,
+	NEXUS_SOUND_BUDDY_HAPPY,
+	NEXUS_SOUND_BUDDY_SAD,
+	NEXUS_SOUND_BUDDY_ANGRY,
+	NEXUS_SOUND_BUDDY_SURPRISED,
+	NEXUS_SOUND_BUDDY_SLEEPY,
+	NEXUS_SOUND_BUDDY_LOVE,
+	NEXUS_SOUND_BUDDY_THINKING,
+	NEXUS_SOUND_BUDDY_LISTENING,
+	NEXUS_SOUND_BUDDY_SINGING,
+	NEXUS_SOUND_BUDDY_HIGHFIVE,
+	NEXUS_SOUND_BUDDY_HANDSUP,
+	NEXUS_SOUND_BUDDY_THUMBSUP,
+	NEXUS_SOUND_BUDDY_GAMING,
+	NEXUS_SOUND_BUDDY_BANG,
+#endif
+
 	NEXUS_SOUND_COUNT,
 };
 
@@ -57,12 +80,27 @@ void nexus_sound_set_enabled(bool enabled);
 bool nexus_sound_enabled(void);
 void nexus_sound_stop(void);
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+/**
+ * One soft blip of @p ms, gliding to @p hz_end over its second half if that
+ * is not 0: Buddy's babble. Plays only into silence or over another soft
+ * sound, like the cues.
+ */
+void nexus_sound_blip(uint16_t hz, uint16_t ms, uint16_t hz_end);
+#endif
+
 #else /* sound compiled out - callers stay unconditional and cost nothing */
 
 static inline void nexus_sound_play(enum nexus_sound id) { (void)id; }
 static inline void nexus_sound_set_enabled(bool enabled) { (void)enabled; }
 static inline bool nexus_sound_enabled(void) { return false; }
 static inline void nexus_sound_stop(void) { }
+static inline void nexus_sound_blip(uint16_t hz, uint16_t ms, uint16_t hz_end)
+{
+	(void)hz;
+	(void)ms;
+	(void)hz_end;
+}
 
 #endif
 

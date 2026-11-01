@@ -8,6 +8,14 @@ tell it things - it cannot type, press keys, or read anything back.
     python3 nexus_host.py --list          # which ports look like the dongle?
     python3 nexus_host.py                 # find them and run
     python3 nexus_host.py --port /dev/ttyACM1
+    python3 nexus_host.py --buddy         # and be Buddy's brain (docs/buddy.md)
+
+--buddy talks to Gemini only with a key - GEMINI_API_KEY in the environment,
+or "key" in gemini.json (%LOCALAPPDATA%\\NEXUS on Windows, ~/.config/nexus
+elsewhere; a key there turns --buddy on by itself) - and
+sends it the time of day, how busy this machine is (low / medium / high), the
+track playing and why it is asking - never keystrokes, windows or files.
+Without the key it says canned lines from persona/persona.json.
 
 Needs nothing but Python on Linux and macOS: the serial port is opened as
 the tty it is, CPU and memory come from /proc on Linux, and now playing from
@@ -20,11 +28,16 @@ Python cannot open a COM port without pyserial.
 import argparse
 import datetime
 import glob
+import json
 import os
+import random
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
+import urllib.request
 
 try:
     import serial
@@ -249,6 +262,7 @@ def batch(state, load):
         state['clock'] = now
 
     cpu, mem = load.read()
+    state['cpu'], state['mem'] = cpu, mem      # for Buddy's brain
     if cpu is not None:
         out.append('C %d' % cpu)
     if mem is not None:
@@ -256,6 +270,7 @@ def batch(state, load):
 
     title, artist, playing = now_playing()
     np = (fold(title), fold(artist), playing)
+    state['np_now'] = np
     # When it changes, and every NP_EVERY seconds whether it has or not. The
     # link is one way: when the keyboard is switched to another host and
     # back the dongle forgets the track, and nothing can ask for it again.
@@ -275,6 +290,271 @@ def batch(state, load):
     return out
 
 
+# ---- Buddy's brain -----------------------------------------------------------
+
+GEMINI_MODEL = 'gemini-3.1-flash-lite'   # the one place it is named
+GEMINI_URL = ('https://generativelanguage.googleapis.com/v1beta/models/'
+              '%s:generateContent')
+LINE_MAX = 24          # the persona's limit, and what the bubble fits
+ASK_GAP = 20           # seconds between Gemini requests, at the least
+LEASE_EVERY = 10       # B 1 resend; the dongle hands the face back after 60
+SONG_GAP = 300         # at most one remark per five minutes about the music
+BUSY_CPU, BUSY_FOR = 90, 60
+BACKOFF_MAX = 1800
+
+# Why it is asking, as Gemini is told.
+REASONS = {
+    'hello': 'the owner just sat down at the computer; greet them',
+    'tick': 'a few quiet minutes have passed; say something small',
+    'music': 'a new song just started',
+    'busy': 'the computer has been very busy for a minute',
+    'late': 'it is late at night',
+}
+
+
+def persona_path():
+    """Beside the script once installed, else the repo's own copy."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    beside = os.path.join(here, 'persona.json')
+    if os.path.exists(beside):
+        return beside
+    return os.path.join(here, '..', '..', 'persona', 'persona.json')
+
+
+def load_persona(path=None):
+    with open(path or persona_path(), encoding='utf-8') as f:
+        return json.load(f)
+
+
+def key_file():
+    """Where the Gemini key is kept: beside the installed Windows companion,
+    or the usual per-user config directory. Never in a repo - a key in a
+    file that gets pushed is a public key."""
+    if os.environ.get('LOCALAPPDATA'):
+        return os.path.join(os.environ['LOCALAPPDATA'], 'NEXUS', 'gemini.json')
+    return os.path.join(os.path.expanduser('~'), '.config', 'nexus',
+                        'gemini.json')
+
+
+def gemini_config(path=None):
+    """(key, model): the environment first, then gemini.json. '' and None
+    for what neither says. A broken file is said once and ignored."""
+    key = os.environ.get('GEMINI_API_KEY', '').strip()
+    model = None
+    path = path or key_file()
+    if os.path.exists(path):
+        try:
+            with open(path, encoding='utf-8') as f:
+                j = json.load(f)
+            key = key or str(j.get('key') or '').strip()
+            model = str(j['model']).strip() if j.get('model') else None
+        except (OSError, ValueError, AttributeError):
+            print('%s is not valid JSON - ignored' % path, file=sys.stderr)
+    return key, model
+
+
+def buddy_fold(text):
+    return ''.join(c for c in text.upper() if 32 <= ord(c) <= 90)[:LINE_MAX]
+
+
+def system_prompt(p):
+    """The persona as Gemini reads it. persona.json is the one source."""
+    v = p['voice']
+    return '\n'.join(
+        ['You are %s, a tiny animated face on %s\'s keyboard dongle. '
+         'Pronoun: %s.' % (p['name'], p['owner'] or 'the owner', p['pronoun']),
+         'Traits:'] + ['- ' + t for t in p['traits']] +
+        ['Voice: %s. A line is at most %d characters, %s case, %s.'
+         % (v['style'], v['max_chars'], v['case'], v['charset']),
+         'Never:'] + ['- ' + n for n in p['never']] +
+        ['Reply only as JSON matching the schema: "emotion" is how the face '
+         'looks, "line" goes on the dongle, "reply" is a slightly longer '
+         'version for a screen.'])
+
+
+def gemini_body(p, context):
+    return {
+        'systemInstruction': {'parts': [{'text': system_prompt(p)}]},
+        'contents': [{'role': 'user', 'parts': [{'text': context}]}],
+        'generationConfig': {
+            'responseMimeType': 'application/json',
+            'responseSchema': {
+                'type': 'OBJECT',
+                'properties': {
+                    'emotion': {'type': 'STRING',
+                                'enum': [e.upper() for e in p['emotions']]},
+                    'line': {'type': 'STRING'},
+                    'reply': {'type': 'STRING'},
+                },
+                'required': ['emotion', 'line', 'reply'],
+            },
+            'temperature': 1.0,
+            'maxOutputTokens': 200,
+        },
+    }
+
+
+def parse_reply(raw, p):
+    """(emotion, line) from a generateContent response, or None for anything
+    the dongle should not be sent: bad JSON, an emotion it does not have, a
+    line too long or full of characters the font cannot draw."""
+    try:
+        text = json.loads(raw)['candidates'][0]['content']['parts'][0]['text']
+        obj = json.loads(text)
+        emotion = str(obj['emotion']).lower()
+        line = obj['line']
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+    if emotion not in p['emotions'] or not isinstance(line, str):
+        return None
+    line = line.strip()
+    if not line or len(line) > LINE_MAX or buddy_fold(line) != line.upper():
+        return None
+    return emotion, line.upper()
+
+
+def bucket(pct):
+    if pct is None:
+        return 'unknown'
+    return 'low' if pct < 40 else 'medium' if pct < 80 else 'high'
+
+
+def part_of_day(hour):
+    return ('night' if hour < 5 or hour >= 23 else 'morning' if hour < 12
+            else 'afternoon' if hour < 18 else 'evening')
+
+
+class Brain:
+    """Decides when Buddy says something and gets the words: from Gemini with
+    GEMINI_API_KEY, from persona.json without. Returns lines for the batch.
+
+    The request runs on a thread. Waiting on it here would hold back C and M,
+    and a HOST screen gone stale for a slow answer is a regression.
+    """
+
+    def __init__(self, persona, key, model=GEMINI_MODEL, minutes=10,
+                 call=None):
+        self.p, self.key, self.model = persona, key, model
+        self.every = max(5, min(60, minutes)) * 60
+        self.call = call or self.http
+        self.lease_at = -LEASE_EVERY
+        self.next_ask = 0.0
+        self.backoff = 0
+        self.inflight = False
+        self.result = None
+        self.said = ''
+        self.said_at = None
+        self.song, self.song_at = None, -SONG_GAP
+        self.busy_since, self.busy_at = None, -600
+        self.complained = set()
+
+    def http(self, body):
+        req = urllib.request.Request(
+            GEMINI_URL % self.model, data=json.dumps(body).encode('utf-8'),
+            headers={'Content-Type': 'application/json',
+                     'x-goog-api-key': self.key}, method='POST')
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.read().decode('utf-8')
+
+    def canned(self, reason):
+        pool = self.p['canned'].get(reason) or self.p['canned']['tick']
+        pick = [c for c in pool if c[1] != self.said] or pool
+        emotion, line = random.choice(pick)
+        return emotion, buddy_fold(line)
+
+    def say(self, reason, now, np, cpu, mem):
+        if not self.key:
+            self.result = self.canned(reason)
+            return
+        hour = time.localtime(now).tm_hour
+        title, artist, playing = np
+        ctx = ['Why: %s.' % REASONS[reason],
+               'Time of day: %s.' % part_of_day(hour),
+               'Computer load: CPU %s, memory %s.' % (bucket(cpu), bucket(mem)),
+               'Now playing: %s.' % ('%s by %s' % (title, artist or 'unknown')
+                                     if playing and title else 'nothing')]
+        if self.said_at is not None:
+            ctx.append('Minutes since your last line: %d. It was "%s"; do not '
+                       'repeat it.' % ((now - self.said_at) // 60, self.said))
+        body = gemini_body(self.p, '\n'.join(ctx))
+        self.inflight = True
+        threading.Thread(target=self.ask, args=(body, reason),
+                         daemon=True).start()
+
+    def ask(self, body, reason):
+        try:
+            got = parse_reply(self.call(body), self.p)
+            self.backoff = 0
+            self.result = got or self.canned(reason)
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # Out of quota: rest, longer each time, and say so once.
+                self.backoff = min(max(60, self.backoff * 2), BACKOFF_MAX)
+                self.next_ask = time.time() + self.backoff
+                self.complain('quota', 'Gemini quota reached - %s is '
+                              'resting for %d s' % (self.p['name'],
+                                                    self.backoff))
+            else:
+                self.next_ask = time.time() + 120
+                self.complain(e.code, 'Gemini said HTTP %d' % e.code)
+            self.result = self.canned(reason)
+        except Exception as e:     # offline, DNS, timeout
+            self.next_ask = time.time() + 120
+            self.complain(type(e).__name__, 'Gemini unreachable: %s' % e)
+            self.result = self.canned(reason)
+        finally:
+            self.inflight = False
+
+    def complain(self, kind, text):
+        if kind not in self.complained:      # once per kind, never the key
+            self.complained.add(kind)
+            print(text, file=sys.stderr)
+
+    def trigger(self, now, cpu, np):
+        title, artist, playing = np
+        if self.said_at is None:
+            return 'hello'
+        if playing and title and (title, artist) != self.song:
+            self.song = (title, artist)
+            if now - self.song_at >= SONG_GAP:
+                self.song_at = now
+                return 'music'
+        if cpu is not None and cpu >= BUSY_CPU:
+            self.busy_since = self.busy_since or now
+            if now - self.busy_since >= BUSY_FOR and now - self.busy_at >= 600:
+                self.busy_at = now
+                return 'busy'
+        else:
+            self.busy_since = None
+        if now - self.said_at >= self.every:
+            hour = time.localtime(now).tm_hour
+            return 'late' if hour >= 23 or hour < 5 else 'tick'
+        return None
+
+    def lines(self, now, cpu=None, mem=None, np=('', '', False)):
+        out = []
+        if now - self.lease_at >= LEASE_EVERY:
+            out.append('B 1')
+            self.lease_at = now
+        if self.result:
+            emotion, line = self.result
+            self.result = None
+            self.said, self.said_at = line, now
+            out += ['E ' + emotion.upper(), 'S ' + line]
+        if self.inflight or now < self.next_ask:
+            return out
+        reason = self.trigger(now, cpu, np)
+        if reason:
+            self.said_at = self.said_at if self.said_at is not None else now
+            self.next_ask = now + ASK_GAP
+            self.say(reason, now, np, cpu, mem)
+            if self.inflight:
+                out.append('E THINKING')
+            elif self.result:
+                return out + self.lines(now, cpu, mem, np)
+        return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawTextHelpFormatter)
@@ -288,6 +568,14 @@ def main():
     ap.add_argument('--interval', type=float, default=1.0,
                     help='seconds between updates (default 1)')
     ap.add_argument('--verbose', action='store_true', help='echo every line')
+    ap.add_argument('--buddy', action='store_true',
+                    help="be Buddy's brain (Gemini with GEMINI_API_KEY set, "
+                         'canned lines without)')
+    ap.add_argument('--buddy-minutes', type=int, default=10,
+                    help='minutes between unprompted lines, 5-60 (default 10)')
+    ap.add_argument('--gemini-model', default=None,
+                    help='Gemini model (default %s, or "model" in '
+                         'gemini.json)' % GEMINI_MODEL)
     args = ap.parse_args()
 
     if args.list:
@@ -310,6 +598,17 @@ def main():
         sys.exit('On Windows use nexus_host.ps1, or pip install pyserial.')
 
     load = Load()
+    brain = None
+    # The key from the environment or gemini.json, never an argument: that
+    # would sit in the process list and the shell's history. A key in the
+    # file is all it takes - no --buddy needed.
+    key, file_model = gemini_config()
+    if args.buddy or key:
+        model = args.gemini_model or file_model or GEMINI_MODEL
+        brain = Brain(load_persona(), key, model, args.buddy_minutes)
+        print('buddy: %s' % ('Gemini (%s)' % model if key else
+                             'canned lines - put a Gemini key in %s'
+                             % key_file()))
     print('NEXUS companion running (ctrl-c to stop)')
     open_ = {}
     waiting = False
@@ -336,8 +635,16 @@ def main():
                     continue
                 waiting = False
                 state = {'clock': 0.0, 'np': None}   # a fresh link: resend
+                if brain:
+                    brain.lease_at = -LEASE_EVERY
 
-            data = ''.join(line + '\n' for line in batch(state, load))
+            lines = batch(state, load)
+            if brain:
+                # In the same write as the rest, so they share one packet.
+                lines += brain.lines(time.time(), state.get('cpu'),
+                                     state.get('mem'),
+                                     state.get('np_now', ('', '', False)))
+            data = ''.join(line + '\n' for line in lines)
             if args.verbose:
                 print(data, end='')
             for path in list(open_):
@@ -353,7 +660,9 @@ def main():
     except KeyboardInterrupt:
         for s in open_.values():
             try:
-                s.write(b'X\n')    # "I am going away", not stale data
+                # "I am going away", not stale data - and B 0 first, so the
+                # face is Buddy's own again now rather than in a minute.
+                s.write((b'B 0\n' if brain else b'') + b'X\n')
                 s.close()
             except OSError:
                 pass

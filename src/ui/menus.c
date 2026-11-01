@@ -11,6 +11,7 @@
  * thread that can eat stack (see gfx_utoa).
  */
 
+#include <nexus/buddy.h>
 #include <nexus/display.h>
 #include <nexus/game.h>
 #include <nexus/gfx.h>
@@ -43,6 +44,9 @@
 /* Total items; VIS_ROWS are on screen. Settings is 14 with everything built,
  * Remote Input's PHONE row included - one more and BACK is silently cut. */
 #define MAX_ROWS 14
+/* Buddy's row is the one past that. Its 16 B of cache exist only in a build
+ * with Buddy, so the ceiling above still holds for every build without. */
+#define LIST_ROWS (MAX_ROWS + IS_ENABLED(CONFIG_NEXUS_BUDDY))
 #define VAL_MAX 16
 #define INNER 8
 
@@ -88,7 +92,7 @@ static const struct row *g_rows;
 static const char *g_title;
 static uint8_t g_row_count;
 static uint8_t g_cursor;
-static char g_val[MAX_ROWS][VAL_MAX];
+static char g_val[LIST_ROWS][VAL_MAX];
 
 /* Returns true if any rendered value actually changed. */
 static bool refresh_values(void)
@@ -224,7 +228,7 @@ static void list_enter(const char *title, const struct row *rows, uint8_t count)
 {
 	g_title = title;
 	g_rows = rows;
-	g_row_count = MIN(count, MAX_ROWS);
+	g_row_count = MIN(count, LIST_ROWS);
 	if (g_cursor >= g_row_count) {
 		g_cursor = 0;
 	}
@@ -554,6 +558,102 @@ static const struct nexus_screen phone_def = {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+/*
+ * Like PHONE: one row in Settings, and a short list of its own pushed on top,
+ * titled with the buddy's name. SHOW is the way to the face for a keymap with
+ * no &nexus_action NEXUS_ACT_BUDDY on it.
+ */
+static const struct nexus_screen buddy_list_def;
+
+static void v_buddy(char *out, size_t len)
+{
+	struct buf b = buf_init(out, len);
+
+	put(&b, nexus_buddy_enabled() ? "ON" : "OFF");
+}
+
+static void a_buddy(void)
+{
+	nexus_screen_push(&buddy_list_def);
+}
+
+static void a_buddy_show(void)
+{
+	nexus_screen_push(&nexus_screen_buddy_def);
+}
+
+static void a_buddy_on(void)
+{
+	nexus_buddy_set_enabled(!nexus_buddy_enabled());
+	nexus_settings_save_deferred();
+}
+
+static void v_buddy_sound(char *out, size_t len)
+{
+	static const char *const names[] = { "OFF", "CHIRPS", "CHATTY" };
+	struct buf b = buf_init(out, len);
+
+	put(&b, names[nexus_buddy_sound_mode() % ARRAY_SIZE(names)]);
+}
+
+static void a_buddy_sound(void)
+{
+	nexus_buddy_set_sound_mode((enum nexus_buddy_sound)(
+		(nexus_buddy_sound_mode() + 1) % NEXUS_BUDDY_SOUND_MODES));
+	nexus_settings_save_deferred();
+}
+
+/* The pin, and who is actually driving while it is AUTO. */
+static void v_buddy_brain(char *out, size_t len)
+{
+	static const char *const names[] = { "AUTO", "PC", "PHONE", "LOCAL" };
+	enum nexus_buddy_brain pin = nexus_buddy_brain_pin();
+	struct buf b = buf_init(out, len);
+
+	put(&b, names[pin % ARRAY_SIZE(names)]);
+	if (pin == NEXUS_BUDDY_BRAIN_AUTO) {
+		put(&b, " ");
+		put(&b, nexus_buddy_brain_name());
+	}
+}
+
+static void a_buddy_brain(void)
+{
+	nexus_buddy_set_brain_pin((enum nexus_buddy_brain)(
+		(nexus_buddy_brain_pin() + 1) % NEXUS_BUDDY_BRAINS));
+	nexus_settings_save_deferred();
+}
+
+static void a_back(void);
+
+static const struct row buddy_rows[] = {
+	{ "SHOW", NULL, a_buddy_show },
+	{ "BUDDY", v_buddy, a_buddy_on },
+	{ "SOUND", v_buddy_sound, a_buddy_sound },
+	{ "BRAIN", v_buddy_brain, a_buddy_brain },
+	{ "BACK", NULL, a_back },
+};
+
+static void buddy_list_enter(void)
+{
+	list_enter(CONFIG_NEXUS_BUDDY_NAME, buddy_rows, ARRAY_SIZE(buddy_rows));
+}
+
+/* Ticks so BRAIN follows a brain arriving and leaving. */
+static const struct nexus_screen buddy_list_def = {
+	.name = "BUDDY LIST",
+	.enter = buddy_list_enter,
+	.exit = list_exit,
+	.draw = list_draw,
+	.action = list_action,
+	.tick = list_tick,
+	.refresh = NEXUS_REFRESH_NORMAL,
+	.btn_short = NEXUS_ACTION_NEXT,
+	.btn_long = NEXUS_ACTION_SELECT,
+};
+#endif
+
 static void v_save(char *out, size_t len)
 {
 	struct buf b = buf_init(out, len);
@@ -598,6 +698,9 @@ static const struct row settings_rows[] = {
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_REMOTE_INPUT)
 	{ "PHONE", v_phone, a_phone },
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	{ "BUDDY", v_buddy, a_buddy },
 #endif
 	{ "DIAG", NULL, a_diagnostics },
 	{ "ABOUT", NULL, a_about },

@@ -47,6 +47,13 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
   app also plays the dongle's games, walks its menus and switches output
   between USB and BLE. Off unless you build it in.
   ([details](docs/remote-input.md))
+- **Buddy** -- an animated face that blinks, glances around and reacts to the
+  keyboard: happy on a typing streak, sad when a half drops out, asleep when
+  the desk goes quiet. The PC companion or the phone can be its brain, with
+  Gemini or canned lines; the dongle itself runs no AI. Chat with it from
+  the PC or the phone, by text or voice, and ask for a face or a trick -
+  sing, high five, hands up, bang - which plays at once without AI. Off
+  unless you build it in. ([details](docs/buddy.md))
 - **Display blanking** after a configurable idle time, woken by typing on
   either half -- on any backlight wiring.
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an
@@ -137,6 +144,7 @@ buzzer and two tactile switches.
 | [zmk-studio.md](docs/zmk-studio.md) | Studio setup and what NEXUS guarantees |
 | [host-link.md](docs/host-link.md) | The HOST screen and its companion: clock and date, CPU, RAM, now playing |
 | [remote-input.md](docs/remote-input.md) | A phone as keyboard and mouse over Bluetooth, nothing installed on the computer |
+| [buddy.md](docs/buddy.md) | An animated face with moods, and a brain on the PC or the phone |
 | [architecture.md](docs/architecture.md) | How it fits together, and what was deliberately left out |
 | [development.md](docs/development.md) | Local builds, host tests, hardware test procedure |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptom → cause |

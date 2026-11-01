@@ -157,32 +157,30 @@ def decode_png(data):
 
 
 def box_downscale(width, height, pixels, max_dim):
-    """Integer box filter. Flash is the constraint, not resampling quality."""
+    """Box filter to fit max_dim, any ratio. Each output pixel averages the
+    source pixels its footprint touches. Whole factors only used to round
+    240 at 216 down to 120 - half the size asked for."""
     if max(width, height) <= max_dim:
         return width, height, pixels
 
-    factor = (max(width, height) + max_dim - 1) // max_dim
-    new_w = max(1, width // factor)
-    new_h = max(1, height // factor)
+    big = max(width, height)
+    new_w = max(1, width * max_dim // big)
+    new_h = max(1, height * max_dim // big)
     out = []
 
     for y in range(new_h):
+        y0, y1 = y * height // new_h, max(y * height // new_h + 1, (y + 1) * height // new_h)
         for x in range(new_w):
-            r = g = b = a = n = 0
-            for dy in range(factor):
-                sy = y * factor + dy
-                if sy >= height:
-                    break
-                for dx in range(factor):
-                    sx = x * factor + dx
-                    if sx >= width:
-                        break
+            x0, x1 = x * width // new_w, max(x * width // new_w + 1, (x + 1) * width // new_w)
+            r = g = b = a = 0
+            for sy in range(y0, y1):
+                for sx in range(x0, x1):
                     pr, pg, pb, pa = pixels[sy * width + sx]
                     r += pr
                     g += pg
                     b += pb
                     a += pa
-                    n += 1
+            n = (y1 - y0) * (x1 - x0)
             out.append((r // n, g // n, b // n, a // n))
 
     return new_w, new_h, out

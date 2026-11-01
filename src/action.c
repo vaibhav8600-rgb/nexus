@@ -8,6 +8,7 @@
  */
 
 #include <nexus/action.h>
+#include <nexus/buddy.h>
 #include <nexus/remote.h>
 #include <nexus/settings.h>
 #include <nexus/theme.h>
@@ -68,6 +69,18 @@ static void handle(enum nexus_action action)
 	case NEXUS_ACTION_HOST:
 		nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
 		nexus_screen_push(&nexus_screen_host_def);
+		break;
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	case NEXUS_ACTION_BUDDY:
+		/* A toggle, so one key both opens the face and puts it away. */
+		if (cur == &nexus_screen_buddy_def) {
+			nexus_sound_play(NEXUS_SOUND_BACK);
+			nexus_screen_pop();
+		} else {
+			nexus_sound_play(NEXUS_SOUND_MENU_OPEN);
+			nexus_screen_push(&nexus_screen_buddy_def);
+		}
 		break;
 #endif
 	case NEXUS_ACTION_THEME_NEXT:

@@ -45,6 +45,14 @@ jobs:
              tests/host/test_host_lines.c src/host/host_lines.c
           /tmp/test_host_lines
 
+      - name: Buddy's face animation
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+             -fsanitize=address,undefined -fno-sanitize-recover=all \
+             -Isrc/buddy -o /tmp/test_face_anim \
+             tests/buddy/test_face_anim.c src/buddy/face_anim.c
+          /tmp/test_face_anim
+
       - name: Splash asset pipeline
         run: python3 tests/splash/test_png2c.py
 

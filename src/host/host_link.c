@@ -13,6 +13,7 @@
  * latency.
  */
 
+#include <nexus/buddy.h>
 #include <nexus/host.h>
 #include <nexus/screen.h>
 #include <nexus/status.h>
@@ -171,12 +172,31 @@ static void forget(void)
  * is its value. Unknown fields are ignored rather than rejected, so a newer
  * companion talking to older firmware degrades instead of failing.
  */
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+/* Which wire the line being parsed came in on. Set before each drain. */
+static enum nexus_buddy_source g_from;
+#endif
+
 static void parse_line(const char *line)
 {
 	char key = line[0];
 	const char *val = line[1] == ' ' ? &line[2] : &line[1];
 	bool was_linked = g_host.link;
 	uint32_t n;
+
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	/* E S V L B are the face's, from any wire, and say nothing about the
+	 * host: they never light LINKED on the HOST screen. */
+	if (nexus_buddy_line(g_from, key, val)) {
+		return;
+	}
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+	/* A phone knows the time and nothing about the PC's load or music. */
+	if (g_from == NEXUS_BUDDY_PHONE && key != 'T' && key != 'D') {
+		return;
+	}
+#endif
 
 	/*
 	 * Every branch repaints only if the value actually moved, and only the
@@ -302,6 +322,14 @@ static void parse_line(const char *line)
 	default:
 		return;
 	}
+
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+	/* The phone set the clock, which is all it may do; it is not a
+	 * companion, and the HOST screen must not say one is linked. */
+	if (g_from == NEXUS_BUDDY_PHONE) {
+		return;
+	}
+#endif
 
 	g_host.link = true;
 	if (!was_linked) {
@@ -474,6 +502,22 @@ static void on_status(const struct nexus_status *st, uint32_t changed)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+/*
+ * NEXUS Remote's Companion characteristic. Its own source, so a phone's line
+ * and a PC's can never be assembled into one, and drained whatever the
+ * endpoint: the phone is not the host being typed into, and believed() is a
+ * rule about hosts.
+ */
+HOST_SOURCE_DEFINE(host_phone);
+
+void nexus_host_phone_put(const uint8_t *buf, uint16_t len)
+{
+	host_source_put_whole(&host_phone, buf, len);
+	host_link_kick();
+}
+#endif
+
 static void parse_work_fn(struct k_work *work)
 {
 	ARG_UNUSED(work);
@@ -481,10 +525,21 @@ static void parse_work_fn(struct k_work *work)
 	unsigned int lines = 0;
 
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_USB)
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	g_from = NEXUS_BUDDY_USB;
+#endif
 	lines += drain(&host_usb, believed(NEXUS_ENDPOINT_USB));
 #endif
 #if IS_ENABLED(CONFIG_NEXUS_HOST_LINK_BLE)
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY)
+	g_from = NEXUS_BUDDY_BLE;
+#endif
 	lines += drain(&host_ble, believed(NEXUS_ENDPOINT_BLE));
+#endif
+#if IS_ENABLED(CONFIG_NEXUS_BUDDY_PHONE)
+	/* Not counted: a phone's lines keep no companion fresh. */
+	g_from = NEXUS_BUDDY_PHONE;
+	drain(&host_phone, true);
 #endif
 	if (lines == 0) {
 		return;
