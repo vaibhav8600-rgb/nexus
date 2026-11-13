@@ -926,7 +926,22 @@ static enum bt_security_err pairing_accept(struct bt_conn *conn,
 
 static void passkey_display(struct bt_conn *conn, unsigned int passkey)
 {
-	ARG_UNUSED(conn);
+	bool ours = false;
+
+	/*
+	 * A full minute from here, however late in the window the phone came.
+	 * The window used to run out under a passkey being typed: it dropped
+	 * the candidate and switched the profile back, the pairing finished
+	 * all the same, and nobody recorded the phone or took the passkey off
+	 * the screen. Only for the window's own candidate, so a window that
+	 * has already closed is not re-armed.
+	 */
+	K_SPINLOCK(&g_lock) {
+		ours = conn == g_pair_conn;
+	}
+	if (ours) {
+		k_work_reschedule(&g_pair_close, PAIR_WINDOW);
+	}
 
 	nexus_remote_screen_show(NEXUS_REMOTE_VIEW_PASSKEY, passkey);
 }
@@ -1013,8 +1028,12 @@ static void pair_open_fn(struct k_work *work)
 	int free_slot = -1;
 
 	if (pair_open()) {
-		/* Already open: just give it its full minute again. */
-		k_work_reschedule(&g_pair_close, PAIR_WINDOW);
+		/* Already open: just give it its full minute again. Not while
+		 * it is closing on a phone that has just paired - that would
+		 * hold ZMK on the phone's profile for another minute. */
+		if (!g_just_paired) {
+			k_work_reschedule(&g_pair_close, PAIR_WINDOW);
+		}
 		return;
 	}
 	if (g_phones.n < PHONES_MAX) {
@@ -1054,6 +1073,7 @@ static void pair_close_fn(struct k_work *work)
 	ARG_UNUSED(work);
 
 	struct bt_conn *stale = NULL;
+	bool served = false;
 
 	/* A candidate the window never paired - a known phone back with its
 	 * pairing intact, whose app never subscribed - must not keep the
@@ -1061,8 +1081,20 @@ static void pair_close_fn(struct k_work *work)
 	K_SPINLOCK(&g_lock) {
 		stale = g_pair_conn;
 		g_pair_conn = NULL;
+		served = stale != NULL && stale == g_phone;
 	}
 	if (stale) {
+		/*
+		 * One that is not a phone being served is a stranger, or a
+		 * pairing still under way - cancelled from the button, say.
+		 * Left connected it could finish pairing after the window has
+		 * gone, into a profile ZMK has switched away from and with
+		 * nobody here to record it. Closed means closed: hang up.
+		 */
+		if (!served) {
+			bt_conn_disconnect(stale,
+					   BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		}
 		bt_conn_unref(stale);
 	}
 
@@ -1078,6 +1110,9 @@ static void pair_close_fn(struct k_work *work)
 	adv_check();
 
 	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_WAIT);
+	/* And a passkey nobody can use any more. A no-op after a pairing
+	 * that worked: the screen is showing PAIRED by then. */
+	nexus_remote_screen_hide(NEXUS_REMOTE_VIEW_PASSKEY);
 	remote_status_kick();
 }
 

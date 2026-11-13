@@ -68,7 +68,9 @@ with other firmwares can keep them.
 1. Settings > `PHONE` > `PAIR` (or the pair key). NEXUS shows a 60-second
    countdown.
 2. In the app, **Connect**, and pick **NEXUS** (the dongle's keyboard name).
-3. The phone asks for a code. NEXUS shows six digits; type them in.
+3. The phone asks for a code. NEXUS shows six digits; type them in. The
+   code gets a full minute of its own, however late in the countdown the
+   phone connected.
 4. Done. No code again: from now on the phone reconnects by itself.
 
 **Coming back later.** Open the app and tap **Connect to NEXUS**, pick
@@ -81,6 +83,10 @@ on.
 Closing the app drops the phone's link a couple of seconds later. iOS would
 otherwise keep it up in the background, with NEXUS shown as connected in the
 phone's settings but nowhere to be found from the app.
+
+When the window closes without a pairing - the countdown ran out, or you
+pressed the button - NEXUS hangs up on a phone that was part-way through,
+so nothing can finish pairing afterwards. Press `PAIR` and connect again.
 
 While the window is open, NEXUS switches ZMK to a free Bluetooth profile -
 the highest one, leaving the low ones for hosts - and switches back when it

@@ -33,7 +33,6 @@
 enum tetris_status {
 	TETRIS_READY = 0,
 	TETRIS_PLAYING,
-	TETRIS_PAUSED,
 	TETRIS_GAMEOVER,
 };
 

@@ -141,6 +141,53 @@ def face_colours():
        'and the docs renderer does the same')
 
 
+def fn_body(src, signature):
+    """One function's body. Not its forward declaration: that ends in ';'."""
+    m = re.search(re.escape(signature) + r'[^;{]*\{(.*?)\n\}\n', src, re.S)
+    return m.group(1) if m else ''
+
+
+def who_has_the_face():
+    print('\nA brain has the face only while it speaks')
+    bud = re.sub(r'/\*.*?\*/', '', read('src', 'buddy', 'buddy.c'), flags=re.S)
+
+    ok('g_brain_mood != FACE_NEUTRAL' in
+       fn_body(bud, 'static bool brain_speaking(void)'),
+       'one definition: it holds the lease and is showing or saying something')
+    ok('if (brain_speaking())' in
+       fn_body(bud, 'static enum face_emotion evaluate('),
+       'a silent brain leaves Buddy its own moods (a companion renews the '
+       'lease every 10 s; that used to switch them off for good)')
+    ok('if (!brain_speaking())' in fn_body(bud, 'static bool buddy_action('),
+       'and its pokes')
+    ok('if (brain_speaking())' in fn_body(bud, 'static void release('),
+       'a brain that had gone quiet leaves without the sad face - a phone\'s '
+       'lease runs out a minute after every chat')
+    ok('g_brain_spoke' not in bud, 'with no second flag to disagree with it')
+
+    enter = fn_body(bud, 'static void buddy_enter(void)')
+    ok('now - g_line_at > LINE_FRESH' in enter and 'release(now)' in enter,
+       'opening the face drops a line said while it was away, and an '
+       'expired lease, instead of replaying them')
+    ok('k_uptime_get() >= g_lease_until' in
+       fn_body(bud, 'const char *nexus_buddy_brain_name(void)'),
+       'BRAIN: does not name a brain whose lease has run out')
+
+    ok('return !brains && typing();' in
+       fn_body(bud, 'static bool hush(bool brains)') and
+       'hush(g_cue_brain)' in bud and 'hush(g_line_brain)' in bud,
+       'typing hushes Buddy\'s own sounds by whose sound it is, not by who '
+       'holds the lease')
+    ok('!brains && !g_was_brain' in fn_body(bud, 'static void anim_fn('),
+       'settling back from a brain\'s face to Buddy\'s own makes no sound')
+
+    snd = re.sub(r'/\*.*?\*/', '', read('src', 'sound', 'sound.c'), flags=re.S)
+    ok('g_seq != NULL && g_seq != g_blip' in
+       fn_body(snd, 'void nexus_sound_blip('),
+       'a letter\'s blip plays into silence or over another blip only: it '
+       'used to cut every face\'s cue to a tick in CHATTY')
+
+
 def protocol():
     print('\nThe brain\'s keys belong to the face, never to the HOST screen')
     c = read('src', 'host', 'host_link.c')
@@ -378,6 +425,7 @@ def pc_brain():
 def main():
     compiled_out()
     face_colours()
+    who_has_the_face()
     protocol()
     persona()
     pc_brain()

@@ -92,7 +92,7 @@ With no brain connected, the face follows the keyboard. Highest first:
 | --- | --- | --- |
 | A half drops out | sad | `WHERE DID LEFT GO?` - then `YAY, BACK!` when it returns |
 | A half's battery is under 15 % | sleepy | `LOW BATTERY`, once |
-| A brain is connected | the brain's | the brain's |
+| A brain is showing an emotion or saying a line | the brain's | the brain's |
 | 20 seconds typing 30 % faster than your own average | happy | `NICE STREAK!`, at most every 10 minutes |
 | Beating a WPM best that stood for two minutes | surprised | `NEW BEST!` |
 | Five minutes without a key | sleepy, with Zs | - |
@@ -110,6 +110,17 @@ sends the host link's lines (`E` an emotion, `S` a line - see
 [host-link.md](host-link.md#the-protocol)). Every line renews its hold on the
 face for `CONFIG_NEXUS_BUDDY_LEASE_S`; quiet that long, or `B 0`, and the face
 is Buddy's own again.
+
+A brain has the face only while it is showing an emotion or saying a line.
+Between those it may hold the lease - the PC companion renews it every ten
+seconds - and Buddy still pokes, yawns, sulks and cheers a streak on its own.
+A brain that leaves in the middle of a line gets a moment of sad face; one
+that had finished and gone quiet just goes.
+
+The face's clocks only run while it is on screen. Open it later and it
+catches up quietly: a line said while it was away is not typed out again
+(anything older than five seconds is dropped), and a lease that ran out
+meanwhile has simply ended.
 
 A line stays up for 2 seconds after it is fully shown, plus 0.15 s per
 letter, so a long one can be read. Then the face goes back to neutral, even
@@ -227,7 +238,9 @@ or if the app's copy differs (when the app is checked out beside this repo).
 
 ## Sound
 
-Every face has its own short cue inside the buzzer's loud band, neutral's
+A face's cue always plays whole: the per-letter blips wait for it, where
+they used to cut it short. Every face has its own short cue inside the
+buzzer's loud band, neutral's
 a soft "mm-hm" that plays only when a brain sends it (settling back to
 neutral on its own is not news). A brain's answer always follows its
 THINKING face, so each one plays its face's cue. `CHATTY` adds a blip per
@@ -236,7 +249,9 @@ class: they only play into silence, and any other effect cuts them off, so
 a chirp can never eat a disconnect cue. Buddy's own chatter waits while you
 type - a cue waits for a pause, and gives up after 10 seconds. A brain's
 answer does not wait: it arrives a second after you typed the question, and
-a silent answer feels broken. Nothing plays in quiet hours,
+a silent answer feels broken. That goes by whose sound it is, so a brain
+that is only holding the lease does not let Buddy's own chirps through over
+your typing. Nothing plays in quiet hours,
 and nothing with the sound off in Settings. Buddy only makes sounds while its
 face is on screen.
 

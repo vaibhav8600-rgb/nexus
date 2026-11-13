@@ -59,6 +59,9 @@ LOG_MODULE_DECLARE(nexus, CONFIG_NEXUS_LOG_LEVEL);
 #define BRAIN_MOOD_HOLD S_MS(30)
 /* A cue that waits for the typing to stop gives up after this. */
 #define CUE_PATIENCE S_MS(10)
+/* The face's clocks stop while it is off screen. A line older than this when
+ * the face comes back was said to nobody, and is not said again. */
+#define LINE_FRESH S_MS(5)
 /* Frames: 20 per second with a computer on USB, 10 on a charger or a
  * battery, and two while the panel is blanked and nothing can be seen. */
 #define FRAME_MS_USB 50
@@ -81,13 +84,14 @@ static enum nexus_buddy_source g_brain = NEXUS_BUDDY_LOCAL;
 static int64_t g_lease_until;
 static enum face_emotion g_brain_mood = FACE_NEUTRAL;
 static int64_t g_brain_mood_until;
-static bool g_brain_spoke;
 
 static char g_line[FACE_LINE_MAX + 1];
 static uint8_t g_shown;
 static int64_t g_next_char;
 static int64_t g_line_until;
 static enum face_emotion g_line_mood;
+static int64_t g_line_at; /* when it was said */
+static bool g_line_brain; /* a brain's line, not one of Buddy's own */
 
 static enum face_emotion g_mood = FACE_NEUTRAL;
 static enum face_emotion g_flash;
@@ -110,6 +114,8 @@ static bool g_greeted;
 static bool g_idle_pushed;
 
 static int8_t g_cue = -1; /* the emotion waiting to chirp, or -1 */
+static bool g_cue_brain;  /* a brain asked for it: typing does not hush it */
+static bool g_was_brain;  /* the face last shown was a brain's */
 static int64_t g_cue_until;
 static int64_t g_cued = -CUE_GAP;
 
@@ -121,6 +127,18 @@ static K_WORK_DELAYABLE_DEFINE(g_anim_work, anim_fn);
 static bool on_screen(void)
 {
 	return nexus_screen_current() == &nexus_screen_buddy_def;
+}
+
+/*
+ * A brain has the face only while it is showing or saying something. One
+ * that holds the lease and says nothing - a companion between remarks renews
+ * it every ten seconds - leaves Buddy its own moods, pokes and lines, so a
+ * PC that is merely running does not switch the face's own life off.
+ */
+static bool brain_speaking(void)
+{
+	return g_brain != NEXUS_BUDDY_LOCAL &&
+	       (g_brain_mood != FACE_NEUTRAL || (g_line[0] && g_line_brain));
 }
 
 /* ---- words -------------------------------------------------------------- */
@@ -150,6 +168,8 @@ static void say(const char *text, enum face_emotion mood)
 	g_next_char = k_uptime_get();
 	g_line_until = 0;
 	g_line_mood = mood;
+	g_line_at = g_next_char;
+	g_line_brain = false; /* a brain's S says otherwise, after this */
 }
 
 /* "HI " + owner + "!", or just "HI!" with no owner set. */
@@ -173,9 +193,8 @@ static void remark(const char *text, enum face_emotion e, bool urgent)
 {
 	int64_t now = k_uptime_get();
 
-	/* A brain is talking, or Buddy is asleep: the mood still shows, the
-	 * words do not. */
-	if (!g_enabled || g_brain != NEXUS_BUDDY_LOCAL) {
+	/* A brain is talking, or Buddy is asleep: not now. */
+	if (!g_enabled || brain_speaking()) {
 		return;
 	}
 	if (!urgent && now - g_remarked < REMARK_GAP) {
@@ -226,11 +245,13 @@ static bool typing(void)
 /*
  * Typing mutes Buddy's own chatter, not a brain's: an answer arrives a
  * second after the question was typed, while WPM has yet to decay, and
- * an answer that comes back silent feels broken.
+ * an answer that comes back silent feels broken. By whose sound it is,
+ * not by who holds the lease: a brain that is only holding it must not
+ * let Buddy's own chirps through over the typing.
  */
-static bool hush(void)
+static bool hush(bool brains)
 {
-	return g_brain == NEXUS_BUDDY_LOCAL && typing();
+	return !brains && typing();
 }
 
 /* A cue for @p e. @p prompted: the user or a brain asked, so no rate limit.
@@ -251,6 +272,7 @@ static void cue(enum face_emotion e, bool prompted)
 		g_cued = now;
 	}
 	g_cue = (int8_t)e;
+	g_cue_brain = false; /* a brain's E says otherwise, after this */
 	g_cue_until = now + CUE_PATIENCE;
 }
 
@@ -264,7 +286,7 @@ static void cue_pump(int64_t now)
 		g_cue = -1;
 		return;
 	}
-	if (hush()) {
+	if (hush(g_cue_brain)) {
 		return;
 	}
 	nexus_sound_play((enum nexus_sound)(NEXUS_SOUND_BUDDY_NEUTRAL + g_cue));
@@ -273,7 +295,8 @@ static void cue_pump(int64_t now)
 
 static void babble(char c)
 {
-	if (g_sound != NEXUS_BUDDY_SOUND_CHATTY || quiet_hours() || hush()) {
+	if (g_sound != NEXUS_BUDDY_SOUND_CHATTY || quiet_hours() ||
+	    hush(g_line_brain)) {
 		return;
 	}
 
@@ -317,14 +340,14 @@ static void release(int64_t now)
 	if (g_brain == NEXUS_BUDDY_LOCAL) {
 		return;
 	}
-	/* A brain that was mid-conversation does not just vanish: a moment
-	 * of sad, then the face is its own again. */
-	if (g_brain_spoke) {
+	/* A brain that leaves mid-sentence does not just vanish: a moment of
+	 * sad, then the face is its own again. One that had finished and gone
+	 * quiet - its lease running out a minute after a chat - just goes. */
+	if (brain_speaking()) {
 		g_flash = FACE_SAD;
 		g_flash_until = now + 1500;
 	}
 	g_brain = NEXUS_BUDDY_LOCAL;
-	g_brain_spoke = false;
 	g_brain_mood = FACE_NEUTRAL;
 	g_anim.talk_ext = 0;
 	g_header_dirty = true;
@@ -397,6 +420,7 @@ bool nexus_buddy_line(enum nexus_buddy_source from, char key, const char *val)
 		if (g_brain_mood != (enum face_emotion)e) {
 			g_brain_mood = (enum face_emotion)e;
 			cue(g_brain_mood, true);
+			g_cue_brain = true;
 		}
 		if (e == FACE_LOVE) {
 			/* The shy trait: praise makes it look down. */
@@ -409,7 +433,7 @@ bool nexus_buddy_line(enum nexus_buddy_source from, char key, const char *val)
 	case 'S':
 		take(from, now);
 		say(val, g_brain_mood);
-		g_brain_spoke = true;
+		g_line_brain = true;
 		break;
 	case 'V':
 		if (val[0] >= '0' && val[0] <= '4' && val[1] == '\0') {
@@ -436,6 +460,12 @@ bool nexus_buddy_line(enum nexus_buddy_source from, char key, const char *val)
 
 const char *nexus_buddy_brain_name(void)
 {
+	/* The lease is only walked off the stage while the face is up
+	 * (anim_fn); asked from Settings, an expired one has already gone. */
+	if (g_brain != NEXUS_BUDDY_LOCAL && k_uptime_get() >= g_lease_until) {
+		return "LOCAL";
+	}
+
 	switch (g_brain) {
 	case NEXUS_BUDDY_USB:
 	case NEXUS_BUDDY_BLE:
@@ -612,7 +642,7 @@ static enum face_emotion evaluate(int64_t now)
 	if (lowest_battery(st) < 15) {
 		return FACE_SLEEPY;
 	}
-	if (g_brain != NEXUS_BUDDY_LOCAL) {
+	if (brain_speaking()) {
 		return g_brain_mood;
 	}
 	if (now < g_flash_until) {
@@ -744,14 +774,19 @@ static void anim_fn(struct k_work *work)
 		g_brain_mood = FACE_NEUTRAL;
 	}
 	enum face_emotion e = evaluate(now);
+	bool brains = brain_speaking();
 
 	if (e != g_mood) {
 		g_mood = e;
 		face_anim_set(&g_anim, e, (uint32_t)now);
-		if (g_brain == NEXUS_BUDDY_LOCAL) {
+		/* Buddy's own change of mood. Not a brain's, which queued its
+		 * cue with the E; and not the face settling back to its own
+		 * after a brain's, which is not news. */
+		if (!brains && !g_was_brain) {
 			cue(e, false);
 		}
 	}
+	g_was_brain = brains;
 	cue_pump(now);
 
 	/* On a battery the glances stop a minute after the last key: they are
@@ -866,6 +901,21 @@ static void buddy_enter(void)
 	g_drawn = g_frame;
 	face_eye_rows(&g_frame, &g_eye_y0, &g_eye_y1);
 
+	/*
+	 * Catch up on what the stopped clocks missed, quietly. A line said
+	 * while the face was away is not typed out now as if it were news,
+	 * and a brain whose lease ran out meanwhile left then, not now - no
+	 * sad face for a goodbye that happened an hour ago.
+	 */
+	if (g_line[0] && now - g_line_at > LINE_FRESH) {
+		g_line[0] = '\0';
+		g_line_until = 0;
+	}
+	if (g_brain != NEXUS_BUDDY_LOCAL && now >= g_lease_until) {
+		g_brain_mood = FACE_NEUTRAL;
+		release(now);
+	}
+
 	if (!g_greeted) {
 		g_greeted = true;
 		say_owner(sizeof(CONFIG_NEXUS_BUDDY_OWNER) > 1 ? "HI " : "HI",
@@ -906,7 +956,7 @@ static bool buddy_action(enum nexus_action action)
 	g_flash = FACE_HAPPY;
 	g_flash_until = now + 2500;
 	cue(FACE_HAPPY, true);
-	if (g_brain == NEXUS_BUDDY_LOCAL) {
+	if (!brain_speaking()) {
 		if (pick == ARRAY_SIZE(k_pokes)) {
 			say_owner("", "!", FACE_HAPPY);
 		} else {
