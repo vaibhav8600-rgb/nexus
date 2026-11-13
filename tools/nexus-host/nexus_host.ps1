@@ -904,7 +904,10 @@ function Get-BuddyLines($cpu, $mem, $np) {
             $got = @('sleepy', 'RESTING...', "I'm out of Gemini quota for now - give me a few minutes.")
             Send-BuddyChat $msg.ep $got
         } else {
-            $script:bud.nextAsk = $now.AddSeconds($ASK_GAP)
+            # Not earlier than a rest already set: a chat is answered now,
+            # but must not bring the next unprompted remark forward.
+            $gap = $now.AddSeconds($ASK_GAP)
+            if ($script:bud.nextAsk -lt $gap) { $script:bud.nextAsk = $gap }
             Start-BuddyAsk 'chat' $cpu $mem $np $msg
             $out.Add('E THINKING')
         }
@@ -924,7 +927,9 @@ function Get-BuddyLines($cpu, $mem, $np) {
             }
         }
     }
-    if ($got) {
+    # Not while a trick is playing: its next step would replace this line in
+    # the same write. The chat window has the full reply either way.
+    if ($got -and $script:bud.steps.Count -eq 0) {
         $script:bud.said = $got[1]
         $script:bud.saidAt = $now
         $out.Add('E ' + $got[0].ToUpper())
@@ -1108,6 +1113,13 @@ try {
                 Write-Output 'waiting for the dongle'
             }
             $script:waiting = $true
+        }
+        if ($Buddy -and $script:persona) {
+            $away = Receive-BuddyChat
+            if ($away) {
+                Send-BuddyChat $away.ep @('sad', '',
+                    "I can't see the dongle right now - is NEXUS plugged in, or connected over Bluetooth?")
+            }
         }
         Start-Sleep -Seconds 1
         continue

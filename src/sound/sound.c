@@ -297,7 +297,10 @@ void nexus_sound_blip(uint16_t hz, uint16_t ms, uint16_t hz_end)
 	if (g_muted || !nexus_buzzer_ready() || !IS_ENABLED(CONFIG_NEXUS_UI_SOUND)) {
 		return;
 	}
-	if (g_seq != NULL && !g_soft) {
+	/* Only into silence or over another blip. Not over an effect, and not
+	 * over one of Buddy's cues either: letters come every 55 ms, so the
+	 * first one after a face's cue began used to cut it to a tick. */
+	if (g_seq != NULL && g_seq != g_blip) {
 		return;
 	}
 

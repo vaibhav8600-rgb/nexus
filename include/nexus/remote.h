@@ -51,8 +51,8 @@ enum nexus_remote_view {
 void nexus_remote_screen_show(enum nexus_remote_view view, uint32_t passkey);
 
 /**
- * Close the remote screen, but only if it is showing @p view: the pairing
- * window running out must not take a passkey someone is typing with it.
+ * Close the remote screen, but only if it is showing @p view, so closing
+ * the pairing window leaves a PAIRED or CONNECTED message up to be read.
  */
 void nexus_remote_screen_hide(enum nexus_remote_view view);
 

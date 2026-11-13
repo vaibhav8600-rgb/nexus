@@ -120,6 +120,9 @@ static k_timeout_t do_key(const uint8_t *rec)
 
 	switch (action) {
 	case REMOTE_KEY_PRESS:
+		/* The watchdog was armed when this was queued, which can be
+		 * a long paste ago: a hold begins with a full timeout. */
+		remote_hid_keepalive();
 		for (int b = 0; b < 8; b++) {
 			if (mods & BIT(b)) {
 				hold(MOD_USAGE(b));
