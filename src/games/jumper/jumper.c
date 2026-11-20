@@ -112,7 +112,7 @@ static const char *const stage_map[STAGES][ROWS] = {
 		"  F         ",
 		" =====      ",
 		"  o     o   ",
-		"=====  =====",
+		"====   =====",
 		"   o        ",
 		" ====  =====",
 		"P    E    o ",
