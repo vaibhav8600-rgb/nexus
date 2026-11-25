@@ -599,6 +599,11 @@ def voice():
        'if ($script:quietReplies -gt 0)' in window,
        'the companion plays it on the dongle, its written answer is not shown, and the '
        'faces read from the words hold off meanwhile')
+    prompt = ps.split('function Get-BuddyPrompt')[1].split('\n}\n')[0]
+    ok('your face really does it on the dongle by itself' in prompt and
+       "never say you can't" in prompt,
+       'Gemini is told the face really happens, so it plays along instead of '
+       '"I don\'t know how to be angry"')
     ok('if (Held()) return;' in cs and 'if (!Held()) Face("NEUTRAL");' in cs,
        'a held trick is not overwritten by a face from the words')
     ok('if (heard.Length > 0) { Say("you: " + heard.ToString().Trim()); heard.Clear(); }' in cs,

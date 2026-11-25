@@ -688,6 +688,13 @@ function Get-BuddyPrompt($p, [switch]$Spoken) {
     $out += $p.never | ForEach-Object { "- $_" }
     if ($Spoken) {
         $out += 'Let your feelings show in your words - laugh, say aww or hmm - since your face follows what you say.'
+        # The face or trick itself plays on the dongle by itself (the
+        # companion's command matcher); left unsaid, Gemini answered "I don't
+        # know how to be angry!" over an angry face.
+        $faces = (@($p.emotions) | Where-Object { $_ -ne 'listening' }) -join ', '
+        $out += "When $owner asks for a face ($faces) or a trick (sing, dance, high five, hands up, bang, " +
+                'thumbs up, play a game, good night), your face really does it on the dongle by itself. Play ' +
+                "along in that mood in a few words - an angry face gets 'Grrr! So mad!' - and never say you can't."
     } else {
         $out += 'Reply only as JSON matching the schema: "emotion" is how the face looks, "line" goes on the dongle, "reply" is what you say on a screen - when the owner talks to you, a real answer in normal sentence case, at most 200 characters.'
     }
