@@ -422,6 +422,200 @@ def pc_brain():
        'the model is named once in each')
 
 
+def voice():
+    print('\nvoice.cmd: Gemini Live, and the relay that moves the face')
+    ps = read('tools', 'nexus-host', 'nexus_host.ps1')
+    m = re.search(r"\$VOICE_CS = @'\r?\n(.*?)\r?\n'@", ps, re.S)
+    ok(m, 'the voice C# is one here-string both modes compile')
+    cs = m.group(1) if m else ''
+
+    ok('new UdpClient(new IPEndPoint(IPAddress.Loopback, port))' in cs and
+       'new UdpClient(new IPEndPoint(IPAddress.Loopback, 0))' in cs and
+       'IPAddress.Any' not in cs,
+       'voice UDP binds 127.0.0.1 only: nothing off this PC can move the face')
+    ok("-notlike '*-Voice*'" in ps.split('function Stop-Companions')[1].split('\n}\n')[0],
+       '-Install stops other companions, not an open voice window')
+    ok('"%~dp0nexus_host.ps1" -Voice' in read('tools', 'nexus-host', 'voice.cmd'),
+       'voice.cmd is the double-click for -Voice')
+
+    url = re.search(r"\$VOICE_URL = '([^']*)'", ps)
+    ok(url and url.group(1).startswith('wss://generativelanguage.googleapis.com/') and
+       'key' not in url.group(1).lower(),
+       'the Live URL carries no key')
+    ok('SetRequestHeader("x-goog-api-key", key)' in cs and '?key=' not in ps,
+       'the key goes in the x-goog-api-key header, never in the wss URL')
+
+    rx = re.search(r'Regex\(@"([^"]*)"\)', cs)
+    ok(rx and rx.group(1) == r'^(E [A-Z]{1,12}|V [0-4])$',
+       'the relay has one allow-list: %s' % (rx and rx.group(1)))
+    if rx:
+        allowed = re.compile(rx.group(1))
+        let = ['E HAPPY', 'E LISTENING', 'V 0', 'V 4']
+        stop = ['V 5', 'V 10', 'S HELLO', 'T 48720', 'B 0', 'X', 'e happy',
+                'E HAPPY\nT 1', 'E THISISTOOLONGX', 'L -12,8']
+        ok(all(allowed.match(s) for s in let) and
+           not any(allowed.fullmatch(s) for s in stop),
+           'and it lets only E and V lines through to the dongle')
+    ok('[Threading.Monitor]::Enter($sp)' in ps and 'lock (p)' in cs,
+       "the relay and the main loop share each port's lock")
+    ok("$script:relay.Close()" in ps.split('} finally {')[-1],
+       'the relay closes when the companion does')
+    ok('$script:relay.BleOn = [bool]$ble' in ps and 'Send-VoiceBle $ble' in ps and
+       'if (BleOn && Ble.Count < 64) Ble.Enqueue(line);' in cs,
+       'over Bluetooth the relay queues its lines, and the main loop sends them '
+       'between rounds')
+    ok("$LIVE_VOICE = 'Achernar'" in ps and '$($v.spoken)' in ps,
+       'Buddy speaks in a soft voice, in the persona\'s spoken style')
+
+    def between(start, end='\n}\n'):
+        """The source from the first `start` to the next `end`."""
+        return ps.split(start, 1)[1].split(end, 1)[0]
+
+    # PowerShell names ignore case: "$chat = ..." in the window once tried to
+    # turn the chat client into the -Chat switch, and voice never started.
+    params = re.findall(r'^\s*\[[^\]]+\]\s*\$(\w+)', between('param(', '\n)\n'), re.M)
+    window = between('\nif ($Voice) {')
+    clash = sorted({n for n in params
+                    if re.search(r'(?<![\w:])\$%s\s*=[^=]' % n, window, re.I)})
+    ok(params and not clash,
+       'the voice window assigns to no variable named like a parameter: %s' % clash)
+    ok('BuddyChat($CHAT_PORT)' in window and '.SendText(' in window,
+       'typed messages go into the spoken conversation, or to the companion chat')
+    ok('-like \'*nexus_host.ps1*-Voice*\'' in window and 'AppActivate' in window,
+       'a second voice.cmd brings the open window forward instead of a second one')
+
+    # The window's creature makes every face the dongle makes.
+    poses = set(re.findall(r'^\s{4}([A-Z]+)\s+= @\{ eyes', between('$VOICE_POSES = @{'), re.M))
+    want = {e.upper() for e in json.loads(read('persona', 'persona.json'))['emotions']}
+    ok(poses == want,
+       "a pose for each of the dongle's faces, and no other: missing %s, extra %s"
+       % (sorted(want - poses), sorted(poses - want)))
+    parts = set(re.findall(r"'(\w+)'", between('$VOICE_PARTS = @(', ')')))
+    named = set(re.findall(r'x:Name="(\w+)"', between("$VOICE_XAML = @'", "'@")))
+    used = (set(re.findall(r"(?:eyes|mouth) = '(\w+)'", ps))
+            | set(re.findall(r"'(Prop\w+|Tear)'", ps)))
+    ok(parts <= named and used <= parts,
+       'every part a pose shows is drawn: %s' % sorted((parts - named) | (used - parts)))
+    ok("Send-BuddyMirror $lines" in ps and 'IPAddress]::Loopback, $MIRROR_PORT' in ps and
+       'class BuddyMirror' in cs and '^([EB] [A-Z0-9]{1,12}|V [0-4]|L' in cs,
+       "the companion copies Buddy's lines to the window, on 127.0.0.1, "
+       'and the window takes only those')
+
+    # A typed question about this PC is answered by the PC itself; its
+    # numbers go to Gemini only when spoken, because Gemini says the answer.
+    ok("name = 'get_pc_stats'" in window and 'fn == "get_pc_stats"' in cs,
+       'a spoken question about this PC is answered through get_pc_stats')
+    ask = between('function Start-BuddyAsk')
+    ok('Machine' not in ask, "a typed chat never sends the PC's numbers to Gemini")
+    ok('$cmd = Get-StatsReply $msg.text' in between('function Get-BuddyLines'),
+       'the companion answers a PC question itself, like a face or a trick')
+    ok('$stats = Get-StatsReply $text' in window and 'Show-VoiceStats' in window,
+       'the window sends a PC question to the companion, not to Gemini Live, '
+       'and answers it itself without one')
+    m = re.search(r"\$STATS_ASK = ((?:'[^']*(?:''[^']*)*'\s*\+?\s*)+)", ps)
+    words = (''.join(re.findall(r"'((?:[^']|'')*)'", m.group(1))).replace("''", "'")
+             if m else 'x^')
+    asked = ["how's my laptop doing?", 'how is my pc', 'what is my cpu at', 'battery?',
+             'how much RAM is free', "what's using my memory?", 'disk space', 'show me my stats',
+             'memory usage?', 'how much storage do I have', "what's my laptop's battery",
+             'pc specs']
+    chat = ['hi niku', 'sing me a song', 'how are you today', 'show me a happy face',
+            'high five', 'what time is it', 'tell me about computers in space',
+            'I have a bad memory today', 'do you remember our first memory?',
+            'my social battery is low', 'what are your stats in that game',
+            'how is the education system', 'I am charging my phone']
+    missed = [t for t in asked if not re.search(words, t, re.I)]
+    taken = [t for t in chat if re.search(words, t, re.I)]
+    ok(not missed and not taken, 'what counts as asking about this PC: %s' % (missed + taken))
+
+    # It opens at sign-in, quietly, and can be stopped from doing so.
+    inst = ps.split('if ($Install) {')[-1].split('\n}\n')[0]
+    un = ps.split('if ($Uninstall) {')[-1].split('\n}\n')[0]
+    ok('Set-WindowAutostart $true' in inst and
+       '-Voice -Idle' in between('function Set-WindowAutostart'),
+       '-Install opens the window at sign-in, without the mic (-Idle)')
+    ok('Set-WindowAutostart $false' in un and "-like '*nexus_host.ps1*-Voice*'" in un,
+       '-Uninstall undoes that and closes the window')
+    ok("if (-not $Idle) { Start-VoiceTalk }" in window,
+       'an -Idle window waits for a tap before listening')
+
+    # Nobody at the mic, no conversation: it never streams an empty room.
+    ok('SessionSwitchReason.SessionLock' in cs and 'PowerModes.Suspend' in cs and
+       'SystemEvents.SessionSwitch -= OnSessionSwitch' in cs,
+       'locking or sleeping the PC ends the conversation, and Stop() unsubscribes')
+    ok('IdleMs = 120000' in cs and '> IdleMs)' in cs,
+       'two minutes with nobody talking ends it')
+    ok('> MicStallMs) { End(gone)' in cs and
+       'waveInAddBuffer(hwi, h, HDR) != 0) { End(gone)' in cs,
+       'a mic that is pulled out ends it instead of hanging')
+    stop = between('function Stop-VoiceTalk')
+    ok("rate.?limit" in stop and "'quota|rate" not in stop and
+       '$script:fallbackUntil = (Get-Date).AddHours(1)' in stop and
+       '$again = -not $Closing' in stop,
+       'out of quota it carries on with $LIVE_FALLBACK, never on "generate", never while closing')
+    ok('Stop-VoiceTalk -Closing' in window, 'closing the window never starts a new conversation')
+
+    # With the dongle away, a chat is still answered - the window's face
+    # shows it - but Buddy makes no remarks to an empty room.
+    loop = ps.split("Write-Output 'NEXUS companion running.")[1]
+    waiting = loop.split('if ($open.Count -eq 0 -and -not $ble) {', 1)[1].split('continue', 1)[0]
+    ok("Get-BuddyLines $null $null @('', '', 0) -ChatOnly" in waiting and
+       'Send-BuddyMirror' in waiting,
+       'with no dongle the companion still answers chat, into the window')
+    ok('if (-not $ChatOnly -and -not $script:bud.job' in ps,
+       'and -ChatOnly makes no unprompted remarks')
+    ok('$code -eq 503' in ask, 'a busy Gemini (503) is retried before Buddy gives up')
+
+    # Its pictures in the docs are its own renders.
+    docs = read('docs', 'buddy.md')
+    for name in ('hero', 'faces', 'window-chat', 'window-talking', 'window-listening'):
+        ok(os.path.isfile(os.path.join(ROOT, 'docs', 'images', 'voice', name + '.png')) and
+           'images/voice/%s.png' % name in docs,
+           'docs/images/voice/%s.png exists and buddy.md shows it' % name)
+
+    # The mouth's RMS -> level mapping, run for real where PowerShell is.
+    if os.name != 'nt' or not cs:
+        print('  skip  BuddyVoice.Level (needs Windows PowerShell)')
+        return
+    import subprocess
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, 'voice.cs')
+    with io.open(src, 'w', encoding='utf-8') as f:
+        f.write(cs)
+    script = os.path.join(tmp, 'level.ps1')
+    with io.open(script, 'w', encoding='utf-8') as f:
+        f.write('\n'.join([
+            "Add-Type -TypeDefinition (Get-Content -Raw $args[0]) "
+            "-ReferencedAssemblies System.Web.Extensions -ErrorAction Stop",
+            # 50 ms at 24 kHz: silence, a quiet sine, a loud one.
+            "function Get-Sine($amp) {",
+            "  $b = New-Object byte[] 2400",
+            "  for ($i = 0; $i -lt 1200; $i++) {",
+            "    $s = [int16]($amp * [math]::Sin(2 * [math]::PI * 220 * $i / 24000))",
+            "    $b[2 * $i] = $s -band 0xFF; $b[2 * $i + 1] = ($s -shr 8) -band 0xFF",
+            "  }",
+            "  , $b",
+            "}",
+            "$out = foreach ($a in 0, 1000, 12000) {",
+            "  $b = Get-Sine $a",
+            "  [NexusVoice.BuddyVoice]::Level($b, 0, $b.Length)",
+            "}",
+            "$out -join ' '",
+        ]))
+    err = ''
+    try:
+        r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                            '-File', script, src],
+                           capture_output=True, text=True, timeout=120)
+        got, err = r.stdout.strip(), r.stderr.strip()[:300]
+    except (OSError, subprocess.TimeoutExpired) as e:
+        got = 'error: %s' % e
+    ok(got == '0 1 4',
+       'the mouth: silence closed, a quiet sine at 1, a loud one wide open (%s %s)'
+       % (got, err))
+
+
 def main():
     compiled_out()
     face_colours()
@@ -429,6 +623,7 @@ def main():
     protocol()
     persona()
     pc_brain()
+    voice()
     print('\n%s' % ('FAILED (%d)' % len(bad) if bad else 'PASSED'))
     return 1 if bad else 0
 

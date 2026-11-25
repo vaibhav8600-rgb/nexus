@@ -52,8 +52,13 @@ A dedicated ZMK split central with a 240x240 ST7789 in front of it:
   the desk goes quiet. The PC companion or the phone can be its brain, with
   Gemini or canned lines; the dongle itself runs no AI. Chat with it from
   the PC or the phone, by text or voice, and ask for a face or a trick -
-  sing, high five, hands up, bang - which plays at once without AI. Off
-  unless you build it in. ([details](docs/buddy.md))
+  sing, high five, hands up, bang - which plays at once without AI. On
+  Windows it also lives in a small window: a creature that makes every face
+  the dongle makes, talks with you out loud, answers questions about your PC,
+  and opens when Windows starts. Off unless you build it in.
+  ([details](docs/buddy.md#the-pc))
+
+  <img src="docs/images/voice/hero.png" width="640" alt="Buddy's window on the PC: a little creature that makes the dongle's faces and talks">
 - **Display blanking** after a configurable idle time, woken by typing on
   either half -- on any backlight wiring.
 - **Seven themes**, glassmorphism and neumorphism, drawn without ever asking an

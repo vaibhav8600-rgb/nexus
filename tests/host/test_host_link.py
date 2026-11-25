@@ -1235,7 +1235,7 @@ def companions():
     ok('AddSeconds($(if ($ble) { $BLE_RESCAN } else { 3 }))' in loop,
        'while Bluetooth carries the data, the USB port is looked for every '
        '10 s rather than every 3')
-    fin = loop.split('} finally {')[1]
+    fin = loop.split('} finally {')[-1]
     ok('Send-BleLines $ble $bye' in fin and
        "$bye = if ($Buddy) { @('B 0', 'X') } else { @('X') }" in fin,
        'and it says X over Bluetooth too on the way out - after B 0 when '
