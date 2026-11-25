@@ -190,7 +190,10 @@ the companion restarts. A message is answered straight away, not held to
 the gap between remarks; only Gemini's quota can make it wait. The
 companion listens on `127.0.0.1` only, so nothing outside this PC can talk
 to it. Chat needs a key: without one, or while out of quota, Buddy says so
-instead of giving a canned line.
+instead of giving a canned line. With the dongle unplugged or out of range,
+Buddy still answers - the voice window's face shows it - but makes no remarks
+of its own until the dongle is back. When Google says Gemini is busy, the
+companion tries twice more before giving up.
 
 **Faces and tricks, instantly.** A message that only asks for a face
 ("show me a sad face", "smile", "be angry") or a trick ("high five", "sing a
@@ -210,14 +213,44 @@ answers in a real voice through the speakers, using Gemini Live
 LISTENING while you speak, then the emotion Gemini picks for its answer, and
 the mouth moves with the speech and closes when it stops.
 
-The window shows the same: a face whose mouth moves with the voice and whose
-glow takes the mood, a status line, and what each of you said. The round
-button ends the conversation and starts a new one. The pill beside it picks
-the microphone, and the window remembers it by name in
-`%LOCALAPPDATA%\NEXUS\voice.json`. Drag the window by its top edge. Closing it
-ends the conversation with the mouth shut; Esc clears a half-typed message,
-and closes the window when there is none. Double-clicking `voice.cmd` again
-brings the open window forward rather than opening a second.
+![Buddy's window on the PC](images/voice/hero.png)
+
+The window has Buddy as a little creature that makes every face the dongle
+makes - all fifteen, from the same names - and moves its mouth with the
+voice. It blinks, its glow and the ring under it take the mood's colour, and
+the dongle's short line appears beside it, typed out the same way. It shows
+whatever the dongle is showing: the companion copies each of Buddy's lines
+(an emotion, a line, a glance) to the window on `127.0.0.1:47803`, so a
+remark, a trick ("high five", "sing") or a chat answer plays on both.
+
+![All fifteen faces](images/voice/faces.png)
+
+| Listening | Talking | A typed chat |
+| --- | --- | --- |
+| ![Listening](images/voice/window-listening.png) | ![Talking](images/voice/window-talking.png) | ![Chat](images/voice/window-chat.png) |
+
+Below the creature: what each of you said, a message box, and the buttons.
+The round button ends the conversation and starts a new one. The pill beside
+it opens the settings: the microphone, which the window remembers by name in
+`%LOCALAPPDATA%\NEXUS\voice.json`, and whether the window opens when Windows
+starts. Drag the window by its top edge. Closing it ends the conversation with
+the mouth shut; Esc clears a half-typed message, and closes the window when
+there is none. Double-clicking `voice.cmd` again brings the open window
+forward rather than opening a second.
+
+**At sign-in.** `install.cmd` sets the window to open when Windows starts -
+quietly (`-Idle`): it pops up, but the microphone stays off until you tap the
+button. Switch it off in the window's settings, or under Task Manager ->
+Startup apps (`NEXUS Buddy`); `uninstall.cmd` removes it and closes the
+window.
+
+**Asking about this PC.** Ask "how's my laptop doing?", "what's using my
+memory?" or "how much battery is left?", out loud or typed. Buddy answers from
+this PC's numbers right then: CPU load and model, memory used, free space on
+the system disk, battery and charging, uptime, the Windows version and the
+three apps using the most memory. They are read only when you ask, and go to
+Gemini only for that answer: out loud through a `get_pc_stats` tool, typed
+when the message mentions the CPU, memory, disk, battery, apps or the PC.
 
 **Typing in the window.** The message box above the buttons goes where the
 conversation is:
@@ -235,6 +268,13 @@ The compiled audio and window code is kept as
 version of the script builds a new one. If something stops the window opening,
 a message box says what; run `nexus_host.ps1 -Voice` from a PowerShell prompt
 to see more.
+
+The pictures above are the window's own renders. After changing it, redraw
+them with:
+
+```powershell
+powershell -STA -File tools\nexus-host\nexus_host.ps1 -Voice -Shot docs\images\voice
+```
 
 The face and mouth go through the companion, which already holds the dongle's
 port: `voice.cmd` sends them to it on `127.0.0.1:47802`, and the companion
@@ -283,8 +323,10 @@ in the background.
 
 Gemini hears the time of day, how busy the PC is as low / medium / high, the
 track playing and why it is being asked - and in a chat, what you type to
-it. Never keystrokes, window titles, screen contents or files. The dongle
-sends nothing back at all.
+it. When you ask about the PC itself, that answer also gets its numbers
+(above): load, memory, disk, battery, uptime, Windows version and the names
+of the three apps using the most memory. Never keystrokes, window titles,
+screen contents or files. The dongle sends nothing back at all.
 
 Every answer is checked before the dongle sees it: an emotion it does not
 have, a line over 24 characters or with characters the font cannot draw, or

@@ -480,6 +480,57 @@ def voice():
     ok('-like \'*nexus_host.ps1*-Voice*\'' in window and 'AppActivate' in window,
        'a second voice.cmd brings the open window forward instead of a second one')
 
+    # The window's creature makes every face the dongle makes.
+    poses = set(re.findall(r'^\s{4}([A-Z]+)\s+= @\{ eyes', ps.split('$VOICE_POSES = @{', 1)[1].split('\n}\n', 1)[0], re.M))
+    want = {e.upper() for e in json.loads(read('persona', 'persona.json'))['emotions']}
+    ok(poses == want, 'a pose for each of the dongle\'s faces, and no other: missing %s, extra %s'
+       % (sorted(want - poses), sorted(poses - want)))
+    parts = set(re.findall(r"'(\w+)'", ps.split('$VOICE_PARTS = @(', 1)[1].split(')', 1)[0]))
+    named = set(re.findall(r'x:Name="(\w+)"', ps.split("$VOICE_XAML = @'", 1)[1].split("'@", 1)[0]))
+    used = set(re.findall(r"(?:eyes|mouth) = '(\w+)'", ps)) | set(re.findall(r"'(Prop\w+|Tear)'", ps))
+    ok(parts <= named and used <= parts,
+       'every part a pose shows is drawn: %s' % sorted((parts - named) | (used - parts)))
+    ok("Send-BuddyMirror $lines" in ps and 'IPAddress]::Loopback, $MIRROR_PORT' in ps and
+       'class BuddyMirror' in cs and '^([EB] [A-Z0-9]{1,12}|V [0-4]|L' in cs,
+       "the companion copies Buddy's lines to the window, on 127.0.0.1, and the window takes only those")
+
+    # Its PC's numbers go to Gemini only when the owner asks.
+    ok("name = 'get_pc_stats'" in window and 'fn == "get_pc_stats"' in cs,
+       'the voice session can be asked about this PC (get_pc_stats)')
+    ask = ps.split('function Start-BuddyAsk', 1)[1].split('\n}\n', 1)[0]
+    ok('$chat.text -match $MACHINE_WORDS' in ask and '[NexusVoice.Machine]::Summary()' in ask,
+       'a chat gets the PC\'s numbers only when it asks about the PC')
+    words = re.search(r"\$MACHINE_WORDS = '([^']+)'", ps).group(1)
+    ok(all(re.search(words, t, re.I) for t in ["how's my laptop doing?", 'what is my cpu at', 'battery?', 'how much RAM is free']) and
+       not any(re.search(words, t, re.I) for t in ['hi niku', 'sing me a song', 'how are you today']),
+       'and what counts as asking')
+
+    # It opens at sign-in, quietly, and can be stopped from doing so.
+    inst = ps.split('if ($Install) {')[-1].split('\n}\n')[0]
+    un = ps.split('if ($Uninstall) {')[-1].split('\n}\n')[0]
+    ok('Set-WindowAutostart $true' in inst and '-Voice -Idle' in ps.split('function Set-WindowAutostart', 1)[1].split('\n}\n', 1)[0],
+       '-Install opens the window at sign-in, without the mic (-Idle)')
+    ok('Set-WindowAutostart $false' in un and "-like '*nexus_host.ps1*-Voice*'" in un,
+       '-Uninstall undoes that and closes the window')
+    ok("if (-not $Idle) { Start-VoiceTalk }" in window, 'an -Idle window waits for a tap before listening')
+
+    # With the dongle away, a chat is still answered - the window's face
+    # shows it - but Buddy makes no remarks to an empty room.
+    loop = ps.split("Write-Output 'NEXUS companion running.")[1]
+    waiting = loop.split('if ($open.Count -eq 0 -and -not $ble) {', 1)[1].split('continue', 1)[0]
+    ok('Get-BuddyLines $null $null @(\'\', \'\', 0) -ChatOnly' in waiting and 'Send-BuddyMirror' in waiting,
+       'with no dongle the companion still answers chat, into the window')
+    ok('if (-not $ChatOnly -and -not $script:bud.job' in ps, 'and -ChatOnly makes no unprompted remarks')
+    ok("$code -eq 503" in ask or "$code -eq 503" in ps.split('function Start-BuddyAsk', 1)[1],
+       'a busy Gemini (503) is retried before Buddy gives up')
+
+    # Its pictures in the docs are its own renders.
+    docs = read('docs', 'buddy.md')
+    for name in ('hero', 'faces', 'window-chat', 'window-talking', 'window-listening'):
+        ok(os.path.isfile(os.path.join(ROOT, 'docs', 'images', 'voice', name + '.png')) and
+           'images/voice/%s.png' % name in docs,
+           'docs/images/voice/%s.png exists and buddy.md shows it' % name)
+
     # The mouth's RMS -> level mapping, run for real where PowerShell is.
     if os.name != 'nt' or not cs:
         print('  skip  BuddyVoice.Level (needs Windows PowerShell)')
