@@ -128,6 +128,13 @@ $MIRROR_PORT = 47803
 $LIVE_MODEL = 'gemini-3.8-live'
 # Soft and calm. Other gentle ones: Vindemiatrix, Sulafat, Despina, Aoede.
 $LIVE_VOICE = 'Achernar'
+# Talk on and off from anywhere: Ctrl+Alt+Shift+N (MOD_ALT | MOD_CONTROL |
+# MOD_SHIFT, VK 'N'). Not Ctrl+Alt+N: a global hotkey wins over every app,
+# and that one is VS Code's Run Code (and AltGr+N on some layouts).
+# ponytail: fixed; a "hotkey" setting when it clashes with something.
+$TALK_MODS = 7
+$TALK_VK = 0x4E
+$TALK_KEYS = 'Ctrl+Alt+Shift+N'
 
 # @{ key; model; liveModel; voice; headset } - the environment first, then
 # gemini.json. $null for any that neither says.
@@ -1436,6 +1443,52 @@ public class BuddyChat {
     }
 }
 
+// A key that toggles Talk from anywhere in Windows - and from the keyboard
+// itself, through a ZMK macro that sends it. Registered on a thread of its
+// own with its own message loop, so it needs no window handle and no WPF.
+public class HotKey {
+    [StructLayout(LayoutKind.Sequential)]
+    struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public int x, y; }
+
+    [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mods, uint vk);
+    [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    [DllImport("user32.dll")] static extern int GetMessage(out MSG m, IntPtr hWnd, uint min, uint max);
+    [DllImport("user32.dll")] static extern bool PostThreadMessage(uint thread, uint msg, IntPtr w, IntPtr l);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+    const uint WM_HOTKEY = 0x0312, WM_QUIT = 0x0012, MOD_NOREPEAT = 0x4000;
+
+    // False when another app already has this combination.
+    public volatile bool Ok;
+    int presses;
+    uint threadId;
+
+    public HotKey(uint mods, uint vk) {
+        ManualResetEvent ready = new ManualResetEvent(false);
+        Thread t = new Thread(delegate () {
+            threadId = GetCurrentThreadId();
+            // NOREPEAT: a key held down is one press, not a toggle storm.
+            Ok = RegisterHotKey(IntPtr.Zero, 1, mods | MOD_NOREPEAT, vk);
+            ready.Set();
+            if (!Ok) return;
+            MSG m;
+            while (GetMessage(out m, IntPtr.Zero, 0, 0) > 0)
+                if (m.message == WM_HOTKEY) Interlocked.Increment(ref presses);
+            UnregisterHotKey(IntPtr.Zero, 1);
+        });
+        t.IsBackground = true;
+        t.Start();
+        ready.WaitOne(2000);
+    }
+
+    // Presses since the last call.
+    public int Take() { return Interlocked.Exchange(ref presses, 0); }
+
+    public void Close() {
+        if (Ok) PostThreadMessage(threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+    }
+}
+
 // voice.cmd's half: the conversation itself.
 public class BuddyVoice {
     // Calibration knobs. Real speakers and sound cards differ: the RMS of a
@@ -2598,7 +2651,8 @@ if ($Voice) {
     $faces = [string[]]@($p.emotions | ForEach-Object { "$_".ToUpper() })
     $prompt = (Get-BuddyPrompt $p -Spoken) + "`n" +
         'When the owner asks about their computer - CPU, memory, disk, battery, uptime, what is using memory - ' +
-        'call get_pc_stats and answer from it in plain, friendly words.'
+        'call get_pc_stats and answer from it in plain, friendly words.' + "`n" +
+        'For anything current - weather, news, scores, prices, opening hours - search Google first, then answer briefly.'
     $setup = @{ setup = @{
         model = "models/$model"
         generationConfig = @{
@@ -2625,7 +2679,10 @@ if ($Voice) {
                 description = "The owner's computer right now: CPU load and model, memory, system disk, battery, uptime, Windows version and the apps using the most memory"
                 behavior = 'BLOCKING'
             }
-        ) })
+        ) },
+        # Weather, scores, news: answered from the web instead of "I don't
+        # know". Gemini runs the search itself; only the question goes.
+        @{ googleSearch = @{} })
         inputAudioTranscription = @{}
         outputAudioTranscription = @{}
     } } | ConvertTo-Json -Depth 12 -Compress
@@ -2811,7 +2868,7 @@ if ($Voice) {
         $ui.TalkHalo.Stroke = New-VoiceBrush $(if ($on) { '#66FF4D6A' } else { '#5500E0FF' })
         $ui.TalkIcon.Text = [string][char]$(if ($on) { 0xE71A } else { 0xE720 })
         $ui.TalkIcon.Foreground = New-VoiceBrush $(if ($on) { '#FFFFFF' } else { '#0B0B1E' })
-        $ui.TalkBtn.ToolTip = if ($on) { 'End the conversation' } else { 'Talk' }
+        $ui.TalkBtn.ToolTip = if ($on) { "End the conversation ($TALK_KEYS)" } else { "Talk ($TALK_KEYS)" }
         [Windows.Automation.AutomationProperties]::SetName($ui.TalkBtn, $ui.TalkBtn.ToolTip)
         Update-VoiceHint
     }
@@ -3448,6 +3505,12 @@ if ($Voice) {
             }
             if ($b.Done) { Stop-VoiceTalk }
         }
+        # The hotkey does what the Talk button does, and shows the window if
+        # it was minimised - without taking focus from what you are typing in.
+        if ($script:hotkey -and $script:hotkey.Take() -gt 0) {
+            if ($w.WindowState -eq 'Minimized') { $w.WindowState = 'Normal' }
+            if ($script:bv) { Stop-VoiceTalk } else { Start-VoiceTalk }
+        }
         Receive-VoiceChat
         Read-VoiceMirror
         $v = Get-VoiceView
@@ -3496,6 +3559,14 @@ if ($Voice) {
             Add-VoiceLine 'note' "The companion is not running (or needs install.cmd again), so the dongle's face will not move."
         }
         $timer.Start()
+        $script:hotkey = $null
+        if (-not $script:buildError) {
+            $script:hotkey = New-Object NexusVoice.HotKey($TALK_MODS, $TALK_VK)
+            if (-not $script:hotkey.Ok) {
+                $script:hotkey = $null
+                Add-VoiceLine 'note' "$TALK_KEYS is taken by another app, so it cannot start a conversation. The Talk button still can."
+            }
+        }
         # Not focusing the message box: its blinking caret redraws the whole
         # see-through window twice a second, and a window that pops up at
         # sign-in should not take the keyboard from whatever you are doing.
@@ -3506,6 +3577,7 @@ if ($Voice) {
         $timer.Stop()
         Stop-VoiceTalk -Closing
         if ($script:mirror) { $script:mirror.Close() }
+        if ($script:hotkey) { $script:hotkey.Close() }
     })
     Set-VoiceButton $false
     } catch {

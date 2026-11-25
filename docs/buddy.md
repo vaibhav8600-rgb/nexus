@@ -244,6 +244,24 @@ button. Switch it off in the window's settings, or under Task Manager ->
 Startup apps (`NEXUS Buddy`); `uninstall.cmd` removes it and closes the
 window.
 
+**From the keyboard.** While the window is open, **Ctrl+Alt+Shift+N** starts
+a conversation from anywhere in Windows, and ends it again, like the Talk
+button. A minimised window comes back up; the app you are typing in keeps
+the focus. A key on the keyboard can send it - in your config's keymap:
+
+```c
+&kp LC(LA(LS(N)))     /* Buddy: talk / stop */
+```
+
+It is not Ctrl+Alt+N because a hotkey wins over every app, and that one is
+VS Code's *Run Code*. If another app already has the combination, the window
+says so and the button still works.
+
+**Things it looks up.** Weather, news, scores, prices, opening hours: in a
+voice conversation Gemini searches Google before it answers, rather than
+guessing or saying it does not know. Gemini runs the search itself; the PC
+sends nothing extra.
+
 **Asking about this PC.** Type "how's my laptop doing?", "what's using my
 memory?", "how much battery is left?", "disk space" or "what are my specs?" -
 in the window or `chat.cmd` - and the PC answers it itself, at once, from its
@@ -340,8 +358,9 @@ track playing and why it is being asked - and in a chat, what you type to
 it. A typed question about the PC is answered on the PC and never sent; a
 spoken one, in a voice conversation, sends its numbers for that answer
 (above): load, memory, disk, battery, uptime, Windows version and the names
-of the three apps using the most memory. Never keystrokes, window titles,
-screen contents or files. The dongle sends nothing back at all.
+of the three apps using the most memory. In a voice conversation Gemini may
+also search Google with words from what you asked. Never keystrokes, window
+titles, screen contents or files. The dongle sends nothing back at all.
 
 Every answer is checked before the dongle sees it: an emotion it does not
 have, a line over 24 characters or with characters the font cannot draw, or
