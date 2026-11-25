@@ -418,8 +418,13 @@ def pc_brain():
        'a chat message is capped before it reaches Gemini')
 
     ok(py.count("'gemini-3.1-flash-lite'") == 1 and
-       ps.count("'gemini-3.1-flash-lite'") == 1,
+       ps.count("[string]$GeminiModel = 'gemini-3.1-flash-lite'") == 1,
        'the model is named once in each')
+    ask = ps.split('function Start-BuddyAsk')[1].split('\n}\n')[0]
+    ok('@($GeminiModel) + $LITE_MODELS' in ask and 'foreach ($url in $urls)' in ask and
+       '$last.code -in 400, 401, 403' in ask,
+       'a remark or chat goes down the Flash Lite chain when a model is busy, out of '
+       'quota or gone - but not on a bad key')
 
 
 def voice():
@@ -548,12 +553,72 @@ def voice():
     ok('> MicStallMs) { End(gone)' in cs and
        'waveInAddBuffer(hwi, h, HDR) != 0) { End(gone)' in cs,
        'a mic that is pulled out ends it instead of hanging')
+    # Down the chain instead of stopping: each Live model, then Flash Lite.
+    chain = re.search(r"\$LIVE_CHAIN = @\(([^)]*)\)", ps)
+    ok(chain and re.findall(r"'([^']+)'", chain.group(1)) ==
+       ['gemini-3.8-live', 'gemini-3.1-flash-live-preview',
+        'gemini-2.5-flash-native-audio-preview-12-2025'],
+       'the Live chain is 3.8, then 3.1 Flash, then 2.5 native audio')
+    ok("$script:tiers = @(@(@($model) + $LIVE_CHAIN | Select-Object -Unique) + 'lite')"
+       in window, 'gemini.json\'s model first, Flash Lite last')
+    ok(r'\bquota\b|rate.?limit|exhaust|\b429\b' in cs and "'quota|rate" not in ps,
+       'quota is told apart, and never matched on "rate" inside "generate"')
     stop = between('function Stop-VoiceTalk')
-    ok("rate.?limit" in stop and "'quota|rate" not in stop and
-       '$script:fallbackUntil = (Get-Date).AddHours(1)' in stop and
-       '$again = -not $Closing' in stop,
-       'out of quota it carries on with $LIVE_FALLBACK, never on "generate", never while closing')
+    ok("'quota' { $script:rest[$m] = $now.AddMinutes(10) }" in stop and
+       'Start-VoiceTalk -Carry' in stop and 'if ($Closing -or -not $kind) { return }' in stop and
+       '$script:restarts.Count -ge 6' in stop,
+       'a failed model rests and the next carries on - never when ended on purpose '
+       'or closing, and at most six restarts a minute')
     ok('Stop-VoiceTalk -Closing' in window, 'closing the window never starts a new conversation')
+    setup = between('function Get-VoiceSetup')
+    ok('googleSearch' not in setup and 'set_face' not in setup,
+       'no Google Search (the free tier refuses 3.8 and 3.1 Live with it) and no '
+       'set_face round trip each reply')
+    ok('sessionResumption = if ($handle)' in setup and
+       'contextWindowCompression = @{ slidingWindow' in setup and
+       'The conversation so far' in setup,
+       'a reconnect resumes (3.8) or is told the conversation so far; old context is '
+       'trimmed so long chats cost no more a turn')
+    ok('if (m.ContainsKey("goAway") && goAwayAt == 0) goAwayAt = Now();' in cs and
+       'Finish("goaway", null)' in cs,
+       "Google's routine disconnect ends in a pause, and the window reconnects")
+    ok('PrebufferMs = 120' in cs and 'Write(TakeHeld())' in cs,
+       'a reply is held 120 ms before it plays, so a late chunk leaves no gap')
+    ok('FaceFor(said.ToString())' in cs and 'FaceEveryMs' in cs,
+       'the face follows the words, at most one change (and chirp) every 2.5 s')
+    # Faces and tricks asked for out loud play as when typed: set_face used to
+    # carry them, and without it "show me an angry face" did nothing.
+    log = between('function Read-VoiceLog')
+    send = between('function Send-VoiceMessage')
+    act = between('function Invoke-VoiceCommand', '\n    }\n')
+    ok('Invoke-VoiceCommand $m.Substring(5)' in log and 'Invoke-VoiceCommand $text' in send and
+       '$script:persona = $p' in window,
+       'a face or trick asked for, spoken or typed mid-conversation, goes to the matcher')
+    ok('Get-BuddyCommand $text' in act and '$script:bv.HoldFaces(' in act and
+       '$script:cmdClient.Ask($text)' in act and 'chatClient' not in act and
+       '$script:cmdClient.Replies.TryDequeue([ref]$r)) {}' in window,
+       'the companion plays it on the dongle; its answer comes back on a client of its '
+       'own and is never shown, so it cannot take a typed chat\'s place')
+    ok('Invoke-VoiceCommand $script:pending' in window,
+       'a message typed while connecting is matched too, once it is sent')
+    ok('if (r.Contains("already connected")) return "drop";' in cs and
+       'ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure' in cs and
+       "$script:resumed -and $kind -in 'refused', 'drop'" in window,
+       'a resume that comes back too soon is retried with the conversation told, '
+       'never rests 3.8 for an hour; and Stop says goodbye so Google lets go sooner')
+    prompt = ps.split('function Get-BuddyPrompt')[1].split('\n}\n')[0]
+    ok('your face really does it on the dongle by itself' in prompt and
+       "never say you can't" in prompt,
+       'Gemini is told the face really happens, so it plays along instead of '
+       '"I don\'t know how to be angry"')
+    ok('if (Held()) return;' in cs and 'if (!Held()) Face("NEUTRAL");' in cs,
+       'a held trick is not overwritten by a face from the words')
+    ok('if (heard.Length > 0) { Say("you: " + heard.ToString().Trim()); heard.Clear(); }' in cs,
+       'what you said is known when Buddy starts answering, not after')
+    ok('System.Speech' in ps and 'Speak(reply)' in cs and 'Hear(pcm)' in cs and
+       'foreach (string model in liteModels)' in cs,
+       'Flash Lite: sentences cut here, heard and answered down its own chain, said in '
+       'the Windows voice')
 
     # Ctrl+Alt+Shift+N toggles Talk from anywhere; never plain Ctrl+Alt+N.
     ok('$TALK_MODS = 7' in ps and '$TALK_VK = 0x4E' in ps and "'Ctrl+Alt+Shift+N'" in ps,
@@ -564,8 +629,6 @@ def voice():
        'is taken by another app' in window,
        'the window toggles Talk on the hotkey, frees it on close, says when it is taken')
     ok('LC(LA(LS(N)))' in read('docs', 'buddy.md'), 'the docs give the ZMK binding for it')
-    # Live answers current questions from the web.
-    ok('@{ googleSearch = @{} }' in window, 'a voice conversation can search Google')
 
     # With the dongle away, a chat is still answered - the window's face
     # shows it - but Buddy makes no remarks to an empty room.
@@ -599,7 +662,7 @@ def voice():
     with io.open(script, 'w', encoding='utf-8') as f:
         f.write('\n'.join([
             "Add-Type -TypeDefinition (Get-Content -Raw $args[0]) "
-            "-ReferencedAssemblies System.Web.Extensions -ErrorAction Stop",
+            "-ReferencedAssemblies System.Web.Extensions, System.Speech -ErrorAction Stop",
             # 50 ms at 24 kHz: silence, a quiet sine, a loud one.
             "function Get-Sine($amp) {",
             "  $b = New-Object byte[] 2400",
@@ -614,18 +677,33 @@ def voice():
             "  [NexusVoice.BuddyVoice]::Level($b, 0, $b.Length)",
             "}",
             "$out -join ' '",
+            # The face from the words: the last feeling shown, none for plain facts.
+            "$v = [NexusVoice.BuddyVoice]",
+            "(@('Haha, so fun!', 'Oh no, I am sorry.', 'Sorry... haha, kidding!',",
+            "   'CPU is at 12%.') |",
+            "  ForEach-Object { \"$($v::FaceFor($_))\" }) -join ','",
+            # What a close means for the next step of the chain.
+            "(@('You exceeded your current quota', 'models/x is not found for API version',",
+            "   'The service is currently unavailable', 'Failed to generate content',",
+            "   'PolicyViolation: session is already connected to an existing client') |",
+            "  ForEach-Object { $v::Classify($_) }) -join ','",
         ]))
     err = ''
     try:
         r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
                             '-File', script, src],
                            capture_output=True, text=True, timeout=120)
-        got, err = r.stdout.strip(), r.stderr.strip()[:300]
+        out, err = r.stdout.strip().splitlines(), r.stderr.strip()[:300]
     except (OSError, subprocess.TimeoutExpired) as e:
-        got = 'error: %s' % e
-    ok(got == '0 1 4',
+        out = ['error: %s' % e]
+    out += [''] * 3
+    ok(out[0] == '0 1 4',
        'the mouth: silence closed, a quiet sine at 1, a loud one wide open (%s %s)'
-       % (got, err))
+       % (out[0], err))
+    ok(out[1] == 'HAPPY,SAD,HAPPY,',
+       'the face follows the last feeling in the words, none for plain facts (%s)' % out[1])
+    ok(out[2] == 'quota,refused,busy,drop,drop',
+       'a close is told apart as quota, refused, busy or a drop (%s)' % out[2])
 
 
 def main():
