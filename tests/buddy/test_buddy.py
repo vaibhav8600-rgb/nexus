@@ -586,6 +586,23 @@ def voice():
        'a reply is held 120 ms before it plays, so a late chunk leaves no gap')
     ok('FaceFor(said.ToString())' in cs and 'FaceEveryMs' in cs,
        'the face follows the words, at most one change (and chirp) every 2.5 s')
+    # Faces and tricks asked for out loud play as when typed: set_face used to
+    # carry them, and without it "show me an angry face" did nothing.
+    log = between('function Read-VoiceLog')
+    send = between('function Send-VoiceMessage')
+    act = between('function Invoke-VoiceCommand')
+    ok('Invoke-VoiceCommand $m.Substring(5)' in log and 'Invoke-VoiceCommand $text' in send and
+       '$script:persona = $p' in window,
+       'a face or trick asked for, spoken or typed mid-conversation, goes to the matcher')
+    ok('Get-BuddyCommand $text' in act and '$script:bv.HoldFaces(' in act and
+       '$script:chatClient.Ask($text)' in act and '$script:quietReplies' in act and
+       'if ($script:quietReplies -gt 0)' in window,
+       'the companion plays it on the dongle, its written answer is not shown, and the '
+       'faces read from the words hold off meanwhile')
+    ok('if (Held()) return;' in cs and 'if (!Held()) Face("NEUTRAL");' in cs,
+       'a held trick is not overwritten by a face from the words')
+    ok('if (heard.Length > 0) { Say("you: " + heard.ToString().Trim()); heard.Clear(); }' in cs,
+       'what you said is known when Buddy starts answering, not after')
     ok('System.Speech' in ps and 'Speak(reply)' in cs and 'Hear(pcm)' in cs and
        'foreach (string model in liteModels)' in cs,
        'Flash Lite: sentences cut here, heard and answered down its own chain, said in '

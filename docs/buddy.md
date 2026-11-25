@@ -204,6 +204,9 @@ and glances about two seconds apart, using the six trick faces where one
 fits. Anything
 that says more ("why are you sad?", "sing about cats") still goes to Gemini.
 The phrases are `commands` in `persona/persona.json`; add your own there.
+Said out loud in a voice conversation they work the same - "can you show me
+an angry face?", "sing me a song", "bang!" - played by the companion while
+Buddy answers in its own voice, and the face holds until the trick is done.
 
 **Talking out loud.** Double-click `tools/nexus-host/voice.cmd` (or run
 `nexus_host.ps1 -Voice`). A small window pops up in the bottom-right corner

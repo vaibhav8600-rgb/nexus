@@ -2062,7 +2062,7 @@ public class BuddyVoice {
             if (firstAudioAt > 0 && !faceSet && now - firstAudioAt > 1200) {
                 faceSet = true;
                 faceAt = now;
-                Face("NEUTRAL");
+                if (!Held()) Face("NEUTRAL");
             }
             // Google is about to close this connection: end it in a pause -
             // not over Buddy's words or yours - and the window reconnects at
@@ -2172,7 +2172,13 @@ public class BuddyVoice {
                 foreach (object o in parts) {
                     string data = Str(Obj(o as Dictionary<string, object>, "inlineData"), "data");
                     if (data == null) continue;
-                    if (!spoke) firstAudioAt = Now();
+                    if (!spoke) {
+                        firstAudioAt = Now();
+                        // Your turn is over once Buddy answers: said now, not
+                        // after the reply, so a face or trick you asked for
+                        // plays with the answer (the window acts on it).
+                        if (heard.Length > 0) { Say("you: " + heard.ToString().Trim()); heard.Clear(); }
+                    }
                     spoke = true;
                     Play(Convert.FromBase64String(data));
                 }
@@ -2219,9 +2225,16 @@ public class BuddyVoice {
         if (m.ContainsKey("goAway") && goAwayAt == 0) goAwayAt = Now();
     }
 
+    // A face or trick the owner asked for is playing: the faces read from
+    // Buddy's words keep out of its way until then.
+    long holdUntil;
+    public void HoldFaces(int ms) { Interlocked.Exchange(ref holdUntil, Now() + ms); }
+    bool Held() { return Now() < Interlocked.Read(ref holdUntil); }
+
     // The face follows the feeling in Buddy's words as they come, at most
     // once every FaceEveryMs.
     void FaceFromWords() {
+        if (Held()) return;
         string f = FaceFor(said.ToString());
         if (f == null || !faces.Contains(f) || f == Emotion) return;
         if (faceSet && Now() - faceAt < FaceEveryMs) return;
@@ -2302,7 +2315,7 @@ public class BuddyVoice {
                 string emo = (Str(got, "emotion") ?? "").ToUpperInvariant();
                 // A typed message is already on screen.
                 if (text == null && you.Length > 0) Say("you: " + you);
-                Face(faces.Contains(emo) ? emo : "NEUTRAL");
+                if (!Held()) Face(faces.Contains(emo) ? emo : "NEUTRAL");
                 if (reply.Length == 0) return;
                 Say(name + ": " + reply);
                 liteTurns.Add(new string[] { you, reply });
@@ -3043,6 +3056,8 @@ if ($Voice) {
     try {
     $gem = Get-GeminiConfig
     $p = Get-Content (Get-PersonaPath) -Raw -ErrorAction Stop | ConvertFrom-Json
+    # Get-BuddyCommand reads the faces and tricks from here.
+    $script:persona = $p
     $model = if ($gem.liveModel) { $gem.liveModel } else { $LIVE_MODEL }
     $speaker = if ($gem.voice) { $gem.voice } else { $LIVE_VOICE }
     $faces = [string[]]@($p.emotions | ForEach-Object { "$_".ToUpper() })
@@ -3257,6 +3272,23 @@ if ($Voice) {
         while ($script:recent.Count -gt 12) { $script:recent.RemoveAt(0) }
     }
 
+    # A face or a trick asked for in a conversation - "show me an angry face",
+    # "sing a song", "bang" - plays on the dongle at once, the same as typed
+    # to chat: the companion plays it (it holds the dongle's port, and the
+    # window's face follows), while Gemini still answers out loud. The faces
+    # read from Buddy's words stay out of the way until it is done.
+    $script:quietReplies = 0
+    function Invoke-VoiceCommand([string]$text) {
+        $cmd = Get-BuddyCommand $text
+        if (-not $cmd -or -not $script:bv) { return }
+        $script:bv.HoldFaces(@($cmd.steps).Count * $STEP_MS + 2500)
+        if ($script:chatClient) {
+            # Its written answer is not wanted: Buddy is answering aloud.
+            $script:quietReplies++
+            $script:chatClient.Ask($text)
+        }
+    }
+
     # The conversation's own lines become bubbles; anything else is a note.
     function Read-VoiceLog($b) {
         $m = $null
@@ -3265,6 +3297,7 @@ if ($Voice) {
             if ($m.StartsWith('you: ')) {
                 Add-VoiceLine 'you' $m.Substring(5)
                 Add-VoiceRecent 'Owner' $m.Substring(5)
+                Invoke-VoiceCommand $m.Substring(5)
             } elseif ($m.StartsWith($me)) {
                 Add-VoiceLine 'buddy' $m.Substring($me.Length)
                 Add-VoiceRecent "$($p.name)" $m.Substring($me.Length)
@@ -3460,6 +3493,7 @@ if ($Voice) {
             if ($script:bv.Ready) {
                 if ($script:bv.SendText($text)) {
                     Add-VoiceRecent 'Owner' $text
+                    Invoke-VoiceCommand $text
                 } elseif ($script:bv.Done) {
                     Add-VoiceLine 'note' 'Not sent - the conversation has ended.'
                 } else {
@@ -3488,6 +3522,8 @@ if ($Voice) {
     function Receive-VoiceChat {
         $r = $null
         while ($script:chatClient -and $script:chatClient.Replies.TryDequeue([ref]$r)) {
+            # A face or trick from the conversation: played, nothing to show.
+            if ($script:quietReplies -gt 0) { $script:quietReplies--; continue }
             $script:asking = $false
             if ($script:typing) { $ui.Talk.Children.Remove($script:typing); $script:typing = $null }
             $stats = if ($r -eq '!down') { Get-StatsReply $script:lastAsk }
