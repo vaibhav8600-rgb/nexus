@@ -422,6 +422,88 @@ def pc_brain():
        'the model is named once in each')
 
 
+def voice():
+    print('\nvoice.cmd: Gemini Live, and the relay that moves the face')
+    ps = read('tools', 'nexus-host', 'nexus_host.ps1')
+    m = re.search(r"\$VOICE_CS = @'\r?\n(.*?)\r?\n'@", ps, re.S)
+    ok(m, 'the voice C# is one here-string both modes compile')
+    cs = m.group(1) if m else ''
+
+    ok('new UdpClient(new IPEndPoint(IPAddress.Loopback, port))' in cs and
+       'new UdpClient(new IPEndPoint(IPAddress.Loopback, 0))' in cs and
+       'IPAddress.Any' not in cs,
+       'voice UDP binds 127.0.0.1 only: nothing off this PC can move the face')
+    ok("-notlike '*-Voice*'" in ps.split('function Stop-Companions')[1].split('\n}\n')[0],
+       '-Install stops other companions, not an open voice window')
+    ok('"%~dp0nexus_host.ps1" -Voice' in read('tools', 'nexus-host', 'voice.cmd'),
+       'voice.cmd is the double-click for -Voice')
+
+    url = re.search(r"\$VOICE_URL = '([^']*)'", ps)
+    ok(url and url.group(1).startswith('wss://generativelanguage.googleapis.com/') and
+       'key' not in url.group(1).lower(),
+       'the Live URL carries no key')
+    ok('SetRequestHeader("x-goog-api-key", key)' in cs and '?key=' not in ps,
+       'the key goes in the x-goog-api-key header, never in the wss URL')
+
+    rx = re.search(r'Regex\(@"([^"]*)"\)', cs)
+    ok(rx and rx.group(1) == r'^(E [A-Z]{1,12}|V [0-4])$',
+       'the relay has one allow-list: %s' % (rx and rx.group(1)))
+    if rx:
+        allowed = re.compile(rx.group(1))
+        let = ['E HAPPY', 'E LISTENING', 'V 0', 'V 4']
+        stop = ['V 5', 'V 10', 'S HELLO', 'T 48720', 'B 0', 'X', 'e happy',
+                'E HAPPY\nT 1', 'E THISISTOOLONGX', 'L -12,8']
+        ok(all(allowed.match(s) for s in let) and
+           not any(allowed.fullmatch(s) for s in stop),
+           'and it lets only E and V lines through to the dongle')
+    ok('[Threading.Monitor]::Enter($sp)' in ps and 'lock (p)' in cs,
+       "the relay and the main loop share each port's lock")
+    ok("$script:relay.Close()" in ps.split('} finally {')[-1],
+       'the relay closes when the companion does')
+
+    # The mouth's RMS -> level mapping, run for real where PowerShell is.
+    if os.name != 'nt' or not cs:
+        print('  skip  BuddyVoice.Level (needs Windows PowerShell)')
+        return
+    import subprocess
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(tmp, 'voice.cs')
+    with io.open(src, 'w', encoding='utf-8') as f:
+        f.write(cs)
+    script = os.path.join(tmp, 'level.ps1')
+    with io.open(script, 'w', encoding='utf-8') as f:
+        f.write('\n'.join([
+            "Add-Type -TypeDefinition (Get-Content -Raw $args[0]) "
+            "-ReferencedAssemblies System.Web.Extensions -ErrorAction Stop",
+            # 50 ms at 24 kHz: silence, a quiet sine, a loud one.
+            "function Get-Sine($amp) {",
+            "  $b = New-Object byte[] 2400",
+            "  for ($i = 0; $i -lt 1200; $i++) {",
+            "    $s = [int16]($amp * [math]::Sin(2 * [math]::PI * 220 * $i / 24000))",
+            "    $b[2 * $i] = $s -band 0xFF; $b[2 * $i + 1] = ($s -shr 8) -band 0xFF",
+            "  }",
+            "  , $b",
+            "}",
+            "$out = foreach ($a in 0, 1000, 12000) {",
+            "  $b = Get-Sine $a",
+            "  [NexusVoice.BuddyVoice]::Level($b, 0, $b.Length)",
+            "}",
+            "$out -join ' '",
+        ]))
+    err = ''
+    try:
+        r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                            '-File', script, src],
+                           capture_output=True, text=True, timeout=120)
+        got, err = r.stdout.strip(), r.stderr.strip()[:300]
+    except (OSError, subprocess.TimeoutExpired) as e:
+        got = 'error: %s' % e
+    ok(got == '0 1 4',
+       'the mouth: silence closed, a quiet sine at 1, a loud one wide open (%s %s)'
+       % (got, err))
+
+
 def main():
     compiled_out()
     face_colours()
@@ -429,6 +511,7 @@ def main():
     protocol()
     persona()
     pc_brain()
+    voice()
     print('\n%s' % ('FAILED (%d)' % len(bad) if bad else 'PASSED'))
     return 1 if bad else 0
 

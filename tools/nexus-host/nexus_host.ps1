@@ -45,6 +45,9 @@ param(
     [switch]$Buddy,
     # Talk to Buddy through the copy already running (chat.cmd).
     [switch]$Chat,
+    # Talk to Buddy out loud through Gemini Live (voice.cmd), with this PC's
+    # mic and speakers; the face on the dongle listens and moves its mouth.
+    [switch]$Voice,
     # Minutes between unprompted lines, 5-60.
     [ValidateRange(5, 60)]
     [int]$BuddyMinutes = 10,
@@ -105,16 +108,25 @@ $KEY_HELP = 'Paste your key from https://aistudio.google.com/apikey into "key". 
 # nothing off this PC can reach it.
 $CHAT_PORT = 47801
 $CHAT_MAX = 500       # characters of a message kept
+# voice.cmd sends the face's lines here, the same way and as private.
+$VOICE_PORT = 47802
+# Gemini Live, for -Voice. gemini.json's "liveModel" and "voice" override
+# these, so a renamed model needs no edit here.
+$LIVE_MODEL = 'gemini-3.8-live'
+$LIVE_VOICE = 'Puck'
 
-# @{ key; model } - the environment first, then gemini.json. $null for either
-# that neither says.
+# @{ key; model; liveModel; voice; headset } - the environment first, then
+# gemini.json. $null for any that neither says.
 function Get-GeminiConfig {
-    $cfg = @{ key = "$env:GEMINI_API_KEY".Trim(); model = $null }
+    $cfg = @{ key = "$env:GEMINI_API_KEY".Trim(); model = $null; liveModel = $null; voice = $null; headset = $false }
     if (Test-Path $KEY_FILE) {
         try {
             $j = Get-Content $KEY_FILE -Raw -ErrorAction Stop | ConvertFrom-Json
             if (-not $cfg.key -and $j.key) { $cfg.key = "$($j.key)".Trim() }
             if ($j.model) { $cfg.model = "$($j.model)".Trim() }
+            if ($j.liveModel) { $cfg.liveModel = "$($j.liveModel)".Trim() }
+            if ($j.voice) { $cfg.voice = "$($j.voice)".Trim() }
+            if ($j.headset -eq $true) { $cfg.headset = $true }
         } catch {
             Write-Warning "$KEY_FILE is not valid JSON - ignored"
         }
@@ -147,6 +159,7 @@ function Stop-Companions {
             -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" |
         Where-Object { $_.CommandLine -like '*nexus_host.ps1*' -and
                        $_.CommandLine -notlike '*-Chat*' -and
+                       $_.CommandLine -notlike '*-Voice*' -and
                        $_.ProcessId -ne $PID } |
         ForEach-Object {
             Write-Output "stopping the copy already running (pid $($_.ProcessId))"
@@ -605,15 +618,25 @@ function ConvertTo-BuddyLine([string]$text) {
     $s
 }
 
-function Get-BuddyPrompt($p) {
+# -Spoken: for Gemini Live, which talks rather than writing lines, and sets
+# the face with set_face instead of a JSON field.
+function Get-BuddyPrompt($p, [switch]$Spoken) {
     $v = $p.voice
     $owner = if ($p.owner) { $p.owner } else { 'the owner' }
     $out = @("You are $($p.name), a tiny animated face on $owner's keyboard dongle. Pronoun: $($p.pronoun).", 'Traits:')
     $out += $p.traits | ForEach-Object { "- $_" }
-    $out += "Voice: $($v.style). A line is at most $($v.max_chars) characters, $($v.case) case, $($v.charset)."
+    if ($Spoken) {
+        $out += "Voice: $($v.style). You are talking out loud with ${owner}: answer in one or two short sentences."
+    } else {
+        $out += "Voice: $($v.style). A line is at most $($v.max_chars) characters, $($v.case) case, $($v.charset)."
+    }
     $out += 'Never:'
     $out += $p.never | ForEach-Object { "- $_" }
-    $out += 'Reply only as JSON matching the schema: "emotion" is how the face looks, "line" goes on the dongle, "reply" is what you say on a screen - when the owner talks to you, a real answer in normal sentence case, at most 200 characters.'
+    if ($Spoken) {
+        $out += 'Call set_face at the start of every reply with the face that fits it, then speak.'
+    } else {
+        $out += 'Reply only as JSON matching the schema: "emotion" is how the face looks, "line" goes on the dongle, "reply" is what you say on a screen - when the owner talks to you, a real answer in normal sentence case, at most 200 characters.'
+    }
     $out -join "`n"
 }
 
@@ -913,8 +936,12 @@ function Get-BuddyLines($cpu, $mem, $np) {
         }
     }
 
+    # Not while voice.cmd is talking with it: a remark of its own would
+    # change the face in the middle of a spoken answer.
+    $voiceLive = $script:relay -and
+        ([DateTime]::UtcNow - $script:relay.HeardAt).TotalSeconds -lt 30
     if (-not $script:bud.job -and -not $got -and $script:bud.steps.Count -eq 0 -and
-        $now -ge $script:bud.nextAsk) {
+        -not $voiceLive -and $now -ge $script:bud.nextAsk) {
         $reason = Get-BuddyTrigger $cpu $np
         if ($reason) {
             if (-not $script:bud.saidAt) { $script:bud.saidAt = $now }
@@ -942,6 +969,668 @@ function Get-BuddyLines($cpu, $mem, $np) {
         $script:bud.saidAt = $now
     }
     , $out
+}
+
+# ---- voice: voice.cmd talks to Buddy out loud through Gemini Live -----------
+#
+# Two processes, on purpose. voice.cmd holds the conversation - the socket to
+# Google, the mic, the speakers - and the companion keeps the dongle's port,
+# which Windows gives to one program at a time. voice.cmd hands the face's
+# lines (E an emotion, V the mouth) to the companion over a loopback UDP port,
+# and a relay thread in the companion writes them straight to the dongle.
+#
+# A thread, not the main loop: a round of the main loop blocks for about
+# 1.2 s (Get-Counter alone takes a second, the memory reading another fifth),
+# and a mouth that moves once a second is not talking.
+#
+# Both live in one C# source because PowerShell 5.1 has no way to do any of
+# it in time: audio arrives every 100 ms, and the mouth has to move 20 times
+# a second. Windows already has everything needed - winmm for the mic and
+# speakers, ClientWebSocket for the socket - so still nothing to install. It
+# is C# 5, the version .NET Framework's compiler takes.
+
+$VOICE_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
+# Out of quota on Live, this one has far more headroom on the free tier.
+$LIVE_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
+
+$VOICE_CS = @'
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Ports;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Web.Script.Serialization;
+
+namespace NexusVoice {
+
+// The companion's half: face lines in from voice.cmd, out to the dongle.
+public class VoiceRelay {
+    // Only Buddy's emotion and mouth. Anything else on this port - a stray
+    // packet, a clock line - never reaches the dongle from here.
+    public static readonly Regex Allowed = new Regex(@"^(E [A-Z]{1,12}|V [0-4])$");
+
+    // The main loop swaps in its open ports each round. A whole new array,
+    // so this thread never sees one half-changed.
+    public volatile SerialPort[] Ports = new SerialPort[0];
+
+    long heardTicks = DateTime.MinValue.Ticks;
+    public DateTime HeardAt { get { return new DateTime(Interlocked.Read(ref heardTicks), DateTimeKind.Utc); } }
+
+    UdpClient udp;
+    Thread thread;
+    volatile bool done;
+    bool mouthOpen;
+
+    public VoiceRelay(int port) {
+        udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, port));
+        udp.Client.ReceiveTimeout = 500;
+        // SIO_UDP_CONNRESET off, as for chat: a packet bounced back from a
+        // closed voice.cmd would otherwise break every later Receive.
+        udp.Client.IOControl(-1744830452, new byte[4], null);
+        thread = new Thread(Run);
+        thread.IsBackground = true;
+        thread.Start();
+    }
+
+    void Run() {
+        while (!done) {
+            string line = null;
+            try {
+                IPEndPoint from = new IPEndPoint(IPAddress.Loopback, 0);
+                line = Encoding.ASCII.GetString(udp.Receive(ref from)).Trim();
+            } catch (SocketException) {
+                // The timeout: a chance to check on the mouth.
+            } catch (ObjectDisposedException) {
+                return;
+            }
+            if (line != null) {
+                if (!Allowed.IsMatch(line)) continue;
+                Interlocked.Exchange(ref heardTicks, DateTime.UtcNow.Ticks);
+                mouthOpen = line.StartsWith("V ") && line != "V 0";
+                Write(line);
+            } else if (mouthOpen && (DateTime.UtcNow - HeardAt).TotalSeconds > 2) {
+                // voice.cmd went away mid-word - its window closed, say -
+                // and never sent V 0. voice.cmd repeats an open mouth every
+                // second, so two seconds of nothing means nobody is talking.
+                mouthOpen = false;
+                Write("V 0");
+            }
+        }
+    }
+
+    void Write(string line) {
+        foreach (SerialPort p in Ports) {
+            // The main loop takes the same lock around its own writes, so
+            // a mouth line never lands in the middle of a clock line.
+            lock (p) {
+                try { if (p.IsOpen) p.WriteLine(line); } catch { }
+            }
+        }
+    }
+
+    public void Close() {
+        done = true;
+        try { udp.Close(); } catch { }
+        thread.Join(1000);
+    }
+}
+
+// voice.cmd's half: the conversation itself.
+public class BuddyVoice {
+    // Calibration knobs. Real speakers and sound cards differ: the RMS of a
+    // 50 ms slice (int16 units) at which the mouth opens one step more, and
+    // how far the mouth runs behind the audio handed to Windows.
+    public static int[] Thresholds = new int[] { 400, 1500, 3000, 5000 };
+    public static int LagMs = 60;
+    public static int EchoHoldMs = 300;
+    // Off with a headset (gemini.json "headset": true): no echo to fear,
+    // so the mic stays open and you can cut in.
+    public static bool HalfDuplex = true;
+
+    public readonly ConcurrentQueue<string> Log = new ConcurrentQueue<string>();
+    public volatile bool Done;
+    public string CloseReason = "";
+
+    const int MIC_RATE = 16000, OUT_RATE = 24000, MIC_BUFS = 4, MIC_MS = 100;
+    const int WHDR_DONE = 1;
+
+    string url, key, setup, name;
+    HashSet<string> faces;
+    int facePort;
+
+    ClientWebSocket ws;
+    CancellationTokenSource cts = new CancellationTokenSource();
+    readonly object sendLock = new object();
+    readonly object outLock = new object();
+    JavaScriptSerializer json = new JavaScriptSerializer();
+    UdpClient udp;
+    Thread recvThread, micThread, pumpThread;
+    volatile bool setupDone;
+    bool stopped;
+
+    IntPtr hwi = IntPtr.Zero, hwo = IntPtr.Zero;
+    IntPtr[] inHdrs = new IntPtr[0];
+    List<IntPtr> playing = new List<IntPtr>();
+    // (when, level) for the mouth, in play order.
+    List<KeyValuePair<long, int>> timeline = new List<KeyValuePair<long, int>>();
+    long playEnd;
+    int mouth;
+    long mouthAt;
+
+    // This turn: what was heard and said, and which faces went out.
+    StringBuilder heard = new StringBuilder(), said = new StringBuilder();
+    bool listening, faceSet, spoke;
+
+    static readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+    static long Now() { return clock.ElapsedMilliseconds; }
+
+    public BuddyVoice(string url, string key, string setup, string name, string[] faces, int facePort) {
+        this.url = url;
+        this.key = key;
+        this.setup = setup;
+        this.name = name;
+        this.faces = new HashSet<string>(faces);
+        this.facePort = facePort;
+        json.MaxJsonLength = int.MaxValue;
+        udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+    }
+
+    // 0-4 for a slice of 16-bit little-endian PCM: how many thresholds its
+    // RMS clears.
+    public static int Level(byte[] pcm, int offset, int count) {
+        int n = count / 2;
+        if (n == 0) return 0;
+        double sum = 0;
+        for (int i = 0; i < n; i++) {
+            short s = (short)(pcm[offset + 2 * i] | (pcm[offset + 2 * i + 1] << 8));
+            sum += (double)s * s;
+        }
+        double rms = Math.Sqrt(sum / n);
+        int level = 0;
+        foreach (int t in Thresholds) if (rms >= t) level++;
+        return level;
+    }
+
+    public void Start() {
+        OpenAudio();
+        ws = new ClientWebSocket();
+        // The key in a header, never in the URL: a URL ends up in logs and
+        // error messages, a header does not.
+        ws.Options.SetRequestHeader("x-goog-api-key", key);
+        if (!ws.ConnectAsync(new Uri(url), cts.Token).Wait(15000))
+            throw new TimeoutException("Gemini did not answer in 15 s");
+        Send(setup);
+        recvThread = Spawn(RecvLoop);
+        micThread = Spawn(MicLoop);
+        pumpThread = Spawn(PumpLoop);
+    }
+
+    static Thread Spawn(ThreadStart f) {
+        Thread t = new Thread(f);
+        t.IsBackground = true;
+        t.Start();
+        return t;
+    }
+
+    void Say(string s) { Log.Enqueue(s); }
+
+    // A face line to the companion, one per datagram.
+    void Line(string s) {
+        try {
+            byte[] b = Encoding.ASCII.GetBytes(s);
+            udp.Send(b, b.Length, new IPEndPoint(IPAddress.Loopback, facePort));
+        } catch { }
+    }
+
+    void Face(string e) { Line("E " + e); }
+
+    // ClientWebSocket takes one send at a time; the mic and tool answers
+    // come from different threads.
+    void Send(string s) {
+        byte[] b = Encoding.UTF8.GetBytes(s);
+        lock (sendLock) {
+            if (ws.State != WebSocketState.Open) return;
+            ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, cts.Token).Wait();
+        }
+    }
+
+    // ---- audio --------------------------------------------------------------
+
+    [StructLayout(LayoutKind.Sequential, Pack = 2)]
+    struct WAVEFORMATEX {
+        public ushort wFormatTag, nChannels;
+        public uint nSamplesPerSec, nAvgBytesPerSec;
+        public ushort nBlockAlign, wBitsPerSample, cbSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct WAVEHDR {
+        public IntPtr lpData;
+        public uint dwBufferLength, dwBytesRecorded;
+        public IntPtr dwUser;
+        public uint dwFlags, dwLoops;
+        public IntPtr lpNext, reserved;
+    }
+
+    static readonly int HDR = Marshal.SizeOf(typeof(WAVEHDR));
+    static readonly int FLAGS = (int)Marshal.OffsetOf(typeof(WAVEHDR), "dwFlags");
+    static readonly int RECORDED = (int)Marshal.OffsetOf(typeof(WAVEHDR), "dwBytesRecorded");
+
+    [DllImport("winmm.dll")] static extern int waveInOpen(out IntPtr h, IntPtr dev, ref WAVEFORMATEX f, IntPtr cb, IntPtr inst, int flags);
+    [DllImport("winmm.dll")] static extern int waveInPrepareHeader(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] static extern int waveInUnprepareHeader(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] static extern int waveInAddBuffer(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] static extern int waveInStart(IntPtr h);
+    [DllImport("winmm.dll")] static extern int waveInReset(IntPtr h);
+    [DllImport("winmm.dll")] static extern int waveInClose(IntPtr h);
+    [DllImport("winmm.dll")] static extern int waveOutOpen(out IntPtr h, IntPtr dev, ref WAVEFORMATEX f, IntPtr cb, IntPtr inst, int flags);
+    [DllImport("winmm.dll")] static extern int waveOutPrepareHeader(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] static extern int waveOutUnprepareHeader(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] static extern int waveOutWrite(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] static extern int waveOutReset(IntPtr h);
+    [DllImport("winmm.dll")] static extern int waveOutClose(IntPtr h);
+
+    static WAVEFORMATEX Pcm16(int rate) {
+        WAVEFORMATEX f = new WAVEFORMATEX();
+        f.wFormatTag = 1;          // WAVE_FORMAT_PCM
+        f.nChannels = 1;
+        f.nSamplesPerSec = (uint)rate;
+        f.wBitsPerSample = 16;
+        f.nBlockAlign = 2;
+        f.nAvgBytesPerSec = (uint)(rate * 2);
+        return f;
+    }
+
+    // A header and its data, both in unmanaged memory: winmm keeps writing
+    // to them after the call returns, and the garbage collector must not
+    // move them meanwhile.
+    static IntPtr NewHeader(byte[] data, int size) {
+        WAVEHDR h = new WAVEHDR();
+        h.lpData = Marshal.AllocHGlobal(size);
+        h.dwBufferLength = (uint)size;
+        if (data != null) Marshal.Copy(data, 0, h.lpData, size);
+        IntPtr p = Marshal.AllocHGlobal(HDR);
+        Marshal.StructureToPtr(h, p, false);
+        return p;
+    }
+
+    static void FreeHeader(IntPtr p) {
+        WAVEHDR h = (WAVEHDR)Marshal.PtrToStructure(p, typeof(WAVEHDR));
+        Marshal.FreeHGlobal(h.lpData);
+        Marshal.FreeHGlobal(p);
+    }
+
+    static bool IsDone(IntPtr p) { return (Marshal.ReadInt32(p, FLAGS) & WHDR_DONE) != 0; }
+
+    void OpenAudio() {
+        // WAVE_MAPPER is (UINT_PTR)-1: a pointer-sized -1, which a plain
+        // int -1 is not on 64-bit Windows. CALLBACK_NULL: buffers are
+        // polled for WHDR_DONE instead of a callback into managed code.
+        WAVEFORMATEX fin = Pcm16(MIC_RATE), fout = Pcm16(OUT_RATE);
+        int r = waveInOpen(out hwi, new IntPtr(-1), ref fin, IntPtr.Zero, IntPtr.Zero, 0);
+        if (r != 0) { hwi = IntPtr.Zero; throw new Exception("no microphone (waveInOpen error " + r + ")"); }
+        r = waveOutOpen(out hwo, new IntPtr(-1), ref fout, IntPtr.Zero, IntPtr.Zero, 0);
+        if (r != 0) { hwo = IntPtr.Zero; throw new Exception("no speakers (waveOutOpen error " + r + ")"); }
+        inHdrs = new IntPtr[MIC_BUFS];
+        for (int i = 0; i < MIC_BUFS; i++) {
+            inHdrs[i] = NewHeader(null, MIC_RATE * 2 * MIC_MS / 1000);
+            waveInPrepareHeader(hwi, inHdrs[i], HDR);
+            waveInAddBuffer(hwi, inHdrs[i], HDR);
+        }
+        waveInStart(hwi);
+    }
+
+    bool Speaking() {
+        lock (outLock) return Now() < playEnd + EchoHoldMs;
+    }
+
+    void MicLoop() {
+        int i = 0;
+        try {
+            while (!Done) {
+                IntPtr h = inHdrs[i];
+                if (!IsDone(h)) { Thread.Sleep(10); continue; }
+                int n = Marshal.ReadInt32(h, RECORDED);
+                WAVEHDR w = (WAVEHDR)Marshal.PtrToStructure(h, typeof(WAVEHDR));
+                byte[] pcm = new byte[n];
+                Marshal.Copy(w.lpData, pcm, 0, n);
+                // Back in the queue: unprepare, clear, prepare, add.
+                waveInUnprepareHeader(hwi, h, HDR);
+                Marshal.WriteInt32(h, FLAGS, 0);
+                Marshal.WriteInt32(h, RECORDED, 0);
+                waveInPrepareHeader(hwi, h, HDR);
+                waveInAddBuffer(hwi, h, HDR);
+                i = (i + 1) % inHdrs.Length;
+                if (!setupDone || n == 0) continue;
+                // Half duplex: while Buddy talks, and a moment after, the
+                // mic sends silence. Otherwise the speakers echo into it and
+                // Buddy hears itself, takes that as being interrupted, and
+                // stops mid-sentence.
+                // ponytail: a headset has no echo and could stay full duplex
+                // on its own; for now gemini.json "headset" says so.
+                if (HalfDuplex && Speaking()) Array.Clear(pcm, 0, n);
+                Send("{\"realtimeInput\":{\"audio\":{\"mimeType\":\"audio/pcm;rate=16000\",\"data\":\""
+                     + Convert.ToBase64String(pcm) + "\"}}}");
+            }
+        } catch (Exception e) {
+            if (!Done) Say("microphone: " + e.GetBaseException().Message);
+            Done = true;
+        }
+    }
+
+    // A chunk of Buddy's voice, 24 kHz 16-bit mono. Queued as its own buffer,
+    // and its mouth shapes put on the timeline at the moment it will play.
+    void Play(byte[] pcm) {
+        lock (outLock) {
+            if (hwo == IntPtr.Zero || pcm.Length < 2) return;
+            long now = Now();
+            long start = Math.Max(now, playEnd);
+            int slice = OUT_RATE * 2 * 50 / 1000;
+            for (int off = 0, k = 0; off < pcm.Length; off += slice, k++) {
+                int n = Math.Min(slice, pcm.Length - off);
+                timeline.Add(new KeyValuePair<long, int>(start + LagMs + 50 * k, Level(pcm, off, n)));
+            }
+            playEnd = start + pcm.Length * 1000L / (OUT_RATE * 2);
+            IntPtr h = NewHeader(pcm, pcm.Length);
+            waveOutPrepareHeader(hwo, h, HDR);
+            waveOutWrite(hwo, h, HDR);
+            playing.Add(h);
+        }
+    }
+
+    // Buddy was cut off: stop the sound now, and close the mouth with it.
+    void Silence() {
+        lock (outLock) {
+            if (hwo != IntPtr.Zero) {
+                waveOutReset(hwo);
+                FreePlayed(true);
+            }
+            timeline.Clear();
+            playEnd = Now();
+        }
+    }
+
+    void FreePlayed(bool all) {
+        for (int i = playing.Count - 1; i >= 0; i--) {
+            IntPtr h = playing[i];
+            if (!all && !IsDone(h)) continue;
+            waveOutUnprepareHeader(hwo, h, HDR);
+            FreeHeader(h);
+            playing.RemoveAt(i);
+        }
+    }
+
+    // Every ~30 ms: give back played buffers, and move the mouth.
+    void PumpLoop() {
+        while (!Done) {
+            int level;
+            long now = Now();
+            lock (outLock) {
+                if (hwo != IntPtr.Zero) FreePlayed(false);
+                level = -1;
+                while (timeline.Count > 0 && timeline[0].Key <= now) {
+                    level = timeline[0].Value;
+                    timeline.RemoveAt(0);
+                }
+                if (level < 0) level = timeline.Count == 0 && now >= playEnd + LagMs ? 0 : mouth;
+            }
+            // On a change, and an open mouth once a second as well: the
+            // relay closes a mouth that has heard nothing for two.
+            if (level != mouth || (level > 0 && now - mouthAt >= 1000)) {
+                Line("V " + level);
+                mouth = level;
+                mouthAt = now;
+            }
+            Thread.Sleep(30);
+        }
+    }
+
+    // ---- the conversation ---------------------------------------------------
+
+    void RecvLoop() {
+        byte[] buf = new byte[65536];
+        MemoryStream msg = new MemoryStream();
+        try {
+            while (!Done) {
+                WebSocketReceiveResult r = ws.ReceiveAsync(new ArraySegment<byte>(buf), cts.Token).Result;
+                if (r.MessageType == WebSocketMessageType.Close) {
+                    // A bad model name, key or quota comes back here, and
+                    // nowhere else.
+                    CloseReason = ws.CloseStatusDescription ?? "";
+                    Say("Gemini closed the session (" + ws.CloseStatus + "): " + CloseReason);
+                    break;
+                }
+                // Text or binary frames, whichever the server sends: both
+                // are UTF-8 JSON, sometimes split across frames.
+                msg.Write(buf, 0, r.Count);
+                if (!r.EndOfMessage) continue;
+                string text = Encoding.UTF8.GetString(msg.ToArray());
+                msg.SetLength(0);
+                try {
+                    Handle(json.DeserializeObject(text) as Dictionary<string, object>);
+                } catch (Exception e) {
+                    Say("could not read a message from Gemini: " + e.GetBaseException().Message);
+                }
+            }
+        } catch (Exception e) {
+            if (!Done) Say("connection lost: " + e.GetBaseException().Message);
+        }
+        Done = true;
+    }
+
+    static Dictionary<string, object> Obj(Dictionary<string, object> d, string k) {
+        object v;
+        return d != null && d.TryGetValue(k, out v) ? v as Dictionary<string, object> : null;
+    }
+
+    static object[] Arr(Dictionary<string, object> d, string k) {
+        object v;
+        return d != null && d.TryGetValue(k, out v) ? v as object[] : null;
+    }
+
+    static string Str(Dictionary<string, object> d, string k) {
+        object v;
+        return d != null && d.TryGetValue(k, out v) && v != null ? v.ToString() : null;
+    }
+
+    static bool Flag(Dictionary<string, object> d, string k) {
+        object v;
+        return d != null && d.TryGetValue(k, out v) && v is bool && (bool)v;
+    }
+
+    void Listening() {
+        if (listening) return;
+        listening = true;
+        Face("LISTENING");
+    }
+
+    void Handle(Dictionary<string, object> m) {
+        if (m == null) return;
+        if (m.ContainsKey("setupComplete")) {
+            setupDone = true;
+            Say("connected - talk to " + name + ". Ctrl+C ends it.");
+        }
+        Dictionary<string, object> va = Obj(m, "voiceActivity");
+        if (va != null && Str(va, "type") == "ACTIVITY_START") Listening();
+
+        Dictionary<string, object> sc = Obj(m, "serverContent");
+        if (sc != null) {
+            if (Flag(sc, "interrupted")) {
+                Silence();
+                if (said.Length > 0) Say(name + ": " + said.ToString().Trim() + " -");
+                said.Clear();
+                faceSet = spoke = false;
+            }
+            string t = Str(Obj(sc, "inputTranscription"), "text");
+            if (!string.IsNullOrEmpty(t)) { heard.Append(t); Listening(); }
+            t = Str(Obj(sc, "outputTranscription"), "text");
+            if (!string.IsNullOrEmpty(t)) said.Append(t);
+            object[] parts = Arr(Obj(sc, "modelTurn"), "parts");
+            if (parts != null) {
+                foreach (object o in parts) {
+                    string data = Str(Obj(o as Dictionary<string, object>, "inlineData"), "data");
+                    if (data == null) continue;
+                    if (!spoke && !faceSet) Face("NEUTRAL");
+                    spoke = true;
+                    Play(Convert.FromBase64String(data));
+                }
+            }
+            if (Flag(sc, "turnComplete")) {
+                if (heard.Length > 0) Say("you: " + heard.ToString().Trim());
+                if (said.Length > 0) Say(name + ": " + said.ToString().Trim());
+                heard.Clear();
+                said.Clear();
+                listening = faceSet = spoke = false;
+            }
+        }
+
+        object[] calls = Arr(Obj(m, "toolCall"), "functionCalls");
+        if (calls != null) {
+            List<object> answers = new List<object>();
+            foreach (object o in calls) {
+                Dictionary<string, object> c = o as Dictionary<string, object>;
+                if (c == null) continue;
+                string fn = Str(c, "name");
+                if (fn == "set_face") {
+                    string e = (Str(Obj(c, "args"), "emotion") ?? "").ToUpperInvariant();
+                    // Only a face the dongle has: anything else is dropped.
+                    if (faces.Contains(e)) { Face(e); faceSet = true; }
+                }
+                Dictionary<string, object> a = new Dictionary<string, object>();
+                if (Str(c, "id") != null) a["id"] = Str(c, "id");
+                a["name"] = fn;
+                a["response"] = new Dictionary<string, object> { { "result", "ok" } };
+                answers.Add(a);
+            }
+            Dictionary<string, object> tr = new Dictionary<string, object>();
+            tr["functionResponses"] = answers;
+            Dictionary<string, object> reply = new Dictionary<string, object>();
+            reply["toolResponse"] = tr;
+            Send(json.Serialize(reply));
+        }
+
+        if (m.ContainsKey("goAway")) {
+            // ponytail: no automatic reconnect; a new window is a new session.
+            Say("Gemini is ending this session soon (audio sessions last about 15 minutes) - run voice.cmd again to keep talking.");
+        }
+    }
+
+    public void Stop() {
+        if (stopped) return;
+        stopped = true;
+        Done = true;
+        try { cts.Cancel(); } catch { }
+        try { if (ws != null) ws.Abort(); } catch { }
+        foreach (Thread t in new Thread[] { recvThread, micThread, pumpThread })
+            if (t != null) t.Join(2000);
+        if (hwi != IntPtr.Zero) {
+            waveInReset(hwi);
+            foreach (IntPtr h in inHdrs) { waveInUnprepareHeader(hwi, h, HDR); FreeHeader(h); }
+            waveInClose(hwi);
+            hwi = IntPtr.Zero;
+        }
+        lock (outLock) {
+            if (hwo != IntPtr.Zero) {
+                waveOutReset(hwo);
+                FreePlayed(true);
+                waveOutClose(hwo);
+                hwo = IntPtr.Zero;
+            }
+            timeline.Clear();
+        }
+        Line("V 0");
+        try { udp.Close(); } catch { }
+    }
+}
+}
+'@
+
+# Compiled once per process; both voice.cmd and the companion use it.
+function Add-VoiceTypes {
+    if ('NexusVoice.BuddyVoice' -as [type]) { return }
+    Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions -ErrorAction Stop
+}
+
+# The companion's end: listen for voice.cmd's face lines. Warns once and
+# carries on without it, like the chat inbox.
+function Open-VoiceRelay {
+    $script:relay = $null
+    try {
+        Add-VoiceTypes
+    } catch {
+        Write-Warning "voice: cannot build the relay - $(Get-Reason $_)"
+        return
+    }
+    try {
+        $script:relay = New-Object NexusVoice.VoiceRelay($VOICE_PORT)
+    } catch {
+        Write-Warning "voice: port $VOICE_PORT is in use - voice.cmd cannot move the face"
+    }
+}
+
+if ($Voice) {
+    $gem = Get-GeminiConfig
+    if (-not $gem.key) {
+        Write-Output "Voice needs a Gemini key in $KEY_FILE"
+        return
+    }
+    $p = Get-Content (Get-PersonaPath) -Raw -ErrorAction Stop | ConvertFrom-Json
+    $model = if ($gem.liveModel) { $gem.liveModel } else { $LIVE_MODEL }
+    $speaker = if ($gem.voice) { $gem.voice } else { $LIVE_VOICE }
+    $faces = [string[]]@($p.emotions | ForEach-Object { "$_".ToUpper() })
+    $setup = @{ setup = @{
+        model = "models/$model"
+        generationConfig = @{
+            responseModalities = @('AUDIO')
+            speechConfig = @{ voiceConfig = @{ prebuiltVoiceConfig = @{ voiceName = $speaker } } }
+        }
+        systemInstruction = @{ parts = @(@{ text = (Get-BuddyPrompt $p -Spoken) }) }
+        tools = @(@{ functionDeclarations = @(@{
+            name = 'set_face'
+            description = 'Show this face on the dongle'
+            # Blocking: the model waits for the answer, so the face comes
+            # before the words. Left to its default (asynchronous) it was
+            # measured calling set_face after the whole reply was spoken.
+            behavior = 'BLOCKING'
+            parameters = @{
+                type = 'OBJECT'
+                properties = @{ emotion = @{ type = 'STRING'; enum = $faces } }
+                required = @('emotion')
+            }
+        }) })
+        inputAudioTranscription = @{}
+        outputAudioTranscription = @{}
+    } } | ConvertTo-Json -Depth 12 -Compress
+
+    Add-VoiceTypes
+    [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
+    $bv = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, $setup, "$($p.name)", $faces, $VOICE_PORT)
+    Write-Output "Connecting to Gemini Live ($model, voice $speaker)..."
+    $m = $null
+    try {
+        $bv.Start()
+        while (-not $bv.Done) {
+            while ($bv.Log.TryDequeue([ref]$m)) { Write-Output $m }
+            Start-Sleep -Milliseconds 100
+        }
+    } catch {
+        Write-Output "voice: $(Get-Reason $_)"
+    } finally {
+        # Ctrl+C lands here too: mic and speakers closed, mouth shut.
+        $bv.Stop()
+        while ($bv.Log.TryDequeue([ref]$m)) { Write-Output $m }
+    }
+    if ($bv.CloseReason -match 'quota|rate|exhaust|429') {
+        Write-Output "Out of Live quota. For more headroom, set `"liveModel`": `"$LIVE_FALLBACK`" in $KEY_FILE."
+    }
+    return
 }
 
 if ($List) {
@@ -1021,6 +1710,7 @@ $script:bud = @{
 }
 $nextKeyLook = [datetime]::MinValue
 Open-BuddyChat
+Open-VoiceRelay
 $modelGiven = $PSBoundParameters.ContainsKey('GeminiModel')
 
 # Look for a key: at start, then every 30 s until there is one. Never printed.
@@ -1097,6 +1787,12 @@ try {
             Write-Output "open bluetooth $($ble.Name)"
         }
     }
+
+    # The voice relay writes to whatever ports are open now. A new array
+    # each time, so its thread never sees one half-changed.
+    # ponytail: USB only - over Bluetooth the relay does nothing; queue its
+    # E lines for the BLE write if the face matters there.
+    if ($script:relay) { $script:relay.Ports = [IO.Ports.SerialPort[]]@($open.Values) }
 
     if ($open.Count -eq 0 -and -not $ble) {
         if (-not $script:waiting) {
@@ -1202,18 +1898,27 @@ try {
     }
 
     foreach ($name in @($open.Keys)) {
-        foreach ($line in $lines) {
-            try {
-                $open[$name].WriteLine($line)
-                Write-Verbose "$name > $line"
-            } catch {
-                Write-Warning "$name lost: $(Get-Reason $_)"
-                try { $open[$name].Close() } catch {}
-                $open.Remove($name)
-                break
+        # The voice relay's thread writes to this port too; the same lock
+        # keeps its lines and these from interleaving mid-line.
+        $sp = $open[$name]
+        [Threading.Monitor]::Enter($sp)
+        try {
+            foreach ($line in $lines) {
+                try {
+                    $sp.WriteLine($line)
+                    Write-Verbose "$name > $line"
+                } catch {
+                    Write-Warning "$name lost: $(Get-Reason $_)"
+                    try { $sp.Close() } catch {}
+                    $open.Remove($name)
+                    break
+                }
             }
+        } finally {
+            [Threading.Monitor]::Exit($sp)
         }
     }
+    if ($script:relay) { $script:relay.Ports = [IO.Ports.SerialPort[]]@($open.Values) }
 
     # To Bluetooth as well when both are there. The dongle listens to the
     # one that matches where its keys are going, and drops the other.
@@ -1239,6 +1944,8 @@ try {
     Start-Sleep -Milliseconds ([int]($Interval * 1000))
   }
 } finally {
+    # The relay first, so nothing else writes to the ports while they close.
+    if ($script:relay) { try { $script:relay.Close() } catch {} }
     # "I am going away", so the dongle shows dashes rather than numbers that
     # stopped being true the moment this stopped - and B 0 first, so the face
     # is Buddy's own again now rather than in a minute.
