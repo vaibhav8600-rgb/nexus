@@ -467,10 +467,14 @@ def voice():
     ok("$LIVE_VOICE = 'Achernar'" in ps and '$($v.spoken)' in ps,
        'Buddy speaks in a soft voice, in the persona\'s spoken style')
 
+    def between(start, end='\n}\n'):
+        """The source from the first `start` to the next `end`."""
+        return ps.split(start, 1)[1].split(end, 1)[0]
+
     # PowerShell names ignore case: "$chat = ..." in the window once tried to
     # turn the chat client into the -Chat switch, and voice never started.
-    params = re.findall(r'^\s*\[[^\]]+\]\s*\$(\w+)', ps.split('param(', 1)[1].split('\n)\n', 1)[0], re.M)
-    window = ps.split('\nif ($Voice) {', 1)[1].split('\n}\n', 1)[0]
+    params = re.findall(r'^\s*\[[^\]]+\]\s*\$(\w+)', between('param(', '\n)\n'), re.M)
+    window = between('\nif ($Voice) {')
     clash = sorted({n for n in params
                     if re.search(r'(?<![\w:])\$%s\s*=[^=]' % n, window, re.I)})
     ok(params and not clash,
@@ -481,58 +485,65 @@ def voice():
        'a second voice.cmd brings the open window forward instead of a second one')
 
     # The window's creature makes every face the dongle makes.
-    poses = set(re.findall(r'^\s{4}([A-Z]+)\s+= @\{ eyes', ps.split('$VOICE_POSES = @{', 1)[1].split('\n}\n', 1)[0], re.M))
+    poses = set(re.findall(r'^\s{4}([A-Z]+)\s+= @\{ eyes', between('$VOICE_POSES = @{'), re.M))
     want = {e.upper() for e in json.loads(read('persona', 'persona.json'))['emotions']}
-    ok(poses == want, 'a pose for each of the dongle\'s faces, and no other: missing %s, extra %s'
+    ok(poses == want,
+       "a pose for each of the dongle's faces, and no other: missing %s, extra %s"
        % (sorted(want - poses), sorted(poses - want)))
-    parts = set(re.findall(r"'(\w+)'", ps.split('$VOICE_PARTS = @(', 1)[1].split(')', 1)[0]))
-    named = set(re.findall(r'x:Name="(\w+)"', ps.split("$VOICE_XAML = @'", 1)[1].split("'@", 1)[0]))
-    used = set(re.findall(r"(?:eyes|mouth) = '(\w+)'", ps)) | set(re.findall(r"'(Prop\w+|Tear)'", ps))
+    parts = set(re.findall(r"'(\w+)'", between('$VOICE_PARTS = @(', ')')))
+    named = set(re.findall(r'x:Name="(\w+)"', between("$VOICE_XAML = @'", "'@")))
+    used = (set(re.findall(r"(?:eyes|mouth) = '(\w+)'", ps))
+            | set(re.findall(r"'(Prop\w+|Tear)'", ps)))
     ok(parts <= named and used <= parts,
        'every part a pose shows is drawn: %s' % sorted((parts - named) | (used - parts)))
     ok("Send-BuddyMirror $lines" in ps and 'IPAddress]::Loopback, $MIRROR_PORT' in ps and
        'class BuddyMirror' in cs and '^([EB] [A-Z0-9]{1,12}|V [0-4]|L' in cs,
-       "the companion copies Buddy's lines to the window, on 127.0.0.1, and the window takes only those")
+       "the companion copies Buddy's lines to the window, on 127.0.0.1, "
+       'and the window takes only those')
 
     # A typed question about this PC is answered by the PC itself; its
     # numbers go to Gemini only when spoken, because Gemini says the answer.
     ok("name = 'get_pc_stats'" in window and 'fn == "get_pc_stats"' in cs,
        'a spoken question about this PC is answered through get_pc_stats')
-    ask = ps.split('function Start-BuddyAsk', 1)[1].split('\n}\n', 1)[0]
-    ok('Machine' not in ask, 'a typed chat never sends the PC\'s numbers to Gemini')
-    lines = ps.split('function Get-BuddyLines', 1)[1].split('\n}\n', 1)[0]
-    ok('$cmd = Get-StatsReply $msg.text' in lines,
+    ask = between('function Start-BuddyAsk')
+    ok('Machine' not in ask, "a typed chat never sends the PC's numbers to Gemini")
+    ok('$cmd = Get-StatsReply $msg.text' in between('function Get-BuddyLines'),
        'the companion answers a PC question itself, like a face or a trick')
     ok('$stats = Get-StatsReply $text' in window and 'Show-VoiceStats' in window,
-       'the window sends a PC question to the companion, not to Gemini Live, and answers it itself without one')
+       'the window sends a PC question to the companion, not to Gemini Live, '
+       'and answers it itself without one')
     m = re.search(r"\$STATS_ASK = ((?:'[^']*(?:''[^']*)*'\s*\+?\s*)+)", ps)
-    words = ''.join(re.findall(r"'((?:[^']|'')*)'", m.group(1))).replace("''", "'") if m else 'x^'
-    asked = ["how's my laptop doing?", 'how is my pc', 'what is my cpu at', 'battery?', 'how much RAM is free',
-             "what's using my memory?", 'disk space', 'show me my stats']
-    chat = ['hi niku', 'sing me a song', 'how are you today', 'show me a happy face', 'high five',
-            'what time is it', 'tell me about computers in space']
-    ok(all(re.search(words, t, re.I) for t in asked) and not any(re.search(words, t, re.I) for t in chat),
-       'what counts as asking about this PC: %s'
-       % ([t for t in asked if not re.search(words, t, re.I)] + [t for t in chat if re.search(words, t, re.I)]))
+    words = (''.join(re.findall(r"'((?:[^']|'')*)'", m.group(1))).replace("''", "'")
+             if m else 'x^')
+    asked = ["how's my laptop doing?", 'how is my pc', 'what is my cpu at', 'battery?',
+             'how much RAM is free', "what's using my memory?", 'disk space', 'show me my stats']
+    chat = ['hi niku', 'sing me a song', 'how are you today', 'show me a happy face',
+            'high five', 'what time is it', 'tell me about computers in space']
+    missed = [t for t in asked if not re.search(words, t, re.I)]
+    taken = [t for t in chat if re.search(words, t, re.I)]
+    ok(not missed and not taken, 'what counts as asking about this PC: %s' % (missed + taken))
 
     # It opens at sign-in, quietly, and can be stopped from doing so.
     inst = ps.split('if ($Install) {')[-1].split('\n}\n')[0]
     un = ps.split('if ($Uninstall) {')[-1].split('\n}\n')[0]
-    ok('Set-WindowAutostart $true' in inst and '-Voice -Idle' in ps.split('function Set-WindowAutostart', 1)[1].split('\n}\n', 1)[0],
+    ok('Set-WindowAutostart $true' in inst and
+       '-Voice -Idle' in between('function Set-WindowAutostart'),
        '-Install opens the window at sign-in, without the mic (-Idle)')
     ok('Set-WindowAutostart $false' in un and "-like '*nexus_host.ps1*-Voice*'" in un,
        '-Uninstall undoes that and closes the window')
-    ok("if (-not $Idle) { Start-VoiceTalk }" in window, 'an -Idle window waits for a tap before listening')
+    ok("if (-not $Idle) { Start-VoiceTalk }" in window,
+       'an -Idle window waits for a tap before listening')
 
     # With the dongle away, a chat is still answered - the window's face
     # shows it - but Buddy makes no remarks to an empty room.
     loop = ps.split("Write-Output 'NEXUS companion running.")[1]
     waiting = loop.split('if ($open.Count -eq 0 -and -not $ble) {', 1)[1].split('continue', 1)[0]
-    ok('Get-BuddyLines $null $null @(\'\', \'\', 0) -ChatOnly' in waiting and 'Send-BuddyMirror' in waiting,
+    ok("Get-BuddyLines $null $null @('', '', 0) -ChatOnly" in waiting and
+       'Send-BuddyMirror' in waiting,
        'with no dongle the companion still answers chat, into the window')
-    ok('if (-not $ChatOnly -and -not $script:bud.job' in ps, 'and -ChatOnly makes no unprompted remarks')
-    ok("$code -eq 503" in ask or "$code -eq 503" in ps.split('function Start-BuddyAsk', 1)[1],
-       'a busy Gemini (503) is retried before Buddy gives up')
+    ok('if (-not $ChatOnly -and -not $script:bud.job' in ps,
+       'and -ChatOnly makes no unprompted remarks')
+    ok('$code -eq 503' in ask, 'a busy Gemini (503) is retried before Buddy gives up')
 
     # Its pictures in the docs are its own renders.
     docs = read('docs', 'buddy.md')
