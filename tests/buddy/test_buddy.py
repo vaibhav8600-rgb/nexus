@@ -539,6 +539,22 @@ def voice():
     ok("if (-not $Idle) { Start-VoiceTalk }" in window,
        'an -Idle window waits for a tap before listening')
 
+    # Nobody at the mic, no conversation: it never streams an empty room.
+    ok('SessionSwitchReason.SessionLock' in cs and 'PowerModes.Suspend' in cs and
+       'SystemEvents.SessionSwitch -= OnSessionSwitch' in cs,
+       'locking or sleeping the PC ends the conversation, and Stop() unsubscribes')
+    ok('IdleMs = 120000' in cs and '> IdleMs)' in cs,
+       'two minutes with nobody talking ends it')
+    ok('> MicStallMs) { End(gone)' in cs and
+       'waveInAddBuffer(hwi, h, HDR) != 0) { End(gone)' in cs,
+       'a mic that is pulled out ends it instead of hanging')
+    stop = between('function Stop-VoiceTalk')
+    ok("rate.?limit" in stop and "'quota|rate" not in stop and
+       '$script:fallbackUntil = (Get-Date).AddHours(1)' in stop and
+       '$again = -not $Closing' in stop,
+       'out of quota it carries on with $LIVE_FALLBACK, never on "generate", never while closing')
+    ok('Stop-VoiceTalk -Closing' in window, 'closing the window never starts a new conversation')
+
     # With the dongle away, a chat is still answered - the window's face
     # shows it - but Buddy makes no remarks to an empty room.
     loop = ps.split("Write-Output 'NEXUS companion running.")[1]

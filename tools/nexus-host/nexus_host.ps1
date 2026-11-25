@@ -1150,6 +1150,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
+using Microsoft.Win32;
 
 namespace NexusVoice {
 
@@ -1446,6 +1447,12 @@ public class BuddyVoice {
     // Off with a headset (gemini.json "headset": true): no echo to fear,
     // so the mic stays open and you can cut in.
     public static bool HalfDuplex = true;
+    // Nobody heard and nothing said for this long: the conversation ends,
+    // so a forgotten window does not stream an empty room to Google.
+    public static int IdleMs = 120000;
+    // A mic that hands back no sound for this long has gone (unplugged, or
+    // lost across sleep); winmm itself says nothing.
+    public static int MicStallMs = 3000;
 
     public readonly ConcurrentQueue<string> Log = new ConcurrentQueue<string>();
     public volatile bool Done;
@@ -1485,6 +1492,7 @@ public class BuddyVoice {
     long playEnd;
     int mouth;
     long mouthAt;
+    long heardAt;      // the last word either way, for IdleMs
 
     // This turn: what was heard and said, and which faces went out.
     StringBuilder heard = new StringBuilder(), said = new StringBuilder();
@@ -1525,6 +1533,10 @@ public class BuddyVoice {
     }
 
     public void Start() {
+        // Subscribed from this (background) thread, SystemEvents raises them
+        // on a thread of its own, so they never wait on the window.
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        SystemEvents.PowerModeChanged += OnPowerMode;
         OpenAudio();
         ws = new ClientWebSocket();
         // The key in a header, never in the URL: a URL ends up in logs and
@@ -1545,11 +1557,35 @@ public class BuddyVoice {
             try {
                 Start();
             } catch (Exception e) {
-                if (!Done) Say("error: " + e.GetBaseException().Message);
+                // Kept as the reason too: a quota refusal can come at connect.
+                CloseReason = e.GetBaseException().Message;
+                if (!Done) Say("error: " + CloseReason);
                 Done = true;
             }
         });
     }
+
+    // Ends the conversation from any thread: the window's timer sees Done
+    // and calls Stop(), which closes the mic.
+    void End(string why) {
+        if (Done) return;
+        Say(why);
+        Done = true;
+    }
+
+    // Locked, logged off or switched away from: nobody is at the mic.
+    void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
+        if (e.Reason == SessionSwitchReason.SessionLock || e.Reason == SessionSwitchReason.SessionLogoff ||
+            e.Reason == SessionSwitchReason.ConsoleDisconnect || e.Reason == SessionSwitchReason.RemoteDisconnect)
+            End("This PC was locked - the conversation ended and the mic is off.");
+    }
+
+    void OnPowerMode(object sender, PowerModeChangedEventArgs e) {
+        if (e.Mode == PowerModes.Suspend)
+            End("This PC went to sleep - the conversation ended and the mic is off.");
+    }
+
+    void Heard() { Interlocked.Exchange(ref heardAt, Now()); }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct WAVEINCAPS {
@@ -1614,6 +1650,7 @@ public class BuddyVoice {
     // Something typed, into the same conversation: Buddy answers it out loud.
     public bool SendText(string text) {
         if (!setupDone || string.IsNullOrEmpty(text)) return false;
+        Heard();
         Dictionary<string, object> t = new Dictionary<string, object>();
         t["text"] = text;
         Dictionary<string, object> m = new Dictionary<string, object>();
@@ -1712,9 +1749,14 @@ public class BuddyVoice {
     }
 
     void MicLoop() {
+        const string gone = "The microphone stopped (unplugged?) - the conversation ended. Pick a mic and tap to talk again.";
         int i = 0;
+        long soundAt = Now();
         try {
             while (!Done) {
+                // A mic that was pulled out either stops handing buffers
+                // back or hands them back empty; both read as silence here.
+                if (Now() - soundAt > MicStallMs) { End(gone); break; }
                 IntPtr h = inHdrs[i];
                 if (!IsDone(h)) { Thread.Sleep(10); continue; }
                 int n = Marshal.ReadInt32(h, RECORDED);
@@ -1726,9 +1768,10 @@ public class BuddyVoice {
                 Marshal.WriteInt32(h, FLAGS, 0);
                 Marshal.WriteInt32(h, RECORDED, 0);
                 waveInPrepareHeader(hwi, h, HDR);
-                waveInAddBuffer(hwi, h, HDR);
+                if (waveInAddBuffer(hwi, h, HDR) != 0) { End(gone); break; }
                 i = (i + 1) % inHdrs.Length;
-                if (n == 0) continue;
+                if (n == 0) { Thread.Sleep(10); continue; }
+                soundAt = Now();
                 MicRms = Rms(pcm, 0, n);
                 if (!setupDone) continue;
                 // Half duplex: while Buddy talks, and a moment after, the
@@ -1803,6 +1846,9 @@ public class BuddyVoice {
                     timeline.RemoveAt(0);
                 }
                 if (level < 0) level = timeline.Count == 0 && now >= playEnd + LagMs ? 0 : mouth;
+                if (setupDone && now - Math.Max(Interlocked.Read(ref heardAt), playEnd) > IdleMs)
+                    End("Nobody has said anything for " + IdleMs / 60000 + " minutes - the conversation ended " +
+                        "to keep the mic off and save quota. Tap to talk again.");
             }
             // On a change, and an open mouth once a second as well: the
             // relay closes a mouth that has heard nothing for two.
@@ -1878,6 +1924,7 @@ public class BuddyVoice {
     void Handle(Dictionary<string, object> m) {
         if (m == null) return;
         if (m.ContainsKey("setupComplete")) {
+            Heard();
             setupDone = true;
             Say("connected - talk to " + name + ". Ctrl+C ends it.");
         }
@@ -1893,7 +1940,7 @@ public class BuddyVoice {
                 faceSet = spoke = false;
             }
             string t = Str(Obj(sc, "inputTranscription"), "text");
-            if (!string.IsNullOrEmpty(t)) { heard.Append(t); Listening(); }
+            if (!string.IsNullOrEmpty(t)) { heard.Append(t); Heard(); Listening(); }
             t = Str(Obj(sc, "outputTranscription"), "text");
             if (!string.IsNullOrEmpty(t)) said.Append(t);
             object[] parts = Arr(Obj(sc, "modelTurn"), "parts");
@@ -1954,6 +2001,9 @@ public class BuddyVoice {
         if (stopped) return;
         stopped = true;
         Done = true;
+        // Static events: left subscribed, every past session would hear them.
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+        SystemEvents.PowerModeChanged -= OnPowerMode;
         try { cts.Cancel(); } catch { }
         try { if (ws != null) ws.Abort(); } catch { }
         // A Start() still connecting is cancelled above; wait for it, so it
@@ -2776,30 +2826,48 @@ if ($Voice) {
     }
 
     $script:bv = $null
+    $script:bvModel = $model
     $script:pending = $null   # typed while connecting: sent once it is ready
     $script:lastEmo = ''
+    # Out of quota on $model, the roomier $LIVE_FALLBACK until this time.
+    $script:fallbackUntil = [datetime]::MinValue
     function Start-VoiceTalk {
         if ($script:bv) { return }
         if (-not $gem.key) { Add-VoiceLine 'note' "Voice needs a Gemini key in $KEY_FILE"; return }
         if ($script:buildError) { Add-VoiceLine 'note' "Voice cannot start: $script:buildError"; return }
-        $b = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, $setup, "$($p.name)", $faces, $VOICE_PORT)
+        $m = if ((Get-Date) -lt $script:fallbackUntil) { $LIVE_FALLBACK } else { $model }
+        $s = $setup.Replace("`"models/$model`"", "`"models/$m`"")
+        $b = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, $s, "$($p.name)", $faces, $VOICE_PORT)
         $b.MicDevice = $script:micId
         $script:bv = $b
+        $script:bvModel = $m
         $script:lastEmo = "$($b.Emotion)"
         Set-VoiceButton $true
         $b.BeginStart()
     }
-    function Stop-VoiceTalk {
+    # -Closing: the window is going, so a quota switch must not start anew.
+    function Stop-VoiceTalk([switch]$Closing) {
         $b = $script:bv
         if (-not $b) { return }
         $script:bv = $null
         $script:pending = $null
         $b.Stop()
         Read-VoiceLog $b
-        if ($b.CloseReason -match 'quota|rate|exhaust|429') {
-            Add-VoiceLine 'note' "Out of Live quota. For more, set `"liveModel`": `"$LIVE_FALLBACK`" in gemini.json."
+        $again = $false
+        # Not just "rate": that is inside "generate".
+        if ($b.CloseReason -match '\bquota\b|rate.?limit|exhaust|\b429\b') {
+            if ($script:bvModel -ne $LIVE_FALLBACK) {
+                # The limit that runs out is tokens a minute, so an hour on
+                # the roomier model is plenty, then back to the better one.
+                $script:fallbackUntil = (Get-Date).AddHours(1)
+                Add-VoiceLine 'note' "Out of $model quota - carrying on with $LIVE_FALLBACK for an hour (a new conversation)."
+                $again = -not $Closing
+            } else {
+                Add-VoiceLine 'note' 'Out of Live quota on both models - try again in a minute.'
+            }
         }
         Set-VoiceButton $false
+        if ($again) { Start-VoiceTalk }
     }
 
     # What the dongle is showing, as far as this window knows: a face held
@@ -3436,7 +3504,7 @@ if ($Voice) {
     # Closing the window ends the conversation: mic and speakers off, mouth shut.
     $w.Add_Closed({
         $timer.Stop()
-        Stop-VoiceTalk
+        Stop-VoiceTalk -Closing
         if ($script:mirror) { $script:mirror.Close() }
     })
     Set-VoiceButton $false

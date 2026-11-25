@@ -299,10 +299,17 @@ mid-sentence. So the mic sends silence while Buddy talks and for a moment
 after, and you cannot cut in. With a headset there is no echo: set
 `"headset": true` in `gemini.json` and you can interrupt Buddy mid-sentence.
 
-If a session ends because the quota ran out, set `liveModel` to
-`gemini-2.5-flash-native-audio-preview-12-2025` in `gemini.json`, as the
-window suggests. That model sometimes picks the face a moment after it
-starts talking.
+If a session ends because the quota ran out, the window carries on by
+itself with `gemini-2.5-flash-native-audio-preview-12-2025`, which has far
+more room, for an hour, then goes back. It says so, and it is a new
+conversation: what was said before is not carried over. That model sometimes
+picks the face a moment after it starts talking. Setting `liveModel` in
+`gemini.json` still picks the model for good.
+
+A conversation also ends by itself, with the mic off and a note saying why,
+when nobody is at it: the PC is locked or goes to sleep, nobody has said
+anything for two minutes, or the microphone is unplugged. Tap Talk to start
+again.
 
 **Voice typing.** Press Win+H in the chat window and talk: Windows' own voice
 typing fills in the message. On the phone, hold the Buddy tab's microphone
