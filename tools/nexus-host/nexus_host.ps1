@@ -980,9 +980,9 @@ function Get-BuddyLines($cpu, $mem, $np) {
 # lines (E an emotion, V the mouth) to the companion over a loopback UDP port,
 # and a relay thread in the companion writes them straight to the dongle.
 #
-# A thread, not the main loop: a round of the main loop blocks for about
-# 1.2 s (Get-Counter alone takes a second, the memory reading another fifth),
-# and a mouth that moves once a second is not talking.
+# A thread, not the main loop: a round of the main loop is a second or more
+# (its sleep, the memory reading, the track), and a mouth that moves once a
+# second is not talking.
 #
 # Both live in one C# source because PowerShell 5.1 has no way to do any of
 # it in time: audio arrives every 100 ms, and the mouth has to move 20 times
@@ -1088,6 +1088,44 @@ public class VoiceRelay {
         done = true;
         try { udp.Close(); } catch { }
         thread.Join(1000);
+    }
+}
+
+// The voice window's typed chat while it is not talking: one message to the
+// companion's chat inbox, the same one chat.cmd uses, and its answer back.
+// On a thread of its own, since an answer can take seconds. Each reply is
+// the companion's JSON, or "!down" (no companion) or "!timeout".
+public class BuddyChat {
+    public readonly ConcurrentQueue<string> Replies = new ConcurrentQueue<string>();
+    readonly int port;
+
+    public BuddyChat(int port) { this.port = port; }
+
+    public void Ask(string text) {
+        Thread t = new Thread(delegate () {
+            UdpClient u = null;
+            try {
+                u = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+                u.Client.ReceiveTimeout = 45000;
+                u.Connect(IPAddress.Loopback, port);
+                Dictionary<string, object> m = new Dictionary<string, object>();
+                m["text"] = text;
+                byte[] b = Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(m));
+                u.Send(b, b.Length);
+                IPEndPoint from = new IPEndPoint(IPAddress.Loopback, 0);
+                Replies.Enqueue(Encoding.UTF8.GetString(u.Receive(ref from)));
+            } catch (SocketException e) {
+                // Connected UDP: a companion that is not there shows up as
+                // a reset, not as a silent wait.
+                Replies.Enqueue(e.SocketErrorCode == SocketError.ConnectionReset ? "!down" : "!timeout");
+            } catch (Exception) {
+                Replies.Enqueue("!timeout");
+            } finally {
+                if (u != null) u.Close();
+            }
+        });
+        t.IsBackground = true;
+        t.Start();
     }
 }
 
@@ -1252,12 +1290,29 @@ public class BuddyVoice {
 
     // ClientWebSocket takes one send at a time; the mic and tool answers
     // come from different threads.
-    void Send(string s) {
+    // False when the socket is gone; the receive loop says why, once, so a
+    // dropped connection is not reported again as a microphone fault.
+    bool Send(string s) {
         byte[] b = Encoding.UTF8.GetBytes(s);
         lock (sendLock) {
-            if (ws.State != WebSocketState.Open) return;
-            ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, cts.Token).Wait();
+            if (ws == null || ws.State != WebSocketState.Open) return false;
+            try {
+                ws.SendAsync(new ArraySegment<byte>(b), WebSocketMessageType.Text, true, cts.Token).Wait();
+                return true;
+            } catch (Exception) {
+                return false;
+            }
         }
+    }
+
+    // Something typed, into the same conversation: Buddy answers it out loud.
+    public bool SendText(string text) {
+        if (!setupDone || string.IsNullOrEmpty(text)) return false;
+        Dictionary<string, object> t = new Dictionary<string, object>();
+        t["text"] = text;
+        Dictionary<string, object> m = new Dictionary<string, object>();
+        m["realtimeInput"] = t;
+        return Send(json.Serialize(m));
     }
 
     // ---- audio --------------------------------------------------------------
@@ -1377,6 +1432,7 @@ public class BuddyVoice {
                 // ponytail: a headset has no echo and could stay full duplex
                 // on its own; for now gemini.json "headset" says so.
                 if (HalfDuplex && Speaking()) Array.Clear(pcm, 0, n);
+                // A failed send is the connection, which the receive loop reports.
                 Send("{\"realtimeInput\":{\"audio\":{\"mimeType\":\"audio/pcm;rate=16000\",\"data\":\""
                      + Convert.ToBase64String(pcm) + "\"}}}");
             }
@@ -1618,10 +1674,32 @@ public class BuddyVoice {
 }
 '@
 
-# Compiled once per process; both voice.cmd and the companion use it.
+# Both voice.cmd and the companion use it. Compiling runs csc.exe and takes a
+# second or two, every start, so the result is kept beside the key, named by
+# a hash of the source: a changed source compiles afresh, the same one loads.
 function Add-VoiceTypes {
     if ('NexusVoice.BuddyVoice' -as [type]) { return }
-    Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions -ErrorAction Stop
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $sum = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($VOICE_CS))
+    $hash = -join ($sum[0..7] | ForEach-Object { $_.ToString('x2') })
+    $dll = Join-Path $HOME_DIR "voice-$hash.dll"
+    if (Test-Path $dll) {
+        try { Add-Type -Path $dll -ErrorAction Stop; return } catch {}
+    }
+    try {
+        New-Item -ItemType Directory -Force $HOME_DIR -ErrorAction Stop | Out-Null
+        Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions `
+            -OutputAssembly $dll -ErrorAction Stop
+        Add-Type -Path $dll -ErrorAction Stop
+        # Older builds go; one still loaded by a running copy stays until next time.
+        Get-ChildItem $HOME_DIR -Filter 'voice-*.dll' | Where-Object { $_.FullName -ne $dll } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    } catch {
+        # Cannot write there (or another copy is writing it now): in memory.
+        if (-not ('NexusVoice.BuddyVoice' -as [type])) {
+            Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions -ErrorAction Stop
+        }
+    }
 }
 
 # The companion's end: listen for voice.cmd's face lines. Warns once and
@@ -1672,7 +1750,7 @@ function Send-VoiceBle($link) {
 $VOICE_XAML = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Buddy" Width="344" Height="540" WindowStyle="None" AllowsTransparency="True"
+        Title="Buddy" Width="344" Height="600" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" ResizeMode="NoResize" Topmost="True" WindowStartupLocation="Manual"
         FontFamily="Segoe UI Variable Text, Segoe UI" Foreground="#ECEBFF" UseLayoutRounding="True">
   <Window.Resources>
@@ -1702,6 +1780,26 @@ $VOICE_XAML = @'
         </Setter.Value>
       </Setter>
     </Style>
+    <Style x:Key="Field" TargetType="TextBox">
+      <Setter Property="Foreground" Value="#ECEBFF"/>
+      <Setter Property="CaretBrush" Value="#00E0FF"/>
+      <Setter Property="SelectionBrush" Value="#00E0FF"/>
+      <Setter Property="FontSize" Value="13.5"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="Box" Background="#14FFFFFF" CornerRadius="19" BorderThickness="1" BorderBrush="Transparent">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="14,0,40,0" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Box" Property="BorderBrush" Value="#5500E0FF"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </Window.Resources>
   <Border x:Name="Card" Margin="14" CornerRadius="26" Background="#F50D0C22" BorderBrush="#2EFFFFFF"
           BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,1">
@@ -1714,8 +1812,9 @@ $VOICE_XAML = @'
     <Grid Margin="18,12,14,18">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
-        <RowDefinition Height="196"/>
+        <RowDefinition Height="184"/>
         <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
@@ -1726,17 +1825,17 @@ $VOICE_XAML = @'
           <TextBlock x:Name="Status" FontSize="13" Foreground="#9C9AC8" Margin="10,1,0,0" VerticalAlignment="Center"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-          <Button x:Name="MinBtn" Style="{StaticResource Flat}" Width="30" Height="30" ToolTip="Minimize">
+          <Button x:Name="MinBtn" Style="{StaticResource Flat}" Width="30" Height="30" ToolTip="Minimize" AutomationProperties.Name="Minimize">
             <TextBlock Text="&#xE921;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Foreground="#9C9AC8"/>
           </Button>
-          <Button x:Name="CloseBtn" Style="{StaticResource Flat}" Width="30" Height="30" ToolTip="Close">
+          <Button x:Name="CloseBtn" Style="{StaticResource Flat}" Width="30" Height="30" ToolTip="Close" AutomationProperties.Name="Close">
             <TextBlock Text="&#xE8BB;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Foreground="#9C9AC8"/>
           </Button>
         </StackPanel>
       </Grid>
 
-      <Grid Grid.Row="1" Width="196" Height="196" HorizontalAlignment="Center" VerticalAlignment="Center">
-        <Ellipse x:Name="Glow" Width="196" Height="196" RenderTransformOrigin="0.5,0.5">
+      <Grid Grid.Row="1" Width="184" Height="184" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Ellipse x:Name="Glow" Width="184" Height="184" RenderTransformOrigin="0.5,0.5">
           <Ellipse.RenderTransform>
             <ScaleTransform x:Name="GlowScale"/>
           </Ellipse.RenderTransform>
@@ -1761,13 +1860,24 @@ $VOICE_XAML = @'
         </Canvas>
       </Grid>
 
-      <ScrollViewer x:Name="Scroll" Grid.Row="2" VerticalScrollBarVisibility="Hidden" Margin="0,2,4,12">
+      <ScrollViewer x:Name="Scroll" Grid.Row="2" VerticalScrollBarVisibility="Hidden" Margin="0,2,4,10">
         <StackPanel x:Name="Talk"/>
       </ScrollViewer>
 
-      <Grid Grid.Row="3" Margin="0,0,4,0">
+      <Grid Grid.Row="3" Margin="0,0,4,10">
+        <TextBox x:Name="Msg" Style="{StaticResource Field}" Height="38" MaxLength="500" AutomationProperties.Name="Message"/>
+        <TextBlock x:Name="Hint" FontSize="13.5" Foreground="#6E6C9A" Margin="16,0,40,0"
+                   VerticalAlignment="Center" IsHitTestVisible="False" TextTrimming="CharacterEllipsis"/>
+        <Button x:Name="SendBtn" Style="{StaticResource Flat}" Width="30" Height="30" Margin="0,0,4,0"
+                HorizontalAlignment="Right" Background="#00E0FF" ToolTip="Send" AutomationProperties.Name="Send" Visibility="Collapsed">
+          <TextBlock Text="&#xE724;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"
+                     Foreground="#0B0B1E" HorizontalAlignment="Center"/>
+        </Button>
+      </Grid>
+
+      <Grid Grid.Row="4" Margin="0,0,4,0">
         <Button x:Name="MicBtn" Style="{StaticResource Flat}" Background="#14FFFFFF" Padding="14,0"
-                Height="36" HorizontalAlignment="Left" ToolTip="Microphone">
+                Height="36" HorizontalAlignment="Left" ToolTip="Microphone" AutomationProperties.Name="Microphone">
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE720;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
                        Foreground="#9C9AC8" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -1777,7 +1887,7 @@ $VOICE_XAML = @'
                        Foreground="#9C9AC8" VerticalAlignment="Center" Margin="8,1,0,0"/>
           </StackPanel>
         </Button>
-        <Button x:Name="TalkBtn" Style="{StaticResource Flat}" Width="60" Height="60" HorizontalAlignment="Right">
+        <Button x:Name="TalkBtn" Style="{StaticResource Flat}" Width="60" Height="60" HorizontalAlignment="Right" AutomationProperties.Name="Talk">
           <TextBlock x:Name="TalkIcon" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22"
                      HorizontalAlignment="Center"/>
         </Button>
@@ -1796,7 +1906,29 @@ $VOICE_MOODS = @{
 $VOICE_EYES = @{ HAPPY = 0.55; LOVE = 0.5; SLEEPY = 0.25; SURPRISED = 1.25; SAD = 0.8 }
 
 if ($Voice) {
-    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+    try {
+        Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+    } catch {
+        Write-Output "voice: WPF is not available - $(Get-Reason $_)"
+        return
+    }
+
+    # One window at a time: two would share the mic and talk over each other.
+    # A second double-click brings the first one forward instead.
+    $first = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" |
+        Where-Object { $_.CommandLine -like '*nexus_host.ps1*-Voice*' -and $_.ProcessId -ne $PID } |
+        Select-Object -First 1
+    if ($first) {
+        try {
+            Add-Type -AssemblyName Microsoft.VisualBasic
+            [Microsoft.VisualBasic.Interaction]::AppActivate([int]$first.ProcessId)
+        } catch {}
+        return
+    }
+
+    # The window has no console behind it, so anything that stops it opening
+    # is shown in a message box rather than lost.
+    try {
     $gem = Get-GeminiConfig
     $p = Get-Content (Get-PersonaPath) -Raw -ErrorAction Stop | ConvertFrom-Json
     $model = if ($gem.liveModel) { $gem.liveModel } else { $LIVE_MODEL }
@@ -1826,15 +1958,20 @@ if ($Voice) {
         outputAudioTranscription = @{}
     } } | ConvertTo-Json -Depth 12 -Compress
 
+    # A compile failure is shown in the window, which still opens: typed
+    # chat goes through the companion and needs none of it.
     $script:buildError = $null
     $script:mics = @()
     try {
         Add-VoiceTypes
         $script:mics = @([NexusVoice.BuddyVoice]::Mics())
+        [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
+        # Not $chat: PowerShell names ignore case, and that is the -Chat switch.
+        $script:chatClient = New-Object NexusVoice.BuddyChat($CHAT_PORT)
     } catch {
         $script:buildError = Get-Reason $_
+        $script:chatClient = $null
     }
-    [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
 
     # Which mic, remembered by name beside the key: device numbers shift
     # when a headset is plugged in, names do not.
@@ -1848,22 +1985,43 @@ if ($Voice) {
     $w = [Windows.Markup.XamlReader]::Parse($VOICE_XAML)
     $ui = @{}
     foreach ($n in 'Card', 'Pop', 'Header', 'Dot', 'Who', 'Status', 'MinBtn', 'CloseBtn', 'Glow',
-                   'GlowScale', 'Ring', 'EyeL', 'EyeR', 'Mouth', 'Scroll', 'Talk', 'MicBtn',
-                   'MicName', 'TalkBtn', 'TalkIcon') {
+                   'GlowScale', 'Ring', 'EyeL', 'EyeR', 'Mouth', 'Scroll', 'Talk', 'Msg', 'Hint',
+                   'SendBtn', 'MicBtn', 'MicName', 'TalkBtn', 'TalkIcon') {
         $ui[$n] = $w.FindName($n)
     }
     $w.Title = "$($p.name)"
     $ui.Who.Text = "$($p.name)"
 
-    function ConvertTo-VoiceColor([string]$hex) { [Windows.Media.ColorConverter]::ConvertFromString($hex) }
+    # Parsed once each: the face asks for a colour 30 times a second.
+    $script:colors = @{}
+    function ConvertTo-VoiceColor([string]$hex) {
+        if (-not $script:colors.ContainsKey($hex)) {
+            $script:colors[$hex] = [Windows.Media.ColorConverter]::ConvertFromString($hex)
+        }
+        $script:colors[$hex]
+    }
     function New-VoiceBrush([string]$hex) { New-Object Windows.Media.SolidColorBrush (ConvertTo-VoiceColor $hex) }
 
-    # Brushes made here, not in the XAML, so they can be changed every frame.
+    # The taskbar's icon: Buddy's face, drawn here rather than shipped.
+    $dv = New-Object Windows.Media.DrawingVisual
+    $dc = $dv.RenderOpen()
+    $dc.DrawEllipse((New-VoiceBrush '#171636'), (New-Object Windows.Media.Pen((New-VoiceBrush '#00E0FF'), 5)),
+        (New-Object Windows.Point(32, 32)), 28, 28)
+    $white = New-VoiceBrush '#ECEBFF'
+    $dc.DrawRoundedRectangle($white, $null, (New-Object Windows.Rect(21, 19, 8, 13)), 4, 4)
+    $dc.DrawRoundedRectangle($white, $null, (New-Object Windows.Rect(35, 19, 8, 13)), 4, 4)
+    $dc.DrawRoundedRectangle($white, $null, (New-Object Windows.Rect(24, 39, 16, 5)), 2.5, 2.5)
+    $dc.Close()
+    $icon = New-Object Windows.Media.Imaging.RenderTargetBitmap(64, 64, 96, 96, [Windows.Media.PixelFormats]::Pbgra32)
+    $icon.Render($dv)
+    $w.Icon = $icon
+
+    # Brushes made here, not in the XAML, so they can change every frame.
     $fx = @{
         ring = New-VoiceBrush '#00E0FF'; inner = New-Object Windows.Media.GradientStop
         outer = New-Object Windows.Media.GradientStop
         mouth = 0.0; glow = 0.0; eye = 1.0; r = 110.0; g = 108.0; b = 154.0
-        blinkAt = (Get-Date).AddSeconds(2); blinkEnd = [datetime]::MinValue
+        blinkAt = (Get-Date).AddSeconds(2); blinkEnd = [datetime]::MinValue; settled = $false
     }
     $fx.inner.Offset = 0.42
     $fx.outer.Offset = 1.0
@@ -1880,6 +2038,7 @@ if ($Voice) {
     }
     Set-VoiceMic $script:micId
 
+    # A bubble (you, buddy) or a centred note; kept to the last 40.
     function Add-VoiceLine([string]$kind, [string]$text) {
         $tb = New-Object Windows.Controls.TextBlock
         $tb.Text = $text
@@ -1909,6 +2068,7 @@ if ($Voice) {
         [void]$ui.Talk.Children.Add($el)
         while ($ui.Talk.Children.Count -gt 40) { $ui.Talk.Children.RemoveAt(0) }
         $ui.Scroll.ScrollToEnd()
+        $script:lastLine = $el
     }
 
     # The conversation's own lines become bubbles; anything else is a note.
@@ -1926,10 +2086,22 @@ if ($Voice) {
         $ui.TalkBtn.Background = New-VoiceBrush $(if ($on) { '#FF4D6A' } else { '#00E0FF' })
         $ui.TalkIcon.Text = [string][char]$(if ($on) { 0xE71A } else { 0xE720 })
         $ui.TalkIcon.Foreground = New-VoiceBrush $(if ($on) { '#FFFFFF' } else { '#0B0B1E' })
-        $ui.TalkBtn.ToolTip = if ($on) { 'End' } else { 'Talk' }
+        $ui.TalkBtn.ToolTip = if ($on) { 'End the conversation' } else { 'Talk' }
+        [Windows.Automation.AutomationProperties]::SetName($ui.TalkBtn, $ui.TalkBtn.ToolTip)
+        Update-VoiceHint
+    }
+
+    # The message box says where a message goes: into the spoken
+    # conversation while there is one, else to the companion's chat.
+    function Update-VoiceHint {
+        $empty = -not $ui.Msg.Text
+        $ui.Hint.Visibility = if ($empty) { 'Visible' } else { 'Collapsed' }
+        $ui.SendBtn.Visibility = if ($empty) { 'Collapsed' } else { 'Visible' }
+        $ui.Hint.Text = if ($script:bv) { "Type to $($p.name), answered out loud" } else { "Message $($p.name)" }
     }
 
     $script:bv = $null
+    $script:pending = $null   # typed while connecting: sent once it is ready
     function Start-VoiceTalk {
         if ($script:bv) { return }
         if (-not $gem.key) { Add-VoiceLine 'note' "Voice needs a Gemini key in $KEY_FILE"; return }
@@ -1944,12 +2116,62 @@ if ($Voice) {
         $b = $script:bv
         if (-not $b) { return }
         $script:bv = $null
+        $script:pending = $null
         $b.Stop()
         Read-VoiceLog $b
         if ($b.CloseReason -match 'quota|rate|exhaust|429') {
             Add-VoiceLine 'note' "Out of Live quota. For more, set `"liveModel`": `"$LIVE_FALLBACK`" in gemini.json."
         }
         Set-VoiceButton $false
+    }
+
+    # Typing: into the spoken conversation while there is one, so Buddy
+    # answers out loud in the same context; otherwise through the companion,
+    # like chat.cmd: a written answer here, the face and a line on the
+    # dongle, and faces and tricks ("high five") played at once.
+    $script:asking = $false
+    $script:typing = $null
+    $script:mood = ''
+    $script:moodUntil = [datetime]::MinValue
+    function Send-VoiceMessage {
+        $text = $ui.Msg.Text.Trim()
+        if (-not $text -or $script:asking) { return }
+        $ui.Msg.Text = ''
+        Add-VoiceLine 'you' $text
+        if ($script:bv) {
+            if ($script:bv.Ready) {
+                if (-not $script:bv.SendText($text)) { Add-VoiceLine 'note' 'Not sent - the conversation has ended.' }
+            } else {
+                $script:pending = $text
+            }
+            return
+        }
+        if (-not $script:chatClient) { Add-VoiceLine 'note' "Chat cannot start: $script:buildError"; return }
+        # One at a time: the companion answers only the newest message.
+        $script:asking = $true
+        Add-VoiceLine 'buddy' '...'
+        $script:typing = $script:lastLine
+        $script:chatClient.Ask($text)
+    }
+
+    function Receive-VoiceChat {
+        $r = $null
+        while ($script:chatClient -and $script:chatClient.Replies.TryDequeue([ref]$r)) {
+            $script:asking = $false
+            if ($script:typing) { $ui.Talk.Children.Remove($script:typing); $script:typing = $null }
+            if ($r -eq '!down') {
+                Add-VoiceLine 'note' 'The companion is not running - start it with install.cmd, or tap the mic to talk.'
+            } elseif ($r -eq '!timeout') {
+                Add-VoiceLine 'note' 'No answer. Typed messages need the companion running and the dongle connected.'
+            } else {
+                try {
+                    $j = $r | ConvertFrom-Json
+                    Add-VoiceLine 'buddy' "$($j.reply)"
+                    $script:mood = "$($j.emotion)".ToUpper()
+                    $script:moodUntil = (Get-Date).AddSeconds(8)
+                } catch {}
+            }
+        }
     }
 
     # The mic list, as a small dark menu above its button.
@@ -1978,6 +2200,7 @@ if ($Voice) {
             $item.Add_Click({
                 param($src)
                 $popup.IsOpen = $false
+                if ([int]$src.Tag -eq $script:micId) { return }
                 Set-VoiceMic ([int]$src.Tag)
                 $name = if ($script:micId -ge 0) { $script:mics[$script:micId] } else { '' }
                 try { @{ mic = $name } | ConvertTo-Json | Set-Content $VOICE_PREFS -Encoding utf8 } catch {}
@@ -1999,15 +2222,35 @@ if ($Voice) {
     })
 
     $ui.TalkBtn.Add_Click({ if ($script:bv) { Stop-VoiceTalk } else { Start-VoiceTalk } })
+    $ui.SendBtn.Add_Click({ Send-VoiceMessage })
+    $ui.Msg.Add_TextChanged({ Update-VoiceHint })
+    $ui.Msg.Add_KeyDown({
+        if ($_.Key -eq 'Return') { $_.Handled = $true; Send-VoiceMessage }
+    })
     $ui.CloseBtn.Add_Click({ $w.Close() })
     $ui.MinBtn.Add_Click({ $w.WindowState = 'Minimized' })
-    $ui.Header.Add_MouseLeftButtonDown({ $w.DragMove() })
-    $w.Add_KeyDown({ if ($_.Key -eq 'Escape') { $w.Close() } })
+    $ui.Header.Add_MouseLeftButtonDown({ try { $w.DragMove() } catch {} })
+    # Esc clears a half-typed message first, and closes only an empty box.
+    $w.Add_PreviewKeyDown({
+        if ($_.Key -ne 'Escape') { return }
+        $_.Handled = $true
+        if ($ui.Msg.Text) { $ui.Msg.Text = '' } else { $w.Close() }
+    })
+    # A fault in a handler is reported in the window, not a silent crash.
+    $w.Dispatcher.Add_UnhandledException({
+        $e = $_
+        $e.Handled = $true
+        try { Add-VoiceLine 'note' "Something went wrong: $($e.Exception.GetBaseException().Message)" } catch {}
+    })
 
     # About 30 frames a second: the conversation's lines, then the face.
     function Update-VoiceFace {
         $b = $script:bv
         $now = Get-Date
+        # At rest and settled, nothing changes until the next blink: skip the
+        # work. An idle window otherwise cost a few percent of a core.
+        if (-not $b -and -not $script:asking -and $now -ge $script:moodUntil -and $fx.settled -and
+            $now -lt $fx.blinkAt -and $now -gt $fx.blinkEnd.AddMilliseconds(400)) { return }
         $state = 'idle'
         if ($b) {
             if (-not $b.Ready) { $state = 'connecting' }
@@ -2016,27 +2259,33 @@ if ($Voice) {
             else { $state = 'listening' }
         }
         $emo = if ($b) { "$($b.Emotion)" } else { 'NEUTRAL' }
+        # A typed answer shows its face here for a few seconds too.
+        $moody = $state -ne 'speaking' -and $state -ne 'hearing' -and $now -lt $script:moodUntil
+        if ($moody) { $emo = $script:mood }
         $ui.Status.Text = switch ($state) {
             'connecting' { 'Connecting...' }
             'speaking' { 'Speaking' }
             'hearing' { 'Hearing you' }
             'listening' { 'Listening' }
-            default { 'Tap to talk' }
+            default { if ($script:asking) { 'Thinking...' } else { 'Tap to talk' } }
         }
-        $hex = switch ($state) {
-            'speaking' { if ($VOICE_MOODS[$emo]) { $VOICE_MOODS[$emo] } else { '#D633FF' } }
-            'hearing' { '#00E0FF' }
-            'listening' { '#00E0FF' }
-            'connecting' { '#9C9AC8' }
-            default { '#6E6C9A' }
-        }
+        $hex = if ($state -eq 'speaking' -or $moody) {
+                   if ($VOICE_MOODS[$emo]) { $VOICE_MOODS[$emo] } else { '#D633FF' }
+               } else {
+                   switch ($state) {
+                       'hearing' { '#00E0FF' }
+                       'listening' { '#00E0FF' }
+                       'connecting' { '#9C9AC8' }
+                       default { '#6E6C9A' }
+                   }
+               }
         $mouthTo = if ($b) { [double]$b.Mouth } else { 0.0 }
         $glowTo = switch ($state) {
             'speaking' { 0.55 + 0.11 * $mouthTo }
             'hearing' { 0.5 + 0.5 * [math]::Min(1.0, $b.MicRms / 5000.0) }
             'listening' { 0.42 }
             'connecting' { 0.3 + 0.12 * [math]::Sin($now.TimeOfDay.TotalSeconds * 4) }
-            default { 0.2 }
+            default { if ($moody) { 0.45 } else { 0.2 } }
         }
         # Eased toward their targets, so nothing jumps.
         $fx.mouth += ($mouthTo - $fx.mouth) * 0.5
@@ -2045,10 +2294,12 @@ if ($Voice) {
         $fx.r += ($c.R - $fx.r) * 0.15
         $fx.g += ($c.G - $fx.g) * 0.15
         $fx.b += ($c.B - $fx.b) * 0.15
-        $rgb = [byte[]]@([math]::Round($fx.r), [math]::Round($fx.g), [math]::Round($fx.b))
-        $fx.inner.Color = [Windows.Media.Color]::FromArgb(140, $rgb[0], $rgb[1], $rgb[2])
-        $fx.outer.Color = [Windows.Media.Color]::FromArgb(0, $rgb[0], $rgb[1], $rgb[2])
-        $fx.ring.Color = [Windows.Media.Color]::FromArgb(255, $rgb[0], $rgb[1], $rgb[2])
+        $r = [byte][math]::Round($fx.r)
+        $g = [byte][math]::Round($fx.g)
+        $bl = [byte][math]::Round($fx.b)
+        $fx.inner.Color = [Windows.Media.Color]::FromArgb(140, $r, $g, $bl)
+        $fx.outer.Color = [Windows.Media.Color]::FromArgb(0, $r, $g, $bl)
+        $fx.ring.Color = [Windows.Media.Color]::FromArgb(255, $r, $g, $bl)
         $ui.GlowScale.ScaleX = 0.74 + 0.34 * $fx.glow
         $ui.GlowScale.ScaleY = $ui.GlowScale.ScaleX
 
@@ -2061,11 +2312,14 @@ if ($Voice) {
             $fx.blinkAt = $now.AddMilliseconds((Get-Random -Minimum 2500 -Maximum 5500))
         }
         $eyeTo = if ($now -lt $fx.blinkEnd) { 0.1 }
-                 elseif ($state -eq 'speaking' -and $VOICE_EYES[$emo]) { $VOICE_EYES[$emo] }
+                 elseif (($state -eq 'speaking' -or $moody) -and $VOICE_EYES[$emo]) { $VOICE_EYES[$emo] }
                  else { 1.0 }
         $fx.eye += ($eyeTo - $fx.eye) * 0.55
         $ui.EyeL.ScaleY = $fx.eye
         $ui.EyeR.ScaleY = $fx.eye
+        $fx.settled = [math]::Abs($glowTo - $fx.glow) -lt 0.003 -and $fx.mouth -lt 0.01 -and
+            [math]::Abs($eyeTo - $fx.eye) -lt 0.01 -and
+            [math]::Abs($c.R - $fx.r) + [math]::Abs($c.G - $fx.g) + [math]::Abs($c.B - $fx.b) -lt 2
     }
 
     $timer = New-Object Windows.Threading.DispatcherTimer
@@ -2074,9 +2328,20 @@ if ($Voice) {
         $b = $script:bv
         if ($b) {
             Read-VoiceLog $b
+            if ($script:pending -and $b.Ready) {
+                if (-not $b.SendText($script:pending)) { Add-VoiceLine 'note' 'Not sent - the conversation has ended.' }
+                $script:pending = $null
+            }
             if ($b.Done) { Stop-VoiceTalk }
         }
-        Update-VoiceFace
+        Receive-VoiceChat
+        # Nothing to draw while minimised.
+        if ($w.WindowState -ne 'Minimized') { Update-VoiceFace }
+        # 30 frames a second while something moves, 10 at rest: a blink still
+        # looks like one, and an idle window costs a third as much.
+        $busy = $script:bv -or $script:asking -or (Get-Date) -lt $script:moodUntil
+        $want = if ($busy) { 33 } else { 100 }
+        if ($timer.Interval.TotalMilliseconds -ne $want) { $timer.Interval = [TimeSpan]::FromMilliseconds($want) }
     })
 
     # Bottom right, above the taskbar, and it pops: a quick fade and a
@@ -2094,8 +2359,19 @@ if ($Voice) {
         $ui.Pop.BeginAnimation([Windows.Media.ScaleTransform]::ScaleYProperty, $grow)
         $fade = New-Object Windows.Media.Animation.DoubleAnimation(0.0, 1.0, (New-Object Windows.Duration([TimeSpan]::FromMilliseconds(180))))
         $ui.Card.BeginAnimation([Windows.UIElement]::OpacityProperty, $fade)
+        # Without the companion, or with one installed before the voice
+        # relay, the voice works but the dongle's face cannot move.
+        $relayUp = $true
+        try {
+            $relayUp = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() |
+                Where-Object { $_.Port -eq $VOICE_PORT }).Count -gt 0
+        } catch {}
+        if (-not $relayUp) {
+            Add-VoiceLine 'note' "The companion is not running (or needs install.cmd again), so the dongle's face will not move."
+        }
         $timer.Start()
         Start-VoiceTalk
+        [void]$ui.Msg.Focus()
     })
     # Closing the window ends the conversation: mic and speakers off, mouth shut.
     $w.Add_Closed({
@@ -2103,6 +2379,10 @@ if ($Voice) {
         Stop-VoiceTalk
     })
     Set-VoiceButton $false
+    } catch {
+        [void][Windows.MessageBox]::Show("Buddy's voice window could not open:`n$(Get-Reason $_)", 'NEXUS', 'OK', 'Error')
+        return
+    }
     [void]$w.ShowDialog()
     return
 }
@@ -2151,10 +2431,29 @@ if ($List) {
     return
 }
 
-# One sample to prime the counter - the first read of % Processor Time is
-# always 0 and would put a lie on the screen for the first second.
+# CPU load from a counter kept open: NextValue() is the load since the last
+# call, and returns at once. Get-Counter, which this used before, took a
+# one-second sample every round - about 70 ms of CPU each time, most of this
+# companion's own load - and held the round up for that second. Get-Counter
+# stays as the fallback where the counter cannot be opened.
 $cpuCounter = '\Processor(_Total)\% Processor Time'
-try { Get-Counter $cpuCounter -ErrorAction Stop | Out-Null } catch {}
+$script:cpuPc = $null
+try {
+    $script:cpuPc = New-Object Diagnostics.PerformanceCounter('Processor', '% Processor Time', '_Total')
+    # One read to prime it - the first is always 0 and would put a lie on
+    # the screen for the first second.
+    [void]$script:cpuPc.NextValue()
+} catch {
+    $script:cpuPc = $null
+    try { Get-Counter $cpuCounter -ErrorAction Stop | Out-Null } catch {}
+}
+# Memory the same way: GlobalMemoryStatusEx through .NET, at no cost, where
+# a CIM query took about 16 ms of CPU and a fifth of a second every round.
+$script:memInfo = $null
+try {
+    Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction Stop
+    $script:memInfo = New-Object Microsoft.VisualBasic.Devices.ComputerInfo
+} catch {}
 
 Write-Output 'NEXUS companion running. Ctrl-C to stop.'
 $useUsb = $Transport -ne 'Ble'
@@ -2318,25 +2617,31 @@ try {
         $lastClock = $now
     }
 
-    # While voice.cmd is talking over Bluetooth, skip the load readings: they
-    # block for about 1.2 s, and the mouth's lines wait on this thread. The
-    # HOST screen keeps its last numbers for a conversation's length.
+    # Both readings are instant. Their fallbacks (Get-Counter, CIM) are not,
+    # and while voice.cmd talks over Bluetooth they are skipped: they hold the
+    # round up, and the mouth's lines wait on this thread.
     $voiceBle = $ble -and $script:relay -and
         ([DateTime]::UtcNow - $script:relay.HeardAt).TotalSeconds -lt 5
 
-    if (-not $voiceBle) {
-        try {
+    try {
+        if ($script:cpuPc) {
+            $cpu = $script:cpuPc.NextValue()
+        } elseif (-not $voiceBle) {
             $cpu = (Get-Counter $cpuCounter -ErrorAction Stop
                    ).CounterSamples[0].CookedValue
-            $lines.Add('C ' + [int][math]::Round($cpu))
-        } catch {}
+        }
+        if ($null -ne $cpu) { $lines.Add('C ' + [int][math]::Round($cpu)) }
+    } catch {}
 
-        try {
+    try {
+        if ($script:memInfo) {
+            $used = 100 * (1 - $script:memInfo.AvailablePhysicalMemory / $script:memInfo.TotalPhysicalMemory)
+        } elseif (-not $voiceBle) {
             $os = Get-CimInstance Win32_OperatingSystem
             $used = 100 * (1 - $os.FreePhysicalMemory / $os.TotalVisibleMemorySize)
-            $lines.Add('M ' + [int][math]::Round($used))
-        } catch {}
-    }
+        }
+        if ($null -ne $used) { $lines.Add('M ' + [int][math]::Round($used)) }
+    } catch {}
 
     $title, $artist, $playing = Get-NowPlaying
     $np = "$title|$artist|$playing"
@@ -2425,7 +2730,9 @@ try {
         Write-Output 'link lost; waiting for the dongle'
         $script:waiting = $true
     }
-    # The wait between rounds doubles as the voice relay's Bluetooth pump.
+    # The wait between rounds doubles as the voice relay's Bluetooth pump:
+    # every 40 ms while a voice session is talking, every 200 ms otherwise,
+    # so a companion nobody is talking to is not woken 25 times a second.
     $until = (Get-Date).AddMilliseconds([int]($Interval * 1000))
     while ($true) {
         if ($ble -and $script:relay -and -not (Send-VoiceBle $ble)) {
@@ -2437,7 +2744,9 @@ try {
         }
         $left = ($until - (Get-Date)).TotalMilliseconds
         if ($left -le 0) { break }
-        Start-Sleep -Milliseconds ([int][math]::Min($left, 40))
+        $step = if ($ble -and $script:relay -and
+                    ([DateTime]::UtcNow - $script:relay.HeardAt).TotalSeconds -lt 5) { 40 } else { 200 }
+        Start-Sleep -Milliseconds ([int][math]::Min($left, $step))
     }
   }
 } finally {

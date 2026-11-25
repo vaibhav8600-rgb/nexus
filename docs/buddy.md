@@ -180,8 +180,10 @@ Out of quota, it rests - a minute, then longer each time - and says so once.
 
 Without a key it says canned lines from `persona/persona.json`.
 
-**Talking to it.** Double-click `tools/nexus-host/chat.cmd` (or run
-`nexus_host.ps1 -Chat`) while the Windows companion is running, and type.
+**Talking to it.** Type in the voice window's message box (see *Talking out
+loud* below) with the conversation ended, or double-click
+`tools/nexus-host/chat.cmd` (`nexus_host.ps1 -Chat`) for the same in a
+console, while the Windows companion is running.
 The full answer comes back in that window, and the dongle shows the face,
 a short line and its sound. Buddy remembers the last six exchanges until
 the companion restarts. A message is answered straight away, not held to
@@ -212,9 +214,27 @@ The window shows the same: a face whose mouth moves with the voice and whose
 glow takes the mood, a status line, and what each of you said. The round
 button ends the conversation and starts a new one. The pill beside it picks
 the microphone, and the window remembers it by name in
-`%LOCALAPPDATA%\NEXUS\voice.json`. Drag the window by its top edge. Closing it,
-or Esc, ends the conversation with the mouth shut. To see errors that happen
-before the window opens, run `nexus_host.ps1 -Voice` from a PowerShell prompt.
+`%LOCALAPPDATA%\NEXUS\voice.json`. Drag the window by its top edge. Closing it
+ends the conversation with the mouth shut; Esc clears a half-typed message,
+and closes the window when there is none. Double-clicking `voice.cmd` again
+brings the open window forward rather than opening a second.
+
+**Typing in the window.** The message box above the buttons goes where the
+conversation is:
+
+| | A typed message |
+| --- | --- |
+| Talking (red button) | Joins the spoken conversation. Buddy answers it out loud, with the same memory of what was said. |
+| Ended (cyan button) | Goes to the companion's chat, the same as `chat.cmd`: a written answer, the face and a short line on the dongle, and faces and tricks ("high five", "sing") played at once. |
+
+So for a quiet chat, end the conversation and type. A message typed while it
+is still connecting is sent once it is ready.
+
+The compiled audio and window code is kept as
+`%LOCALAPPDATA%\NEXUS\voice-<hash>.dll`, so later starts skip compiling; a new
+version of the script builds a new one. If something stops the window opening,
+a message box says what; run `nexus_host.ps1 -Voice` from a PowerShell prompt
+to see more.
 
 The face and mouth go through the companion, which already holds the dongle's
 port: `voice.cmd` sends them to it on `127.0.0.1:47802`, and the companion
@@ -327,9 +347,8 @@ is a NORMAL screen, not a game, so the display still blanks on its timeout.
 - Talking out loud is Windows only (`voice.cmd`). On the phone, voice is a
   recorded clip (tap or hold) that is written down when you finish, and
   Buddy answers in text.
-- With `voice.cmd` over Bluetooth, the companion skips its CPU and memory
-  readings while you talk, so the HOST screen keeps its last numbers until
-  the conversation ends. The mouth is a little less smooth than over USB.
+- With `voice.cmd` over Bluetooth, the mouth is a little less smooth than
+  over USB: its lines wait for the companion's Bluetooth writes.
 - With speakers, `voice.cmd` is half duplex: you cannot cut in while Buddy
   talks. A headset is not detected, so `"headset": true` has to be set by hand.
 - Gemini ends a voice session after about 15 minutes; run `voice.cmd` again.

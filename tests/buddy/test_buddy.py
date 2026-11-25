@@ -467,6 +467,19 @@ def voice():
     ok("$LIVE_VOICE = 'Achernar'" in ps and '$($v.spoken)' in ps,
        'Buddy speaks in a soft voice, in the persona\'s spoken style')
 
+    # PowerShell names ignore case: "$chat = ..." in the window once tried to
+    # turn the chat client into the -Chat switch, and voice never started.
+    params = re.findall(r'^\s*\[[^\]]+\]\s*\$(\w+)', ps.split('param(', 1)[1].split('\n)\n', 1)[0], re.M)
+    window = ps.split('\nif ($Voice) {', 1)[1].split('\n}\n', 1)[0]
+    clash = sorted({n for n in params
+                    if re.search(r'(?<![\w:])\$%s\s*=[^=]' % n, window, re.I)})
+    ok(params and not clash,
+       'the voice window assigns to no variable named like a parameter: %s' % clash)
+    ok('BuddyChat($CHAT_PORT)' in window and '.SendText(' in window,
+       'typed messages go into the spoken conversation, or to the companion chat')
+    ok('-like \'*nexus_host.ps1*-Voice*\'' in window and 'AppActivate' in window,
+       'a second voice.cmd brings the open window forward instead of a second one')
+
     # The mouth's RMS -> level mapping, run for real where PowerShell is.
     if os.name != 'nt' or not cs:
         print('  skip  BuddyVoice.Level (needs Windows PowerShell)')
