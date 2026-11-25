@@ -555,6 +555,18 @@ def voice():
        'out of quota it carries on with $LIVE_FALLBACK, never on "generate", never while closing')
     ok('Stop-VoiceTalk -Closing' in window, 'closing the window never starts a new conversation')
 
+    # Ctrl+Alt+Shift+N toggles Talk from anywhere; never plain Ctrl+Alt+N.
+    ok('$TALK_MODS = 7' in ps and '$TALK_VK = 0x4E' in ps and "'Ctrl+Alt+Shift+N'" in ps,
+       'the Talk hotkey is Ctrl+Alt+Shift+N, not VS Code\'s Ctrl+Alt+N')
+    ok('MOD_NOREPEAT' in cs and 'UnregisterHotKey' in cs,
+       'a held key is one press, and the hotkey is given back')
+    ok('$script:hotkey.Take() -gt 0' in window and '$script:hotkey.Close()' in window and
+       'is taken by another app' in window,
+       'the window toggles Talk on the hotkey, frees it on close, says when it is taken')
+    ok('LC(LA(LS(N)))' in read('docs', 'buddy.md'), 'the docs give the ZMK binding for it')
+    # Live answers current questions from the web.
+    ok('@{ googleSearch = @{} }' in window, 'a voice conversation can search Google')
+
     # With the dongle away, a chat is still answered - the window's face
     # shows it - but Buddy makes no remarks to an empty room.
     loop = ps.split("Write-Output 'NEXUS companion running.")[1]
