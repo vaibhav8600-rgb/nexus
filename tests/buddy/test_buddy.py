@@ -590,15 +590,22 @@ def voice():
     # carry them, and without it "show me an angry face" did nothing.
     log = between('function Read-VoiceLog')
     send = between('function Send-VoiceMessage')
-    act = between('function Invoke-VoiceCommand')
+    act = between('function Invoke-VoiceCommand', '\n    }\n')
     ok('Invoke-VoiceCommand $m.Substring(5)' in log and 'Invoke-VoiceCommand $text' in send and
        '$script:persona = $p' in window,
        'a face or trick asked for, spoken or typed mid-conversation, goes to the matcher')
     ok('Get-BuddyCommand $text' in act and '$script:bv.HoldFaces(' in act and
-       '$script:chatClient.Ask($text)' in act and '$script:quietReplies' in act and
-       'if ($script:quietReplies -gt 0)' in window,
-       'the companion plays it on the dongle, its written answer is not shown, and the '
-       'faces read from the words hold off meanwhile')
+       '$script:cmdClient.Ask($text)' in act and 'chatClient' not in act and
+       '$script:cmdClient.Replies.TryDequeue([ref]$r)) {}' in window,
+       'the companion plays it on the dongle; its answer comes back on a client of its '
+       'own and is never shown, so it cannot take a typed chat\'s place')
+    ok('Invoke-VoiceCommand $script:pending' in window,
+       'a message typed while connecting is matched too, once it is sent')
+    ok('if (r.Contains("already connected")) return "drop";' in cs and
+       'ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure' in cs and
+       "$script:resumed -and $kind -in 'refused', 'drop'" in window,
+       'a resume that comes back too soon is retried with the conversation told, '
+       'never rests 3.8 for an hour; and Stop says goodbye so Google lets go sooner')
     prompt = ps.split('function Get-BuddyPrompt')[1].split('\n}\n')[0]
     ok('your face really does it on the dongle by itself' in prompt and
        "never say you can't" in prompt,
@@ -677,7 +684,8 @@ def voice():
             "  ForEach-Object { \"$($v::FaceFor($_))\" }) -join ','",
             # What a close means for the next step of the chain.
             "(@('You exceeded your current quota', 'models/x is not found for API version',",
-            "   'The service is currently unavailable', 'Failed to generate content') |",
+            "   'The service is currently unavailable', 'Failed to generate content',",
+            "   'PolicyViolation: session is already connected to an existing client') |",
             "  ForEach-Object { $v::Classify($_) }) -join ','",
         ]))
     err = ''
@@ -694,7 +702,7 @@ def voice():
        % (out[0], err))
     ok(out[1] == 'HAPPY,SAD,HAPPY,',
        'the face follows the last feeling in the words, none for plain facts (%s)' % out[1])
-    ok(out[2] == 'quota,refused,busy,drop',
+    ok(out[2] == 'quota,refused,busy,drop,drop',
        'a close is told apart as quota, refused, busy or a drop (%s)' % out[2])
 
 

@@ -1640,6 +1640,9 @@ public class BuddyVoice {
     public static string Classify(string reason) {
         string r = (reason ?? "").ToLowerInvariant();
         if (Regex.IsMatch(r, @"\bquota\b|rate.?limit|exhaust|\b429\b")) return "quota";
+        // A resume that came back before Google let go of the old connection
+        // (measured): a retry, not a model to rest for an hour.
+        if (r.Contains("already connected")) return "drop";
         if (Regex.IsMatch(r, @"not found|not supported|unsupported|permission|api key|invalid argument|policy")) return "refused";
         if (Regex.IsMatch(r, @"unavailable|overload|high demand|\b50\d\b|internal|deadline")) return "busy";
         return "drop";
@@ -2474,6 +2477,15 @@ public class BuddyVoice {
         // Static events: left subscribed, every past session would hear them.
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         SystemEvents.PowerModeChanged -= OnPowerMode;
+        // Said goodbye rather than dropped: Google lets go of the session
+        // sooner, so a resume straight after is not "already connected".
+        // Under sendLock: one send at a time, and the mic may be sending.
+        try {
+            lock (sendLock) {
+                if (ws != null && ws.State == WebSocketState.Open)
+                    ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None).Wait(500);
+            }
+        } catch { }
         try { cts.Cancel(); } catch { }
         try { if (ws != null) ws.Abort(); } catch { }
         // A Start() still connecting is cancelled above; wait for it, so it
@@ -3116,10 +3128,15 @@ if ($Voice) {
         [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
         # Not $chat: PowerShell names ignore case, and that is the -Chat switch.
         $script:chatClient = New-Object NexusVoice.BuddyChat($CHAT_PORT)
+        # Faces and tricks from a conversation go to the same inbox, but their
+        # answers come back here, apart, and are never shown: replies can
+        # arrive in any order, and must not take a typed chat's place.
+        $script:cmdClient = New-Object NexusVoice.BuddyChat($CHAT_PORT)
         if (-not $Shot) { [NexusVoice.Machine]::Warm() }
     } catch {
         $script:buildError = Get-Reason $_
         $script:chatClient = $null
+        $script:cmdClient = $null
     }
     # What the companion shows on the dongle, so this face can show it too.
     $script:mirror = $null
@@ -3284,16 +3301,12 @@ if ($Voice) {
     # to chat: the companion plays it (it holds the dongle's port, and the
     # window's face follows), while Gemini still answers out loud. The faces
     # read from Buddy's words stay out of the way until it is done.
-    $script:quietReplies = 0
     function Invoke-VoiceCommand([string]$text) {
         $cmd = Get-BuddyCommand $text
         if (-not $cmd -or -not $script:bv) { return }
         $script:bv.HoldFaces(@($cmd.steps).Count * $STEP_MS + 2500)
-        if ($script:chatClient) {
-            # Its written answer is not wanted: Buddy is answering aloud.
-            $script:quietReplies++
-            $script:chatClient.Ask($text)
-        }
+        # Its written answer is not wanted: Buddy is answering aloud.
+        if ($script:cmdClient) { $script:cmdClient.Ask($text) }
     }
 
     # The conversation's own lines become bubbles; anything else is a note.
@@ -3344,6 +3357,7 @@ if ($Voice) {
     $script:resume = @{}      # 3.8's last resumption handle, and its model
     $script:restarts = @()    # automatic restarts in the last minute
     $script:dropAt = $null
+    $script:resumed = $false  # the running conversation was resumed from a handle
 
     function Get-TierName([string]$m) {
         switch -regex ($m) {
@@ -3386,6 +3400,7 @@ if ($Voice) {
             $b = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, (Get-VoiceSetup $m $handle $recent),
                 "$($p.name)", $faces, $VOICE_PORT)
         }
+        $script:resumed = [bool]$handle
         $b.MicDevice = $script:micId
         $script:bv = $b
         $script:tier = $i
@@ -3404,10 +3419,16 @@ if ($Voice) {
         Read-VoiceLog $b
         $m = $script:tiers[$script:tier]
         if ($b.ResumeHandle) { $script:resume = @{ model = $m; handle = $b.ResumeHandle } }
+        $kind = "$($b.EndKind)"
+        # A resume that failed is the handle's fault, not the model's: try
+        # again telling it the conversation instead, and rest nothing.
+        if ($script:resumed -and $kind -in 'refused', 'drop' -and -not $b.ResumeHandle) {
+            $script:resume = @{}
+            $kind = 'goaway'
+        }
         Set-VoiceButton $false
         # Ended on purpose - Talk again, a lock, sleep, nobody talking - or
         # the window closing: nothing to carry on.
-        $kind = "$($b.EndKind)"
         if ($Closing -or -not $kind) { return }
         # A chain that fails all the way down must not spin: six automatic
         # restarts a minute at most.
@@ -3528,9 +3549,9 @@ if ($Voice) {
 
     function Receive-VoiceChat {
         $r = $null
+        # A face or trick from the conversation: played, nothing to show.
+        while ($script:cmdClient -and $script:cmdClient.Replies.TryDequeue([ref]$r)) {}
         while ($script:chatClient -and $script:chatClient.Replies.TryDequeue([ref]$r)) {
-            # A face or trick from the conversation: played, nothing to show.
-            if ($script:quietReplies -gt 0) { $script:quietReplies--; continue }
             $script:asking = $false
             if ($script:typing) { $ui.Talk.Children.Remove($script:typing); $script:typing = $null }
             $stats = if ($r -eq '!down') { Get-StatsReply $script:lastAsk }
@@ -4019,7 +4040,12 @@ if ($Voice) {
         if ($b) {
             Read-VoiceLog $b
             if ($script:pending -and $b.Ready) {
-                if (-not $b.SendText($script:pending)) { Add-VoiceLine 'note' 'Not sent - the conversation has ended.' }
+                if ($b.SendText($script:pending)) {
+                    Add-VoiceRecent 'Owner' $script:pending
+                    Invoke-VoiceCommand $script:pending
+                } else {
+                    Add-VoiceLine 'note' 'Not sent - the conversation has ended.'
+                }
                 $script:pending = $null
             }
             if ($b.Done) { Stop-VoiceTalk }
