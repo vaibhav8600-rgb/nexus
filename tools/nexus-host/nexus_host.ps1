@@ -799,6 +799,75 @@ function Get-BuddyCommand([string]$text) {
     $null
 }
 
+# ---- this PC's numbers, answered by the PC itself -------------------------
+
+# A typed question about this PC - "how's my laptop doing?", "how much
+# battery?", "what's using my memory?" - is answered here, at once, from
+# its own numbers: like a face or a trick, it never goes to Gemini. Only a
+# spoken one in voice.cmd does, because Gemini has to say it out loud.
+$STATS_ASK = '\b(cpu|processor|ram|memory|disk|storage|ssd|battery|charging|uptime|specs?|stats)\b|' +
+             '\bhow(''s| is| are)\b.{0,24}\b(pc|laptop|computer|machine|system)\b|' +
+             '\bwhat.{0,16}\busing (my |the )?(memory|ram|cpu)\b'
+
+# @{ reply; steps } like a command, or $null for anything else - and for a
+# long message, which says more than a question about numbers.
+function Get-StatsReply([string]$text) {
+    if (-not $text -or $text.Length -gt 120 -or $text -notmatch $STATS_ASK) { return $null }
+    if (-not ('NexusVoice.Machine' -as [type])) { return $null }
+    try { $d = [NexusVoice.Machine]::Stats() } catch { return $null }
+    $t = $text.ToLower()
+    $cpu = $t -match '\b(cpu|processor|load)\b'
+    $mem = $t -match '\b(ram|memory|using)\b'
+    $disk = $t -match '\b(disk|storage|ssd|space)\b'
+    $bat = $t -match '\b(battery|charging|charge|power)\b'
+    $up = $t -match '\b(uptime|on for|running for)\b'
+    $spec = $t -match '\b(specs?|model|windows|version)\b'
+    $all = -not ($cpu -or $mem -or $disk -or $bat -or $up -or $spec)
+    $hasBat = $d.ContainsKey('battery_percent')
+
+    $say = @()
+    if ($all -or $cpu) { $say += "CPU is at $($d.cpu_percent)%." }
+    if ($spec) { $say += "It's $($d.windows) on an $($d.cpu), $($d.cpu_threads) threads." }
+    if ($all -or $mem) {
+        $s = "Memory: $($d.ram_used_gb) of $($d.ram_total_gb) GB in use ($($d.ram_percent)%)."
+        $top = @($d.top_memory_apps)
+        if ($top.Count) { $s += " Most of it: $($top -join ', ')." }
+        $say += $s
+    }
+    if (($all -or $disk) -and $d.ContainsKey('disk_free_gb')) {
+        $say += "$($d.disk) has $($d.disk_free_gb) GB free of $($d.disk_total_gb) GB."
+    }
+    if ($bat -and -not $hasBat) { $say += 'No battery here - it runs on mains power.' }
+    if (($all -or $bat) -and $hasBat) {
+        $say += "Battery $($d.battery_percent)%, $(if ($d.charging) { 'charging' } else { 'on battery' })."
+    }
+    if ($all -or $up) { $say += "On for $($d.uptime)." }
+
+    # The face: a thumbs-up, unless what was asked about wants a look - a
+    # nearly full disk does not make the battery answer sad.
+    $busy = ($all -or $cpu -or $mem) -and ($d.cpu_percent -ge 85 -or $d.ram_percent -ge 90)
+    $lowDisk = ($all -or $disk) -and $d.ContainsKey('disk_free_gb') -and $d.disk_free_gb -lt 0.1 * $d.disk_total_gb
+    $lowBat = ($all -or $bat) -and $hasBat -and $d.battery_percent -lt 15 -and -not $d.charging
+    if ($busy) {
+        $emo = 'SURPRISED'; $line = 'WHOA, BUSY PC!'; $say = @("It's working hard!") + $say
+    } elseif ($lowDisk -or $lowBat) {
+        $emo = 'SAD'
+        if ($lowDisk) { $say += "$($d.disk) is nearly full - worth a clean-up." }
+        if ($lowBat) { $say += 'Battery is low - plug me in?' }
+        $line = if ($lowBat) { 'BATTERY LOW...' } else { 'DISK NEARLY FULL' }
+    } else {
+        $emo = 'THUMBSUP'
+        if ($all) { $say = @('All good!') + $say }
+        $line = if ($all) { "CPU $($d.cpu_percent)% RAM $($d.ram_percent)%" }
+                elseif ($bat -and $hasBat) { "BATTERY $($d.battery_percent)%" }
+                elseif ($disk -and $d.ContainsKey('disk_free_gb')) { "$([int]$d.disk_free_gb) GB FREE" }
+                elseif ($mem) { "RAM $($d.ram_percent)% USED" }
+                elseif ($cpu) { "CPU AT $($d.cpu_percent)%" }
+                else { 'HERE YOU GO!' }
+    }
+    @{ reply = ($say -join ' '); steps = @(, @("E $emo", "S $(ConvertTo-BuddyLine $line)")) }
+}
+
 function Write-BuddyWarning([string]$kind, [string]$text) {
     # Once per kind of failure. Never the key.
     if (-not $script:bud.complained.ContainsKey($kind)) {
@@ -813,10 +882,6 @@ function Start-BuddyAsk([string]$reason, $cpu, $mem, $np, $chat = $null) {
     $now = Get-Date
     $ctx = @("Why: $($REASONS[$reason]).")
     if ($chat) { $ctx += "The owner says: $($chat.text)" }
-    # Asked about this PC: its numbers, for this answer only.
-    if ($chat -and $chat.text -match $MACHINE_WORDS -and ('NexusVoice.Machine' -as [type])) {
-        try { $ctx += "Their computer right now (they asked): $([NexusVoice.Machine]::Summary())" } catch {}
-    }
     $h = $now.Hour
     $part = if ($h -lt 5 -or $h -ge 23) { 'night' } elseif ($h -lt 12) { 'morning' }
             elseif ($h -lt 18) { 'afternoon' } else { 'evening' }
@@ -970,6 +1035,8 @@ function Get-BuddyLines($cpu, $mem, $np, [switch]$ChatOnly) {
     # is being answered.
     $msg = Receive-BuddyChat
     $cmd = if ($msg) { Get-BuddyCommand $msg.text }
+    # A question about this PC: answered from its own numbers, like a command.
+    if (-not $cmd -and $msg) { $cmd = Get-StatsReply $msg.text }
     if ($cmd) {
         # A face or a trick: no Gemini, no wait. A new one replaces any
         # still playing.
@@ -1203,7 +1270,9 @@ public static class Machine {
                 d["cpu_percent"] = (int)Math.Round(cpu.NextValue());
             } catch { }
         }
-        d["cpu"] = Reg(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString");
+        // "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz" -> "Intel Core i5-8250U": said out loud, the rest is noise.
+        string model = Regex.Replace(Reg(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString"), @"\((R|TM|C)\)|\s+CPU\b|\s*@.*$|\s+with .*$", "", RegexOptions.IgnoreCase);
+        d["cpu"] = Regex.Replace(model, @"\s+", " ").Trim();
         d["cpu_threads"] = Environment.ProcessorCount;
         MEMORYSTATUSEX m = new MEMORYSTATUSEX();
         m.dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX));
@@ -1967,10 +2036,6 @@ function Send-BuddyMirror($lines) {
         [void]$script:mirrorUdp.Send($b, $b.Length, (New-Object Net.IPEndPoint([Net.IPAddress]::Loopback, $MIRROR_PORT)))
     } catch {}
 }
-
-# Words that make a chat message a question about this PC, so Gemini is
-# given its numbers for that answer - and only then.
-$MACHINE_WORDS = '\b(cpu|processor|ram|memory|disk|storage|ssd|drive|battery|charg\w*|uptime|stats?|specs?|performance|slow|laggy|fan|hot|pc|computer|laptop|machine|system|apps?|process(es)?)\b'
 
 # The relay's queued lines out over Bluetooth, in one write. Only the last
 # mouth position of a run counts - a mouth that fell behind skips ahead
@@ -2775,12 +2840,18 @@ if ($Voice) {
     # dongle (and on this face, through the mirror), tricks played at once.
     $script:asking = $false
     $script:typing = $null
+    $script:lastAsk = ''
     function Send-VoiceMessage {
         $text = $ui.Msg.Text.Trim()
         if (-not $text -or $script:asking) { return }
         $ui.Msg.Text = ''
         Add-VoiceLine 'you' $text
-        if ($script:bv) {
+        # A question about this PC never goes to Gemini, even mid-conversation:
+        # the companion answers it from the PC's own numbers (and the dongle
+        # shows it); without a companion, this window does.
+        $stats = Get-StatsReply $text
+        if ($stats -and -not $script:chatClient) { Show-VoiceStats $stats; return }
+        if ($script:bv -and -not $stats) {
             if ($script:bv.Ready) {
                 if (-not $script:bv.SendText($text)) { Add-VoiceLine 'note' 'Not sent - the conversation has ended.' }
             } else {
@@ -2791,9 +2862,16 @@ if ($Voice) {
         if (-not $script:chatClient) { Add-VoiceLine 'note' "Chat cannot start: $script:buildError"; return }
         # One at a time: the companion answers only the newest message.
         $script:asking = $true
+        $script:lastAsk = $text
         Add-VoiceLine 'buddy' '...'
         $script:typing = $script:lastLine
         $script:chatClient.Ask($text)
+    }
+
+    # A PC answer shown here, face and line included, without the companion.
+    function Show-VoiceStats($stats) {
+        Add-VoiceLine 'buddy' $stats.reply
+        foreach ($l in $stats.steps[0]) { Set-VoiceFaceLine $l }
     }
 
     function Receive-VoiceChat {
@@ -2801,7 +2879,10 @@ if ($Voice) {
         while ($script:chatClient -and $script:chatClient.Replies.TryDequeue([ref]$r)) {
             $script:asking = $false
             if ($script:typing) { $ui.Talk.Children.Remove($script:typing); $script:typing = $null }
-            if ($r -eq '!down') {
+            $stats = if ($r -eq '!down') { Get-StatsReply $script:lastAsk }
+            if ($stats) {
+                Show-VoiceStats $stats
+            } elseif ($r -eq '!down') {
                 Add-VoiceLine 'note' 'The companion is not running - start it with install.cmd, or tap the mic to talk.'
             } elseif ($r -eq '!timeout') {
                 Add-VoiceLine 'note' 'No answer in time - Gemini may be slow or out of quota. Try again in a minute.'
@@ -3202,9 +3283,9 @@ if ($Voice) {
         # Not the owner's own microphone's name in a published picture.
         Set-VoiceMic -1
         $me = "$($p.name)"
-        & $scene 'idle' 'THUMBSUP' 0 'ALL GOOD!' @(
+        & $scene 'idle' 'THUMBSUP' 0 'CPU 12% RAM 60%' @(
             @('you', "how's my laptop doing?"),
-            @('buddy', 'All good! CPU at 12%, memory 9.6 of 16 GB, and 120 GB free on C:. Chrome is using the most.')) $false
+            @('buddy', 'All good! CPU is at 12%. Memory: 9.6 of 16 GB in use (60%). C: has 120 GB free of 237 GB.')) $false
         $chatPic = & $whole
         Save-VoicePng $chatPic (Join-Path $dir 'window-chat.png')
         & $scene 'speaking' 'LOVE' 3 '' @(

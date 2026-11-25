@@ -244,13 +244,19 @@ button. Switch it off in the window's settings, or under Task Manager ->
 Startup apps (`NEXUS Buddy`); `uninstall.cmd` removes it and closes the
 window.
 
-**Asking about this PC.** Ask "how's my laptop doing?", "what's using my
-memory?" or "how much battery is left?", out loud or typed. Buddy answers from
-this PC's numbers right then: CPU load and model, memory used, free space on
-the system disk, battery and charging, uptime, the Windows version and the
-three apps using the most memory. They are read only when you ask, and go to
-Gemini only for that answer: out loud through a `get_pc_stats` tool, typed
-when the message mentions the CPU, memory, disk, battery, apps or the PC.
+**Asking about this PC.** Type "how's my laptop doing?", "what's using my
+memory?", "how much battery is left?", "disk space" or "what are my specs?" -
+in the window or `chat.cmd` - and the PC answers it itself, at once, from its
+own numbers: CPU load, memory used and the three apps using the most of it,
+free space on the system disk, battery and charging, uptime, and the Windows
+version and processor. Like a face or a trick, it never goes to Gemini, and
+works with no key and no internet. The dongle and the window show a
+thumbs-up and a short line (`CPU 12% RAM 60%`, `BATTERY 100%`), or a look
+when something needs one: a busy PC, a nearly full disk, a low battery.
+
+Asked out loud, in a voice conversation, the answer has to come back in
+Buddy's voice, which Gemini makes: there Gemini calls a `get_pc_stats` tool
+and gets the same numbers, for that answer only.
 
 **Typing in the window.** The message box above the buttons goes where the
 conversation is:
@@ -323,7 +329,8 @@ in the background.
 
 Gemini hears the time of day, how busy the PC is as low / medium / high, the
 track playing and why it is being asked - and in a chat, what you type to
-it. When you ask about the PC itself, that answer also gets its numbers
+it. A typed question about the PC is answered on the PC and never sent; a
+spoken one, in a voice conversation, sends its numbers for that answer
 (above): load, memory, disk, battery, uptime, Windows version and the names
 of the three apps using the most memory. Never keystrokes, window titles,
 screen contents or files. The dongle sends nothing back at all.

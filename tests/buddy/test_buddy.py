@@ -494,16 +494,26 @@ def voice():
        'class BuddyMirror' in cs and '^([EB] [A-Z0-9]{1,12}|V [0-4]|L' in cs,
        "the companion copies Buddy's lines to the window, on 127.0.0.1, and the window takes only those")
 
-    # Its PC's numbers go to Gemini only when the owner asks.
+    # A typed question about this PC is answered by the PC itself; its
+    # numbers go to Gemini only when spoken, because Gemini says the answer.
     ok("name = 'get_pc_stats'" in window and 'fn == "get_pc_stats"' in cs,
-       'the voice session can be asked about this PC (get_pc_stats)')
+       'a spoken question about this PC is answered through get_pc_stats')
     ask = ps.split('function Start-BuddyAsk', 1)[1].split('\n}\n', 1)[0]
-    ok('$chat.text -match $MACHINE_WORDS' in ask and '[NexusVoice.Machine]::Summary()' in ask,
-       'a chat gets the PC\'s numbers only when it asks about the PC')
-    words = re.search(r"\$MACHINE_WORDS = '([^']+)'", ps).group(1)
-    ok(all(re.search(words, t, re.I) for t in ["how's my laptop doing?", 'what is my cpu at', 'battery?', 'how much RAM is free']) and
-       not any(re.search(words, t, re.I) for t in ['hi niku', 'sing me a song', 'how are you today']),
-       'and what counts as asking')
+    ok('Machine' not in ask, 'a typed chat never sends the PC\'s numbers to Gemini')
+    lines = ps.split('function Get-BuddyLines', 1)[1].split('\n}\n', 1)[0]
+    ok('$cmd = Get-StatsReply $msg.text' in lines,
+       'the companion answers a PC question itself, like a face or a trick')
+    ok('$stats = Get-StatsReply $text' in window and 'Show-VoiceStats' in window,
+       'the window sends a PC question to the companion, not to Gemini Live, and answers it itself without one')
+    m = re.search(r"\$STATS_ASK = ((?:'[^']*(?:''[^']*)*'\s*\+?\s*)+)", ps)
+    words = ''.join(re.findall(r"'((?:[^']|'')*)'", m.group(1))).replace("''", "'") if m else 'x^'
+    asked = ["how's my laptop doing?", 'how is my pc', 'what is my cpu at', 'battery?', 'how much RAM is free',
+             "what's using my memory?", 'disk space', 'show me my stats']
+    chat = ['hi niku', 'sing me a song', 'how are you today', 'show me a happy face', 'high five',
+            'what time is it', 'tell me about computers in space']
+    ok(all(re.search(words, t, re.I) for t in asked) and not any(re.search(words, t, re.I) for t in chat),
+       'what counts as asking about this PC: %s'
+       % ([t for t in asked if not re.search(words, t, re.I)] + [t for t in chat if re.search(words, t, re.I)]))
 
     # It opens at sign-in, quietly, and can be stopped from doing so.
     inst = ps.split('if ($Install) {')[-1].split('\n}\n')[0]
