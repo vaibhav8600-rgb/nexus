@@ -250,7 +250,8 @@ in the window or `chat.cmd` - and the PC answers it itself, at once, from its
 own numbers: CPU load, memory used and the three apps using the most of it,
 free space on the system disk, battery and charging, uptime, and the Windows
 version and processor. Like a face or a trick, it never goes to Gemini, and
-works with no key and no internet. The dongle and the window show a
+works with no key and no internet. Everyday uses of the same words - "I have
+a bad memory", "my social battery is low" - are still chat, for Gemini. The dongle and the window show a
 thumbs-up and a short line (`CPU 12% RAM 60%`, `BATTERY 100%`), or a look
 when something needs one: a busy PC, a nearly full disk, a low battery.
 

@@ -805,8 +805,18 @@ function Get-BuddyCommand([string]$text) {
 # battery?", "what's using my memory?" - is answered here, at once, from
 # its own numbers: like a face or a trick, it never goes to Gemini. Only a
 # spoken one in voice.cmd does, because Gemini has to say it out loud.
-$STATS_ASK = '\b(cpu|processor|ram|memory|disk|storage|ssd|battery|charging|uptime|specs?|stats)\b|' +
-             '\bhow(''s| is| are)\b.{0,24}\b(pc|laptop|computer|machine|system)\b|' +
+# Words that only ever mean the PC count anywhere. "Memory", "battery",
+# "stats" and the like are everyday words too - "I have a bad memory", "my
+# social battery is low" are chat for Gemini - so they count alone, as a
+# reading ("memory usage", "how much storage"), or beside the PC itself.
+$STATS_ASK = '\b(cpu|ram|ssd|uptime|processor)\b|' +
+             '^\W*(memory|storage|disk|battery|charging|stats|specs?)\W*$|' +
+             '\b(disk|storage|free) space\b|\bhow much (memory|storage|disk|battery)\b|' +
+             '\b(memory|battery|disk|storage) (usage|use|used|left|level|life|free|full)\b|' +
+             '\bmy (stats|specs?)\b|' +
+             '\b(memory|storage|disk|battery|charging|stats|specs?)\b.{0,30}\b(pc|laptop|computer|machine)\b|' +
+             '\b(pc|laptop|computer|machine)(''s)?\b.{0,30}\b(memory|storage|disk|battery|charging|stats|specs?)\b|' +
+             '\bhow(''s| is| are)\b.{0,24}\b(my|the|this) (pc|laptop|computer|machine)\b|' +
              '\bwhat.{0,16}\busing (my |the )?(memory|ram|cpu)\b'
 
 # @{ reply; steps } like a command, or $null for anything else - and for a

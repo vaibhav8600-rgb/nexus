@@ -516,9 +516,14 @@ def voice():
     words = (''.join(re.findall(r"'((?:[^']|'')*)'", m.group(1))).replace("''", "'")
              if m else 'x^')
     asked = ["how's my laptop doing?", 'how is my pc', 'what is my cpu at', 'battery?',
-             'how much RAM is free', "what's using my memory?", 'disk space', 'show me my stats']
+             'how much RAM is free', "what's using my memory?", 'disk space', 'show me my stats',
+             'memory usage?', 'how much storage do I have', "what's my laptop's battery",
+             'pc specs']
     chat = ['hi niku', 'sing me a song', 'how are you today', 'show me a happy face',
-            'high five', 'what time is it', 'tell me about computers in space']
+            'high five', 'what time is it', 'tell me about computers in space',
+            'I have a bad memory today', 'do you remember our first memory?',
+            'my social battery is low', 'what are your stats in that game',
+            'how is the education system', 'I am charging my phone']
     missed = [t for t in asked if not re.search(words, t, re.I)]
     taken = [t for t in chat if re.search(words, t, re.I)]
     ok(not missed and not taken, 'what counts as asking about this PC: %s' % (missed + taken))
