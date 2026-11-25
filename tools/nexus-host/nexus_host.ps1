@@ -672,8 +672,8 @@ function ConvertTo-BuddyLine([string]$text) {
     $s
 }
 
-# -Spoken: for Gemini Live, which talks rather than writing lines, and sets
-# the face with set_face instead of a JSON field.
+# -Spoken: for a voice conversation, which talks rather than writing lines.
+# Its face is read from what it says (BuddyVoice.FaceFor), not asked for.
 function Get-BuddyPrompt($p, [switch]$Spoken) {
     $v = $p.voice
     $owner = if ($p.owner) { $p.owner } else { 'the owner' }
@@ -687,7 +687,7 @@ function Get-BuddyPrompt($p, [switch]$Spoken) {
     $out += 'Never:'
     $out += $p.never | ForEach-Object { "- $_" }
     if ($Spoken) {
-        $out += 'Call set_face at the start of every reply with the face that fits it, then speak.'
+        $out += 'Let your feelings show in your words - laugh, say aww or hmm - since your face follows what you say.'
     } else {
         $out += 'Reply only as JSON matching the schema: "emotion" is how the face looks, "line" goes on the dongle, "reply" is what you say on a screen - when the owner talks to you, a real answer in normal sentence case, at most 200 characters.'
     }
@@ -934,28 +934,38 @@ function Start-BuddyAsk([string]$reason, $cpu, $mem, $np, $chat = $null) {
     } | ConvertTo-Json -Depth 10 -Compress
 
     $ps = [powershell]::Create()
+    # The chosen model first, then the Flash Lite family: one busy, out of
+    # quota or retired model does not leave Buddy without an answer.
+    $urls = @(@($GeminiModel) + $LITE_MODELS | Select-Object -Unique | ForEach-Object { $GEMINI_URL -f $_ })
     [void]$ps.AddScript({
-        param($url, $key, $json)
-        # "High demand" (503) and its kin pass in a second or two: two quick
-        # retries answer most of them, rather than a foggy brain.
-        for ($try = 0; ; $try++) {
-            try {
-                $r = Invoke-WebRequest -UseBasicParsing -Uri $url -Method Post `
-                    -Headers @{ 'x-goog-api-key' = $key } `
-                    -ContentType 'application/json; charset=utf-8' `
-                    -Body ([Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec 15
-                return @{ ok = $true; raw = $r.Content }
-            } catch {
-                $code = 0
-                try { $code = [int]$_.Exception.Response.StatusCode } catch {}
-                if ($try -lt 2 -and ($code -eq 500 -or $code -eq 503)) {
-                    Start-Sleep -Milliseconds (1500 * ($try + 1))
-                    continue
+        param($urls, $key, $json)
+        $last = $null
+        foreach ($url in $urls) {
+            # "High demand" (503) and its kin pass in a second or two: one
+            # quick retry answers many of them, then the next model.
+            for ($try = 0; ; $try++) {
+                try {
+                    $r = Invoke-WebRequest -UseBasicParsing -Uri $url -Method Post `
+                        -Headers @{ 'x-goog-api-key' = $key } `
+                        -ContentType 'application/json; charset=utf-8' `
+                        -Body ([Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec 15
+                    return @{ ok = $true; raw = $r.Content }
+                } catch {
+                    $code = 0
+                    try { $code = [int]$_.Exception.Response.StatusCode } catch {}
+                    $last = @{ ok = $false; code = $code; err = $_.Exception.Message }
+                    if ($try -lt 1 -and ($code -eq 500 -or $code -eq 503)) {
+                        Start-Sleep -Milliseconds 1500
+                        continue
+                    }
+                    break
                 }
-                return @{ ok = $false; code = $code; err = $_.Exception.Message }
             }
+            # A bad request or key fails the same on every model.
+            if ($last.code -in 400, 401, 403) { break }
         }
-    }).AddArgument(($GEMINI_URL -f $GeminiModel)).AddArgument($script:bud.key).AddArgument($body)
+        $last
+    }).AddArgument($urls).AddArgument($script:bud.key).AddArgument($body)
     $script:bud.job = @{ ps = $ps; handle = $ps.BeginInvoke(); reason = $reason; chat = $chat }
 }
 
@@ -1140,8 +1150,17 @@ function Get-BuddyLines($cpu, $mem, $np, [switch]$ChatOnly) {
 # is C# 5, the version .NET Framework's compiler takes.
 
 $VOICE_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
-# Out of quota on Live, this one has far more headroom on the free tier.
-$LIVE_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
+# A conversation goes down this chain when a model is out of quota, busy or
+# gone, rather than stopping: every Live model has a quota of its own, and
+# the last step, Flash Lite, needs no Live at all. Measured 2026-11-25 on the
+# free tier: 3.8 first speaks in ~0.5 s, 3.1 Flash in ~0.6-1 s, 2.5 in ~2 s.
+$LIVE_CHAIN = @('gemini-3.8-live', 'gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-preview-12-2025')
+# Flash Lite hears a whole spoken sentence and answers in one request (about
+# 3.5 s), which the Windows voice then says. Also the companion's text chain.
+$LITE_MODELS = @('gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite')
+# Gemini trims the oldest of the conversation past this, so a long chat costs
+# no more a turn than a short one: the limit that runs out is tokens a minute.
+$LIVE_TRIGGER_TOKENS = 16000
 
 $VOICE_CS = @'
 using System;
@@ -1506,10 +1525,27 @@ public class BuddyVoice {
     // A mic that hands back no sound for this long has gone (unplugged, or
     // lost across sleep); winmm itself says nothing.
     public static int MicStallMs = 3000;
+    // A reply starting from silence is held this long before it plays, so a
+    // chunk late off the network does not leave a gap mid-word.
+    public static int PrebufferMs = 120;
+    // At most one face change this often from what Buddy says: each one
+    // plays that face's chirp on the dongle.
+    public static int FaceEveryMs = 2500;
+    // Flash Lite's ears: the mic level that counts as speech, the pause that
+    // ends a sentence, and the longest one. Rooms and mics differ.
+    public static int VadOn = 700;
+    public static int VadHangMs = 800;
+    public static int MaxUtterMs = 15000;
 
     public readonly ConcurrentQueue<string> Log = new ConcurrentQueue<string>();
     public volatile bool Done;
     public string CloseReason = "";
+    // Why it ended, for the window to pick what comes next: "quota", "busy",
+    // "refused", "drop" or "goaway" - or "" when it ended on purpose (Stop,
+    // a lock, sleep, nobody talking, the mic pulled out).
+    public volatile string EndKind = "";
+    // 3.8 Live hands these out; reconnecting with one keeps the conversation.
+    public volatile string ResumeHandle;
 
     // For the window: which mic (-1 is Windows' default), and what to draw.
     public int MicDevice = -1;
@@ -1525,7 +1561,24 @@ public class BuddyVoice {
 
     string url, key, setup, name;
     HashSet<string> faces;
+    string[] faceList;
     int facePort;
+
+    // Flash Lite instead of Live (the last step of the chain).
+    bool lite;
+    string[] liteModels;
+    string litePrompt;
+    List<string[]> liteTurns = new List<string[]>();   // (heard, said), the last few
+    volatile bool asking;
+    Queue<byte[]> preroll = new Queue<byte[]>();
+    MemoryStream utter;
+    int quietMs, speechMs;
+
+    // The start of a reply, held for PrebufferMs.
+    List<byte[]> held = new List<byte[]>();
+    int heldBytes;
+    long heldSince;
+    long faceAt, firstAudioAt, goAwayAt;
 
     ClientWebSocket ws;
     CancellationTokenSource cts = new CancellationTokenSource();
@@ -1560,9 +1613,60 @@ public class BuddyVoice {
         this.setup = setup;
         this.name = name;
         this.faces = new HashSet<string>(faces);
+        faceList = faces;
         this.facePort = facePort;
         json.MaxJsonLength = int.MaxValue;
         udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+    }
+
+    // Flash Lite, with no Live at all: the mic is cut into sentences here,
+    // each heard and answered in one request, and said in the Windows voice.
+    // The same player, mouth, faces, timers and log as a Live conversation.
+    public BuddyVoice(string[] liteModels, string key, string prompt, string name, string[] faces, int facePort)
+        : this((string)null, key, null, name, faces, facePort) {
+        lite = true;
+        this.liteModels = liteModels;
+        litePrompt = prompt;
+    }
+
+    // What a refusal or a close means for what to try next.
+    public static string Classify(string reason) {
+        string r = (reason ?? "").ToLowerInvariant();
+        if (Regex.IsMatch(r, @"\bquota\b|rate.?limit|exhaust|\b429\b")) return "quota";
+        if (Regex.IsMatch(r, @"not found|not supported|unsupported|permission|api key|invalid argument|policy")) return "refused";
+        if (Regex.IsMatch(r, @"unavailable|overload|high demand|\b50\d\b|internal|deadline")) return "busy";
+        return "drop";
+    }
+
+    // A face from what Buddy is saying - the last feeling its words show,
+    // or null. Asking Gemini for one (set_face) cost every reply a round
+    // trip: measured 0.57 -> 1.0 s to the first word on 3.8 Live, three
+    // times the tokens, and 2.5 said its whole reply twice around the call.
+    static readonly string[][] Cues = {
+        new string[] { "LOVE", @"\b(love|adore|aww+|sweet of you|hugs?)\b" },
+        new string[] { "HAPPY", @"\b(ha(ha)+|he(he)+|yay|great|awesome|nice|glad|happy|wonderful|fun|congrat\w*)\b" },
+        new string[] { "SAD", @"\b(sorry|sad|unfortunately|oh no|miss you)\b" },
+        new string[] { "SURPRISED", @"\b(wow|whoa|no way|amazing)\b" },
+        new string[] { "THINKING", @"\b(hmm+|let me think|let me see|not sure|i wonder)\b" },
+        new string[] { "SLEEPY", @"\b(sleepy|tired|yawn\w*|good night|bedtime)\b" },
+        new string[] { "ANGRY", @"\b(grr+|annoying|annoyed|angry)\b" },
+        new string[] { "SINGING", @"\b(la la|sing\w*)\b" },
+        new string[] { "THUMBSUP", @"\b(you got this|well done|good job|thumbs up|nailed it)\b" },
+        new string[] { "HIGHFIVE", @"\bhigh.?five\b" },
+        new string[] { "GAMING", @"\b(game|gaming)\b" },
+    };
+
+    public static string FaceFor(string text) {
+        string best = null;
+        int at = -1;
+        foreach (string[] c in Cues) {
+            MatchCollection ms = Regex.Matches(text ?? "", c[1], RegexOptions.IgnoreCase);
+            if (ms.Count > 0 && ms[ms.Count - 1].Index > at) {
+                at = ms[ms.Count - 1].Index;
+                best = c[0];
+            }
+        }
+        return best;
     }
 
     // 0-4 for a slice of 16-bit little-endian PCM: how many thresholds its
@@ -1591,6 +1695,13 @@ public class BuddyVoice {
         SystemEvents.SessionSwitch += OnSessionSwitch;
         SystemEvents.PowerModeChanged += OnPowerMode;
         OpenAudio();
+        if (lite) {
+            Heard();
+            setupDone = true;
+            micThread = Spawn(MicLoop);
+            pumpThread = Spawn(PumpLoop);
+            return;
+        }
         ws = new ClientWebSocket();
         // The key in a header, never in the URL: a URL ends up in logs and
         // error messages, a header does not.
@@ -1612,17 +1723,21 @@ public class BuddyVoice {
             } catch (Exception e) {
                 // Kept as the reason too: a quota refusal can come at connect.
                 CloseReason = e.GetBaseException().Message;
-                if (!Done) Say("error: " + CloseReason);
-                Done = true;
+                string kind = Classify(CloseReason);
+                // The window explains quota, busy and refused in its own words.
+                Finish(kind, kind == "drop" ? "error: " + CloseReason : null);
             }
         });
     }
 
     // Ends the conversation from any thread: the window's timer sees Done
     // and calls Stop(), which closes the mic.
-    void End(string why) {
+    void End(string why) { Finish("", why); }
+
+    void Finish(string kind, string why) {
         if (Done) return;
-        Say(why);
+        EndKind = kind;
+        if (!string.IsNullOrEmpty(why)) Say(why);
         Done = true;
     }
 
@@ -1704,6 +1819,11 @@ public class BuddyVoice {
     public bool SendText(string text) {
         if (!setupDone || string.IsNullOrEmpty(text)) return false;
         Heard();
+        if (lite) {
+            if (asking) return false;
+            Ask(null, text);
+            return true;
+        }
         Dictionary<string, object> t = new Dictionary<string, object>();
         t["text"] = text;
         Dictionary<string, object> m = new Dictionary<string, object>();
@@ -1798,7 +1918,7 @@ public class BuddyVoice {
     }
 
     bool Speaking() {
-        lock (outLock) return Now() < playEnd + EchoHoldMs;
+        lock (outLock) return heldBytes > 0 || Now() < playEnd + EchoHoldMs;
     }
 
     void MicLoop() {
@@ -1827,6 +1947,7 @@ public class BuddyVoice {
                 soundAt = Now();
                 MicRms = Rms(pcm, 0, n);
                 if (!setupDone) continue;
+                if (lite) { Hear(pcm); continue; }
                 // Half duplex: while Buddy talks, and a moment after, the
                 // mic sends silence. Otherwise the speakers echo into it and
                 // Buddy hears itself, takes that as being interrupted, and
@@ -1844,11 +1965,38 @@ public class BuddyVoice {
         }
     }
 
-    // A chunk of Buddy's voice, 24 kHz 16-bit mono. Queued as its own buffer,
-    // and its mouth shapes put on the timeline at the moment it will play.
+    // A chunk of Buddy's voice, 24 kHz 16-bit mono. Starting from silence it
+    // waits until PrebufferMs of it is in hand (or PrebufferMs has passed,
+    // PumpLoop), like Mira's player: a reply that starts at once and then
+    // waits on the next chunk stutters.
     void Play(byte[] pcm) {
         lock (outLock) {
             if (hwo == IntPtr.Zero || pcm.Length < 2) return;
+            if (Now() >= playEnd) {
+                if (heldBytes == 0) heldSince = Now();
+                held.Add(pcm);
+                heldBytes += pcm.Length;
+                if (heldBytes < OUT_RATE * 2 * PrebufferMs / 1000) return;
+                pcm = TakeHeld();
+            }
+            Write(pcm);
+        }
+    }
+
+    // Everything held, as one piece. Under outLock.
+    byte[] TakeHeld() {
+        byte[] all = new byte[heldBytes];
+        int at = 0;
+        foreach (byte[] b in held) { Buffer.BlockCopy(b, 0, all, at, b.Length); at += b.Length; }
+        held.Clear();
+        heldBytes = 0;
+        return all;
+    }
+
+    // Queued as its own buffer, and its mouth shapes put on the timeline at
+    // the moment it will play. Under outLock.
+    void Write(byte[] pcm) {
+        {
             long now = Now();
             long start = Math.Max(now, playEnd);
             int slice = OUT_RATE * 2 * 50 / 1000;
@@ -1871,6 +2019,8 @@ public class BuddyVoice {
                 waveOutReset(hwo);
                 FreePlayed(true);
             }
+            held.Clear();
+            heldBytes = 0;
             timeline.Clear();
             playEnd = Now();
         }
@@ -1891,8 +2041,12 @@ public class BuddyVoice {
         while (!Done) {
             int level;
             long now = Now();
+            bool quiet;
             lock (outLock) {
                 if (hwo != IntPtr.Zero) FreePlayed(false);
+                // A short reply, or the network's pause: play what is held.
+                if (heldBytes > 0 && now - heldSince >= PrebufferMs) Write(TakeHeld());
+                quiet = heldBytes == 0 && now >= playEnd + EchoHoldMs;
                 level = -1;
                 while (timeline.Count > 0 && timeline[0].Key <= now) {
                     level = timeline[0].Value;
@@ -1903,6 +2057,18 @@ public class BuddyVoice {
                     End("Nobody has said anything for " + IdleMs / 60000 + " minutes - the conversation ended " +
                         "to keep the mic off and save quota. Tap to talk again.");
             }
+            // Speaking with no feeling in the words yet: neutral, but only
+            // after a moment, so a cue in the next words is one chirp, not two.
+            if (firstAudioAt > 0 && !faceSet && now - firstAudioAt > 1200) {
+                faceSet = true;
+                faceAt = now;
+                Face("NEUTRAL");
+            }
+            // Google is about to close this connection: end it in a pause -
+            // not over Buddy's words or yours - and the window reconnects at
+            // once (3.8 resumes the same conversation). At the latest in 20 s.
+            if (goAwayAt > 0 && ((quiet && now - Interlocked.Read(ref heardAt) > 1500) || now - goAwayAt > 20000))
+                Finish("goaway", null);
             // On a change, and an open mouth once a second as well: the
             // relay closes a mouth that has heard nothing for two.
             if (level != mouth || (level > 0 && now - mouthAt >= 1000)) {
@@ -1927,7 +2093,9 @@ public class BuddyVoice {
                     // A bad model name, key or quota comes back here, and
                     // nowhere else.
                     CloseReason = ws.CloseStatusDescription ?? "";
-                    Say("Gemini closed the session (" + ws.CloseStatus + "): " + CloseReason);
+                    string kind = Classify(CloseReason);
+                    // The window explains quota, busy and refused itself.
+                    Finish(kind, kind == "drop" ? "Gemini closed the session (" + ws.CloseStatus + "): " + CloseReason : null);
                     break;
                 }
                 // Text or binary frames, whichever the server sends: both
@@ -1943,9 +2111,9 @@ public class BuddyVoice {
                 }
             }
         } catch (Exception e) {
-            if (!Done) Say("connection lost: " + e.GetBaseException().Message);
+            Finish("drop", "connection lost: " + e.GetBaseException().Message);
         }
-        Done = true;
+        Finish("drop", null);
     }
 
     static Dictionary<string, object> Obj(Dictionary<string, object> d, string k) {
@@ -1983,6 +2151,8 @@ public class BuddyVoice {
         }
         Dictionary<string, object> va = Obj(m, "voiceActivity");
         if (va != null && Str(va, "type") == "ACTIVITY_START") Listening();
+        Dictionary<string, object> ru = Obj(m, "sessionResumptionUpdate");
+        if (ru != null && Flag(ru, "resumable") && Str(ru, "newHandle") != null) ResumeHandle = Str(ru, "newHandle");
 
         Dictionary<string, object> sc = Obj(m, "serverContent");
         if (sc != null) {
@@ -1991,27 +2161,31 @@ public class BuddyVoice {
                 if (said.Length > 0) Say(name + ": " + said.ToString().Trim() + " -");
                 said.Clear();
                 faceSet = spoke = false;
+                firstAudioAt = 0;
             }
             string t = Str(Obj(sc, "inputTranscription"), "text");
             if (!string.IsNullOrEmpty(t)) { heard.Append(t); Heard(); Listening(); }
             t = Str(Obj(sc, "outputTranscription"), "text");
-            if (!string.IsNullOrEmpty(t)) said.Append(t);
+            if (!string.IsNullOrEmpty(t)) { said.Append(t); FaceFromWords(); }
             object[] parts = Arr(Obj(sc, "modelTurn"), "parts");
             if (parts != null) {
                 foreach (object o in parts) {
                     string data = Str(Obj(o as Dictionary<string, object>, "inlineData"), "data");
                     if (data == null) continue;
-                    if (!spoke && !faceSet) Face("NEUTRAL");
+                    if (!spoke) firstAudioAt = Now();
                     spoke = true;
                     Play(Convert.FromBase64String(data));
                 }
             }
             if (Flag(sc, "turnComplete")) {
+                // A reply shorter than the hold plays now, not 120 ms late.
+                lock (outLock) { if (heldBytes > 0) Write(TakeHeld()); }
                 if (heard.Length > 0) Say("you: " + heard.ToString().Trim());
                 if (said.Length > 0) Say(name + ": " + said.ToString().Trim());
                 heard.Clear();
                 said.Clear();
                 listening = faceSet = spoke = false;
+                firstAudioAt = 0;
             }
         }
 
@@ -2023,11 +2197,7 @@ public class BuddyVoice {
                 if (c == null) continue;
                 string fn = Str(c, "name");
                 object result = "ok";
-                if (fn == "set_face") {
-                    string e = (Str(Obj(c, "args"), "emotion") ?? "").ToUpperInvariant();
-                    // Only a face the dongle has: anything else is dropped.
-                    if (faces.Contains(e)) { Face(e); faceSet = true; }
-                } else if (fn == "get_pc_stats") {
+                if (fn == "get_pc_stats") {
                     // The owner asked about this PC. Read now, sent once.
                     try { result = Machine.Stats(); } catch (Exception ex) { result = "unavailable: " + ex.Message; }
                 }
@@ -2044,10 +2214,237 @@ public class BuddyVoice {
             Send(json.Serialize(reply));
         }
 
-        if (m.ContainsKey("goAway")) {
-            // ponytail: no automatic reconnect; a new window is a new session.
-            Say("Gemini is ending this session soon (audio sessions last about 15 minutes) - run voice.cmd again to keep talking.");
+        // Google closes every connection after a while (~10-15 minutes).
+        // PumpLoop ends this one in a pause and the window reconnects.
+        if (m.ContainsKey("goAway") && goAwayAt == 0) goAwayAt = Now();
+    }
+
+    // The face follows the feeling in Buddy's words as they come, at most
+    // once every FaceEveryMs.
+    void FaceFromWords() {
+        string f = FaceFor(said.ToString());
+        if (f == null || !faces.Contains(f) || f == Emotion) return;
+        if (faceSet && Now() - faceAt < FaceEveryMs) return;
+        faceSet = true;
+        faceAt = Now();
+        Face(f);
+    }
+
+    // ---- Flash Lite -----------------------------------------------------------
+
+    // Its ears: a sentence starts when the mic is loud enough - with the
+    // 300 ms before it kept, so the first syllable is not lost - and ends
+    // after VadHangMs of quiet. Not while Buddy talks or thinks: the
+    // speakers would be heard as you.
+    // ponytail: no barge-in here; Live has it, and this is the last resort.
+    void Hear(byte[] pcm) {
+        if (asking || Speaking()) {
+            utter = null;
+            preroll.Clear();
+            return;
         }
+        if (utter == null) {
+            preroll.Enqueue(pcm);
+            if (preroll.Count > 3) preroll.Dequeue();
+            if (MicRms < VadOn) return;
+            utter = new MemoryStream();
+            foreach (byte[] p in preroll) utter.Write(p, 0, p.Length);
+            preroll.Clear();
+            quietMs = 0;
+            speechMs = MIC_MS;
+            Heard();
+            Listening();
+            return;
+        }
+        utter.Write(pcm, 0, pcm.Length);
+        if (MicRms >= VadOn * 6 / 10) { quietMs = 0; speechMs += MIC_MS; Heard(); }
+        else quietMs += MIC_MS;
+        if (quietMs < VadHangMs && utter.Length < MIC_RATE * 2L * MaxUtterMs / 1000) return;
+        byte[] clip = utter.ToArray();
+        utter = null;
+        // A cough or a click is not a sentence.
+        if (speechMs >= 300) Ask(clip, null);
+        else listening = false;
+    }
+
+    // One sentence (or a typed message) to Flash Lite, down $LITE_MODELS
+    // until one answers: what it heard, the face, and the reply - which the
+    // Windows voice then says.
+    void Ask(byte[] clip, string text) {
+        asking = true;
+        Face("THINKING");
+        Spawn(delegate {
+            try {
+                string why = "busy";
+                Dictionary<string, object> got = null;
+                string body = LiteBody(clip, text);
+                foreach (string model in liteModels) {
+                    if (Done) return;
+                    int code;
+                    string raw = Post(model, body, out code);
+                    if (code == 200) {
+                        got = LiteReply(raw);
+                        if (got != null) break;
+                        continue;
+                    }
+                    why = code == 429 ? "out of quota" : code == 0 ? "unreachable" : "busy";
+                    // A bad request or key fails the same on every model.
+                    if (code == 400 || code == 401 || code == 403) { why = "refusing (HTTP " + code + ")"; break; }
+                }
+                if (Done) return;
+                if (got == null) {
+                    Face("SAD");
+                    Say("Gemini is " + why + " on every model right now - try again in a minute.");
+                    return;
+                }
+                string you = text ?? (Str(got, "heard") ?? "").Trim();
+                string reply = (Str(got, "reply") ?? "").Trim();
+                string emo = (Str(got, "emotion") ?? "").ToUpperInvariant();
+                // A typed message is already on screen.
+                if (text == null && you.Length > 0) Say("you: " + you);
+                Face(faces.Contains(emo) ? emo : "NEUTRAL");
+                if (reply.Length == 0) return;
+                Say(name + ": " + reply);
+                liteTurns.Add(new string[] { you, reply });
+                if (liteTurns.Count > 6) liteTurns.RemoveAt(0);
+                Speak(reply);
+            } catch (Exception e) {
+                if (!Done) Say("Flash Lite: " + e.GetBaseException().Message);
+            } finally {
+                asking = false;
+                listening = false;
+                Heard();
+            }
+        });
+    }
+
+    static Dictionary<string, object> Part(string role, object part) {
+        Dictionary<string, object> c = new Dictionary<string, object>();
+        c["role"] = role;
+        c["parts"] = new object[] { part };
+        return c;
+    }
+
+    static Dictionary<string, object> TextPart(string text) {
+        Dictionary<string, object> p = new Dictionary<string, object>();
+        p["text"] = text;
+        return p;
+    }
+
+    static Dictionary<string, object> Typed(string type) {
+        Dictionary<string, object> t = new Dictionary<string, object>();
+        t["type"] = type;
+        return t;
+    }
+
+    string LiteBody(byte[] clip, string text) {
+        List<object> contents = new List<object>();
+        foreach (string[] turn in liteTurns) {
+            contents.Add(Part("user", TextPart("The owner said: " + turn[0])));
+            contents.Add(Part("model", TextPart(turn[1])));
+        }
+        if (clip != null) {
+            Dictionary<string, object> audio = new Dictionary<string, object>();
+            audio["mimeType"] = "audio/wav";
+            audio["data"] = Convert.ToBase64String(Wav(clip, MIC_RATE));
+            Dictionary<string, object> part = new Dictionary<string, object>();
+            part["inlineData"] = audio;
+            contents.Add(Part("user", part));
+        } else {
+            contents.Add(Part("user", TextPart("The owner types: " + text)));
+        }
+        Dictionary<string, object> emotion = Typed("STRING");
+        emotion["enum"] = faceList;
+        Dictionary<string, object> props = new Dictionary<string, object>();
+        props["heard"] = Typed("STRING");
+        props["emotion"] = emotion;
+        props["reply"] = Typed("STRING");
+        Dictionary<string, object> schema = Typed("OBJECT");
+        schema["properties"] = props;
+        schema["required"] = new string[] { "heard", "emotion", "reply" };
+        Dictionary<string, object> config = new Dictionary<string, object>();
+        config["responseMimeType"] = "application/json";
+        config["responseSchema"] = schema;
+        config["maxOutputTokens"] = 400;
+        Dictionary<string, object> body = new Dictionary<string, object>();
+        Dictionary<string, object> system = new Dictionary<string, object>();
+        system["parts"] = new object[] { TextPart(litePrompt) };
+        body["systemInstruction"] = system;
+        body["contents"] = contents;
+        body["generationConfig"] = config;
+        return json.Serialize(body);
+    }
+
+    // The body of a 200, or null with the HTTP code (0: no answer at all).
+    string Post(string model, string body, out int code) {
+        code = 0;
+        try {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            HttpWebRequest r = (HttpWebRequest)WebRequest.Create(
+                "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent");
+            r.Method = "POST";
+            r.ContentType = "application/json; charset=utf-8";
+            r.Timeout = r.ReadWriteTimeout = 20000;
+            r.Headers["x-goog-api-key"] = key;
+            byte[] b = Encoding.UTF8.GetBytes(body);
+            using (Stream s = r.GetRequestStream()) s.Write(b, 0, b.Length);
+            using (HttpWebResponse resp = (HttpWebResponse)r.GetResponse())
+            using (StreamReader rd = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) {
+                code = (int)resp.StatusCode;
+                return rd.ReadToEnd();
+            }
+        } catch (WebException e) {
+            HttpWebResponse resp = e.Response as HttpWebResponse;
+            if (resp != null) { code = (int)resp.StatusCode; resp.Close(); }
+            return null;
+        }
+    }
+
+    // {heard, emotion, reply} from a generateContent answer, or null.
+    Dictionary<string, object> LiteReply(string raw) {
+        try {
+            object[] cands = Arr(json.DeserializeObject(raw) as Dictionary<string, object>, "candidates");
+            if (cands == null || cands.Length == 0) return null;
+            object[] parts = Arr(Obj(cands[0] as Dictionary<string, object>, "content"), "parts");
+            if (parts == null || parts.Length == 0) return null;
+            return json.DeserializeObject(Str(parts[0] as Dictionary<string, object>, "text")) as Dictionary<string, object>;
+        } catch {
+            return null;
+        }
+    }
+
+    // The Windows voice, at the rate Gemini's audio comes at and through the
+    // same player, so the mouth moves with it just as with Live.
+    void Speak(string text) {
+        string clean = Regex.Replace(text, @"[*_#`~]|[\uD800-\uDFFF]", "");
+        using (System.Speech.Synthesis.SpeechSynthesizer s = new System.Speech.Synthesis.SpeechSynthesizer()) {
+            try { s.SelectVoiceByHints(System.Speech.Synthesis.VoiceGender.Female); } catch { }
+            MemoryStream ms = new MemoryStream();
+            s.SetOutputToAudioStream(ms, new System.Speech.AudioFormat.SpeechAudioFormatInfo(
+                OUT_RATE, System.Speech.AudioFormat.AudioBitsPerSample.Sixteen, System.Speech.AudioFormat.AudioChannel.Mono));
+            s.Speak(clean);
+            if (!Done) Play(ms.ToArray());
+        }
+    }
+
+    public static byte[] Wav(byte[] pcm, int rate) {
+        MemoryStream ms = new MemoryStream();
+        BinaryWriter w = new BinaryWriter(ms);
+        w.Write(Encoding.ASCII.GetBytes("RIFF"));
+        w.Write(36 + pcm.Length);
+        w.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
+        w.Write(16);
+        w.Write((short)1);
+        w.Write((short)1);
+        w.Write(rate);
+        w.Write(rate * 2);
+        w.Write((short)2);
+        w.Write((short)16);
+        w.Write(Encoding.ASCII.GetBytes("data"));
+        w.Write(pcm.Length);
+        w.Write(pcm);
+        w.Flush();
+        return ms.ToArray();
     }
 
     public void Stop() {
@@ -2101,7 +2498,7 @@ function Add-VoiceTypes {
     }
     try {
         New-Item -ItemType Directory -Force $HOME_DIR -ErrorAction Stop | Out-Null
-        Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions `
+        Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions, System.Speech `
             -OutputAssembly $dll -ErrorAction Stop
         Add-Type -Path $dll -ErrorAction Stop
         # Older builds go; one still loaded by a running copy stays until next time.
@@ -2110,7 +2507,7 @@ function Add-VoiceTypes {
     } catch {
         # Cannot write there (or another copy is writing it now): in memory.
         if (-not ('NexusVoice.BuddyVoice' -as [type])) {
-            Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions -ErrorAction Stop
+            Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions, System.Speech -ErrorAction Stop
         }
     }
 }
@@ -2649,43 +3046,44 @@ if ($Voice) {
     $model = if ($gem.liveModel) { $gem.liveModel } else { $LIVE_MODEL }
     $speaker = if ($gem.voice) { $gem.voice } else { $LIVE_VOICE }
     $faces = [string[]]@($p.emotions | ForEach-Object { "$_".ToUpper() })
+    # The chain this window walks down: gemini.json's model if it names one,
+    # the Live models, then Flash Lite ('lite').
+    $script:tiers = @(@(@($model) + $LIVE_CHAIN | Select-Object -Unique) + 'lite')
     $prompt = (Get-BuddyPrompt $p -Spoken) + "`n" +
         'When the owner asks about their computer - CPU, memory, disk, battery, uptime, what is using memory - ' +
-        'call get_pc_stats and answer from it in plain, friendly words.' + "`n" +
-        'For anything current - weather, news, scores, prices, opening hours - search Google first, then answer briefly.'
-    $setup = @{ setup = @{
-        model = "models/$model"
-        generationConfig = @{
-            responseModalities = @('AUDIO')
-            speechConfig = @{ voiceConfig = @{ prebuiltVoiceConfig = @{ voiceName = $speaker } } }
+        'call get_pc_stats and answer from it in plain, friendly words.'
+    # Flash Lite hears the owner in a clip and answers as JSON.
+    $litePrompt = (Get-BuddyPrompt $p -Spoken) + "`n" +
+        'The owner speaks to you in the audio. "heard" is exactly what they said, "reply" is what you say ' +
+        'back out loud, and "emotion" is the face that fits your reply.'
+    # One setup per connection: the model, a resumption handle for 3.8 (it
+    # keeps the conversation), or the conversation so far for any other.
+    # No Google Search: with it the free tier refuses 3.8 and 3.1 Live at
+    # setup ("You exceeded your current quota"), measured 2026-11-25. No
+    # set_face either: the face comes from the words (BuddyVoice.FaceFor).
+    function Get-VoiceSetup([string]$m, [string]$handle, [string[]]$recent) {
+        $text = $prompt
+        if ($recent) {
+            $text += "`n`nThe conversation so far, which carries on now - do not greet again:`n" + ($recent -join "`n")
         }
-        systemInstruction = @{ parts = @(@{ text = $prompt }) }
-        tools = @(@{ functionDeclarations = @(
-            @{
-                name = 'set_face'
-                description = 'Show this face on the dongle'
-                # Blocking: the model waits for the answer, so the face comes
-                # before the words. Left to its default (asynchronous) it was
-                # measured calling set_face after the whole reply was spoken.
-                behavior = 'BLOCKING'
-                parameters = @{
-                    type = 'OBJECT'
-                    properties = @{ emotion = @{ type = 'STRING'; enum = $faces } }
-                    required = @('emotion')
-                }
-            },
-            @{
+        @{ setup = @{
+            model = "models/$m"
+            generationConfig = @{
+                responseModalities = @('AUDIO')
+                speechConfig = @{ voiceConfig = @{ prebuiltVoiceConfig = @{ voiceName = $speaker } } }
+            }
+            systemInstruction = @{ parts = @(@{ text = $text }) }
+            tools = @(@{ functionDeclarations = @(@{
                 name = 'get_pc_stats'
                 description = "The owner's computer right now: CPU load and model, memory, system disk, battery, uptime, Windows version and the apps using the most memory"
                 behavior = 'BLOCKING'
-            }
-        ) },
-        # Weather, scores, news: answered from the web instead of "I don't
-        # know". Gemini runs the search itself; only the question goes.
-        @{ googleSearch = @{} })
-        inputAudioTranscription = @{}
-        outputAudioTranscription = @{}
-    } } | ConvertTo-Json -Depth 12 -Compress
+            }) })
+            inputAudioTranscription = @{}
+            outputAudioTranscription = @{}
+            sessionResumption = if ($handle) { @{ handle = $handle } } else { @{} }
+            contextWindowCompression = @{ slidingWindow = @{}; triggerTokens = $LIVE_TRIGGER_TOKENS }
+        } } | ConvertTo-Json -Depth 12 -Compress
+    }
 
     # A compile failure is shown in the window, which still opens.
     $script:buildError = $null
@@ -2851,14 +3249,28 @@ if ($Voice) {
         $script:lastLine = $el
     }
 
+    # The last dozen lines either way, for a new connection - another model,
+    # a reconnect - to carry on from instead of starting over.
+    $script:recent = New-Object System.Collections.Generic.List[string]
+    function Add-VoiceRecent([string]$who, [string]$text) {
+        $script:recent.Add("${who}: $text")
+        while ($script:recent.Count -gt 12) { $script:recent.RemoveAt(0) }
+    }
+
     # The conversation's own lines become bubbles; anything else is a note.
     function Read-VoiceLog($b) {
         $m = $null
         $me = "$($p.name): "
         while ($b.Log.TryDequeue([ref]$m)) {
-            if ($m.StartsWith('you: ')) { Add-VoiceLine 'you' $m.Substring(5) }
-            elseif ($m.StartsWith($me)) { Add-VoiceLine 'buddy' $m.Substring($me.Length) }
-            elseif (-not $m.StartsWith('connected')) { Add-VoiceLine 'note' $m }
+            if ($m.StartsWith('you: ')) {
+                Add-VoiceLine 'you' $m.Substring(5)
+                Add-VoiceRecent 'Owner' $m.Substring(5)
+            } elseif ($m.StartsWith($me)) {
+                Add-VoiceLine 'buddy' $m.Substring($me.Length)
+                Add-VoiceRecent "$($p.name)" $m.Substring($me.Length)
+            } elseif (-not $m.StartsWith('connected')) {
+                Add-VoiceLine 'note' $m
+            }
         }
     }
 
@@ -2883,26 +3295,66 @@ if ($Voice) {
     }
 
     $script:bv = $null
-    $script:bvModel = $model
+    $script:tier = 0          # where in $script:tiers the conversation is
     $script:pending = $null   # typed while connecting: sent once it is ready
     $script:lastEmo = ''
-    # Out of quota on $model, the roomier $LIVE_FALLBACK until this time.
-    $script:fallbackUntil = [datetime]::MinValue
-    function Start-VoiceTalk {
+    # A step of the chain that failed rests until this time, and the next
+    # one takes over; a new conversation starts from the top again.
+    $script:rest = @{}
+    $script:resume = @{}      # 3.8's last resumption handle, and its model
+    $script:restarts = @()    # automatic restarts in the last minute
+    $script:dropAt = $null
+
+    function Get-TierName([string]$m) {
+        switch -regex ($m) {
+            '^lite$' { 'Flash Lite'; break }
+            '3\.8-live' { '3.8 Live'; break }
+            '3\.1-flash-live' { '3.1 Flash Live'; break }
+            'native-audio' { '2.5 Native Audio'; break }
+            default { $m }
+        }
+    }
+
+    # The first step of the chain not resting. Flash Lite never rests: it
+    # tries its own models on every sentence.
+    function Get-VoiceTier {
+        $now = Get-Date
+        for ($i = 0; $i -lt $script:tiers.Count - 1; $i++) {
+            $until = $script:rest[$script:tiers[$i]]
+            if (-not $until -or $now -ge $until) { return $i }
+        }
+        $script:tiers.Count - 1
+    }
+
+    # -Carry: an automatic restart (the next model, a reconnect), which
+    # picks the conversation up instead of starting a new one.
+    function Start-VoiceTalk([switch]$Carry) {
         if ($script:bv) { return }
         if (-not $gem.key) { Add-VoiceLine 'note' "Voice needs a Gemini key in $KEY_FILE"; return }
         if ($script:buildError) { Add-VoiceLine 'note' "Voice cannot start: $script:buildError"; return }
-        $m = if ((Get-Date) -lt $script:fallbackUntil) { $LIVE_FALLBACK } else { $model }
-        $s = $setup.Replace("`"models/$model`"", "`"models/$m`"")
-        $b = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, $s, "$($p.name)", $faces, $VOICE_PORT)
+        if (-not $Carry) { $script:recent.Clear(); $script:resume = @{} }
+        $i = Get-VoiceTier
+        $m = $script:tiers[$i]
+        $recent = [string[]]$script:recent.ToArray()
+        if ($m -eq 'lite') {
+            $lp = $litePrompt
+            if ($recent) { $lp += "`n`nThe conversation so far, which carries on now:`n" + ($recent -join "`n") }
+            $b = New-Object NexusVoice.BuddyVoice([string[]]$LITE_MODELS, $gem.key, $lp, "$($p.name)", $faces, $VOICE_PORT)
+        } else {
+            # 3.8 resumes the very conversation; any other model is told it.
+            $handle = if ($script:resume.model -eq $m) { $script:resume.handle } else { $null }
+            $b = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, (Get-VoiceSetup $m $handle $recent),
+                "$($p.name)", $faces, $VOICE_PORT)
+        }
         $b.MicDevice = $script:micId
         $script:bv = $b
-        $script:bvModel = $m
+        $script:tier = $i
         $script:lastEmo = "$($b.Emotion)"
         Set-VoiceButton $true
         $b.BeginStart()
     }
-    # -Closing: the window is going, so a quota switch must not start anew.
+
+    # -Closing: the window is going, so nothing starts anew.
     function Stop-VoiceTalk([switch]$Closing) {
         $b = $script:bv
         if (-not $b) { return }
@@ -2910,21 +3362,39 @@ if ($Voice) {
         $script:pending = $null
         $b.Stop()
         Read-VoiceLog $b
-        $again = $false
-        # Not just "rate": that is inside "generate".
-        if ($b.CloseReason -match '\bquota\b|rate.?limit|exhaust|\b429\b') {
-            if ($script:bvModel -ne $LIVE_FALLBACK) {
-                # The limit that runs out is tokens a minute, so an hour on
-                # the roomier model is plenty, then back to the better one.
-                $script:fallbackUntil = (Get-Date).AddHours(1)
-                Add-VoiceLine 'note' "Out of $model quota - carrying on with $LIVE_FALLBACK for an hour (a new conversation)."
-                $again = -not $Closing
-            } else {
-                Add-VoiceLine 'note' 'Out of Live quota on both models - try again in a minute.'
-            }
-        }
+        $m = $script:tiers[$script:tier]
+        if ($b.ResumeHandle) { $script:resume = @{ model = $m; handle = $b.ResumeHandle } }
         Set-VoiceButton $false
-        if ($again) { Start-VoiceTalk }
+        # Ended on purpose - Talk again, a lock, sleep, nobody talking - or
+        # the window closing: nothing to carry on.
+        $kind = "$($b.EndKind)"
+        if ($Closing -or -not $kind) { return }
+        # A chain that fails all the way down must not spin: six automatic
+        # restarts a minute at most.
+        $now = Get-Date
+        $script:restarts = @($script:restarts | Where-Object { ($now - $_).TotalSeconds -lt 60 })
+        if ($script:restarts.Count -ge 6) {
+            Add-VoiceLine 'note' 'Gemini keeps failing right now - tap to talk again in a minute.'
+            return
+        }
+        $script:restarts += $now
+        switch ($kind) {
+            # Out of tokens a minute: back to it in ten.
+            'quota' { $script:rest[$m] = $now.AddMinutes(10) }
+            'busy' { $script:rest[$m] = $now.AddMinutes(2) }
+            'refused' { $script:rest[$m] = $now.AddHours(1) }
+            # Once more on the same model; a second drop within a minute moves on.
+            'drop' {
+                if ($script:dropAt -and ($now - $script:dropAt).TotalSeconds -lt 60) { $script:rest[$m] = $now.AddMinutes(2) }
+                $script:dropAt = $now
+            }
+            # 'goaway' is Google's routine reconnect: quietly, the same model.
+        }
+        if ($script:rest[$m] -and $script:rest[$m] -gt $now) {
+            $what = @{ quota = 'is out of quota'; busy = 'is busy'; refused = 'is not available'; drop = 'keeps dropping' }[$kind]
+            Add-VoiceLine 'note' "$(Get-TierName $m) $what - carrying on with $(Get-TierName $script:tiers[(Get-VoiceTier)])."
+        }
+        Start-VoiceTalk -Carry
     }
 
     # What the dongle is showing, as far as this window knows: a face held
@@ -2988,7 +3458,13 @@ if ($Voice) {
         if ($stats -and -not $script:chatClient) { Show-VoiceStats $stats; return }
         if ($script:bv -and -not $stats) {
             if ($script:bv.Ready) {
-                if (-not $script:bv.SendText($text)) { Add-VoiceLine 'note' 'Not sent - the conversation has ended.' }
+                if ($script:bv.SendText($text)) {
+                    Add-VoiceRecent 'Owner' $text
+                } elseif ($script:bv.Done) {
+                    Add-VoiceLine 'note' 'Not sent - the conversation has ended.'
+                } else {
+                    Add-VoiceLine 'note' 'Not sent - still answering the last one. Send it again in a moment.'
+                }
             } else {
                 $script:pending = $text
             }

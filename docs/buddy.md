@@ -160,8 +160,8 @@ picks up a key pasted in within 30 seconds.
 | Key | Default | |
 | --- | --- | --- |
 | `key` | - | Your Gemini API key. |
-| `model` | `gemini-3.1-flash-lite` | What remarks and chat ask. |
-| `liveModel` | `gemini-3.8-live` | What `voice.cmd` talks to (Windows). `gemini-2.5-flash-native-audio-preview-12-2025` has far more free-tier quota. |
+| `model` | `gemini-3.1-flash-lite` | What remarks and chat ask first. Busy, out of quota or gone, they go on to `gemini-3.5-flash-lite`, then `gemini-flash-lite-latest`. |
+| `liveModel` | `gemini-3.8-live` | What `voice.cmd` talks to first (Windows); the rest of the chain follows it (see *When a model gives out*). |
 | `voice` | `Achernar` | The voice Buddy speaks in, one of Gemini Live's prebuilt voices. Achernar is soft and calm; `Vindemiatrix`, `Sulafat`, `Despina` and `Aoede` are other gentle ones. |
 | `headset` | `false` | `true` keeps the mic open while Buddy talks, so you can cut in. Only with a headset: speakers echo. |
 
@@ -210,8 +210,9 @@ The phrases are `commands` in `persona/persona.json`; add your own there.
 and starts listening at once: talk through this PC's microphone, and Buddy
 answers in a real voice through the speakers, using Gemini Live
 (`liveModel`, `gemini-3.8-live` by default). On the dongle the face shows
-LISTENING while you speak, then the emotion Gemini picks for its answer, and
-the mouth moves with the speech and closes when it stops.
+LISTENING while you speak, then follows the feeling in Buddy's words as it
+answers - a laugh or a "yay" is happy, "oh no" or "sorry" sad, "hmm" thinking -
+and the mouth moves with the speech and closes when it stops.
 
 ![Buddy's window on the PC](images/voice/hero.png)
 
@@ -256,11 +257,6 @@ the focus. A key on the keyboard can send it - in your config's keymap:
 It is not Ctrl+Alt+N because a hotkey wins over every app, and that one is
 VS Code's *Run Code*. If another app already has the combination, the window
 says so and the button still works.
-
-**Things it looks up.** Weather, news, scores, prices, opening hours: in a
-voice conversation Gemini searches Google before it answers, rather than
-guessing or saying it does not know. Gemini runs the search itself; the PC
-sends nothing extra.
 
 **Asking about this PC.** Type "how's my laptop doing?", "what's using my
 memory?", "how much battery is left?", "disk space" or "what are my specs?" -
@@ -317,12 +313,30 @@ mid-sentence. So the mic sends silence while Buddy talks and for a moment
 after, and you cannot cut in. With a headset there is no echo: set
 `"headset": true` in `gemini.json` and you can interrupt Buddy mid-sentence.
 
-If a session ends because the quota ran out, the window carries on by
-itself with `gemini-2.5-flash-native-audio-preview-12-2025`, which has far
-more room, for an hour, then goes back. It says so, and it is a new
-conversation: what was said before is not carried over. That model sometimes
-picks the face a moment after it starts talking. Setting `liveModel` in
-`gemini.json` still picks the model for good.
+**When a model gives out.** A conversation does not stop when its model is
+out of quota, busy or gone: it carries on down a chain, says so in a note,
+and keeps what was said. Each Live model has a quota of its own.
+
+| | Model | First word after you stop (measured) |
+| --- | --- | --- |
+| 1 | `liveModel`, `gemini-3.8-live` by default | about 0.5 s |
+| 2 | `gemini-3.1-flash-live-preview` | 0.6 - 1 s |
+| 3 | `gemini-2.5-flash-native-audio-preview-12-2025` | about 2 s |
+| 4 | Flash Lite: `gemini-3.5-flash-lite`, `gemini-flash-lite-latest`, `gemini-3.1-flash-lite` | about 3.5 s, in the Windows voice |
+
+A model out of quota rests for ten minutes, a busy one for two; the next
+conversation starts from the top again. The last step needs no Live at all:
+the window hears a whole sentence itself (it ends at a pause), sends it to
+Flash Lite, which writes down what you said and answers, and Windows' own
+voice says it - with the same mouth on the dongle. There you cannot cut in,
+and the voice is Windows' rather than Gemini's; Flash Lite tries its three
+models on every sentence, so it gives up only when all three are busy.
+
+Google also closes every Live connection after a while (about ten to fifteen
+minutes). The window reconnects in the next pause, by itself: `gemini-3.8-live`
+picks the very conversation back up, any other model is told what was said.
+And a long conversation costs no more each turn than a short one - Gemini
+trims the oldest of it - since the limit that runs out is tokens a minute.
 
 A conversation also ends by itself, with the mic off and a note saying why,
 when nobody is at it: the PC is locked or goes to sleep, nobody has said
@@ -358,9 +372,8 @@ track playing and why it is being asked - and in a chat, what you type to
 it. A typed question about the PC is answered on the PC and never sent; a
 spoken one, in a voice conversation, sends its numbers for that answer
 (above): load, memory, disk, battery, uptime, Windows version and the names
-of the three apps using the most memory. In a voice conversation Gemini may
-also search Google with words from what you asked. Never keystrokes, window
-titles, screen contents or files. The dongle sends nothing back at all.
+of the three apps using the most memory. Never keystrokes, window titles,
+screen contents or files. The dongle sends nothing back at all.
 
 Every answer is checked before the dongle sees it: an emotion it does not
 have, a line over 24 characters or with characters the font cannot draw, or
@@ -427,8 +440,11 @@ is a NORMAL screen, not a game, so the display still blanks on its timeout.
   over USB: its lines wait for the companion's Bluetooth writes.
 - With speakers, `voice.cmd` is half duplex: you cannot cut in while Buddy
   talks. A headset is not detected, so `"headset": true` has to be set by hand.
-- Gemini ends a voice session after about 15 minutes; run `voice.cmd` again.
-  Keep its window open for as long as you talk.
+- Keep `voice.cmd`'s window open for as long as you talk.
+- No Google Search in a voice conversation: with it, the free tier refuses
+  `gemini-3.8-live` and `gemini-3.1-flash-live-preview` outright.
+- The face reads Buddy's words, so a reply with no feeling in them stays
+  neutral; the face changes at most every 2.5 s, each change a chirp.
 - Buddy's sounds play only while its face is up; elsewhere it stays quiet.
 - Typing speed is the only typing signal: the dongle never looks at which
   keys you press.
