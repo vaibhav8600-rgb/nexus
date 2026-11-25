@@ -460,6 +460,12 @@ def voice():
        "the relay and the main loop share each port's lock")
     ok("$script:relay.Close()" in ps.split('} finally {')[-1],
        'the relay closes when the companion does')
+    ok('$script:relay.BleOn = [bool]$ble' in ps and 'Send-VoiceBle $ble' in ps and
+       'if (BleOn && Ble.Count < 64) Ble.Enqueue(line);' in cs,
+       'over Bluetooth the relay queues its lines, and the main loop sends them '
+       'between rounds')
+    ok("$LIVE_VOICE = 'Achernar'" in ps and '$($v.spoken)' in ps,
+       'Buddy speaks in a soft voice, in the persona\'s spoken style')
 
     # The mouth's RMS -> level mapping, run for real where PowerShell is.
     if os.name != 'nt' or not cs:

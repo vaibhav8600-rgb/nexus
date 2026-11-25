@@ -162,7 +162,7 @@ picks up a key pasted in within 30 seconds.
 | `key` | - | Your Gemini API key. |
 | `model` | `gemini-3.1-flash-lite` | What remarks and chat ask. |
 | `liveModel` | `gemini-3.8-live` | What `voice.cmd` talks to (Windows). `gemini-2.5-flash-native-audio-preview-12-2025` has far more free-tier quota. |
-| `voice` | `Puck` | The voice Buddy speaks in, one of Gemini Live's prebuilt voices. |
+| `voice` | `Achernar` | The voice Buddy speaks in, one of Gemini Live's prebuilt voices. Achernar is soft and calm; `Vindemiatrix`, `Sulafat`, `Despina` and `Aoede` are other gentle ones. |
 | `headset` | `false` | `true` keeps the mic open while Buddy talks, so you can cut in. Only with a headset: speakers echo. |
 
 Everything but `key` is optional. The `GEMINI_API_KEY` environment variable works too and
@@ -211,7 +211,9 @@ shut.
 
 The face and mouth go through the companion, which already holds the dongle's
 port: `voice.cmd` sends them to it on `127.0.0.1:47802`, and the companion
-passes on only emotions and mouth positions. So the companion must be running,
+passes on only emotions and mouth positions, over USB or Bluetooth, whichever
+it has. The face must be open on the dongle (Settings > BUDDY > SHOW, or the
+Buddy key). So the companion must be running,
 and installed from this version: **run `install.cmd` again** after updating,
 or the copy in `%LOCALAPPDATA%\NEXUS` will not have the part that listens.
 While a voice conversation is going, and for 30 seconds after, Buddy keeps
@@ -318,8 +320,9 @@ is a NORMAL screen, not a game, so the display still blanks on its timeout.
 - Talking out loud is Windows only (`voice.cmd`). On the phone, voice is a
   recorded clip (tap or hold) that is written down when you finish, and
   Buddy answers in text.
-- With `voice.cmd`, the face and mouth move over USB only. Over Bluetooth
-  you still hear Buddy, but the face stays where it is.
+- With `voice.cmd` over Bluetooth, the companion skips its CPU and memory
+  readings while you talk, so the HOST screen keeps its last numbers until
+  the conversation ends. The mouth is a little less smooth than over USB.
 - With speakers, `voice.cmd` is half duplex: you cannot cut in while Buddy
   talks. A headset is not detected, so `"headset": true` has to be set by hand.
 - Gemini ends a voice session after about 15 minutes; run `voice.cmd` again.

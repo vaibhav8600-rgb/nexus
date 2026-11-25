@@ -113,7 +113,8 @@ $VOICE_PORT = 47802
 # Gemini Live, for -Voice. gemini.json's "liveModel" and "voice" override
 # these, so a renamed model needs no edit here.
 $LIVE_MODEL = 'gemini-3.8-live'
-$LIVE_VOICE = 'Puck'
+# Soft and calm. Other gentle ones: Vindemiatrix, Sulafat, Despina, Aoede.
+$LIVE_VOICE = 'Achernar'
 
 # @{ key; model; liveModel; voice; headset } - the environment first, then
 # gemini.json. $null for any that neither says.
@@ -626,7 +627,7 @@ function Get-BuddyPrompt($p, [switch]$Spoken) {
     $out = @("You are $($p.name), a tiny animated face on $owner's keyboard dongle. Pronoun: $($p.pronoun).", 'Traits:')
     $out += $p.traits | ForEach-Object { "- $_" }
     if ($Spoken) {
-        $out += "Voice: $($v.style). You are talking out loud with ${owner}: answer in one or two short sentences."
+        $out += "Voice: $($v.spoken). You are talking out loud with ${owner}: answer in one or two short sentences."
     } else {
         $out += "Voice: $($v.style). A line is at most $($v.max_chars) characters, $($v.case) case, $($v.charset)."
     }
@@ -1020,6 +1021,13 @@ public class VoiceRelay {
     // so this thread never sees one half-changed.
     public volatile SerialPort[] Ports = new SerialPort[0];
 
+    // Over Bluetooth the write is WinRT, which only the companion's own
+    // PowerShell thread can make. So lines wait here, and the main loop
+    // drains them every few tens of milliseconds while it would otherwise
+    // be sleeping. Filled only while BleOn says a link is up.
+    public readonly ConcurrentQueue<string> Ble = new ConcurrentQueue<string>();
+    public volatile bool BleOn;
+
     long heardTicks = DateTime.MinValue.Ticks;
     public DateTime HeardAt { get { return new DateTime(Interlocked.Read(ref heardTicks), DateTimeKind.Utc); } }
 
@@ -1066,6 +1074,7 @@ public class VoiceRelay {
     }
 
     void Write(string line) {
+        if (BleOn && Ble.Count < 64) Ble.Enqueue(line);
         foreach (SerialPort p in Ports) {
             // The main loop takes the same lock around its own writes, so
             // a mouth line never lands in the middle of a clock line.
@@ -1575,6 +1584,31 @@ function Open-VoiceRelay {
     }
 }
 
+# The relay's queued lines out over Bluetooth, in one write. Only the last
+# mouth position of a run counts - a mouth that fell behind skips ahead
+# rather than replaying every shape - and every emotion goes, in order.
+# $false if the link is gone.
+function Send-VoiceBle($link) {
+    $q = $script:relay.Ble
+    if ($q.IsEmpty) { return $true }
+    $got = New-Object System.Collections.Generic.List[string]
+    $l = $null
+    while ($q.TryDequeue([ref]$l)) {
+        if ($l.StartsWith('V ') -and $got.Count -and $got[$got.Count - 1].StartsWith('V ')) {
+            $got[$got.Count - 1] = $l
+        } else {
+            $got.Add($l)
+        }
+    }
+    try {
+        Send-BleLines $link $got
+        Write-Verbose "bluetooth > $($got -join ' | ')"
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 if ($Voice) {
     $gem = Get-GeminiConfig
     if (-not $gem.key) {
@@ -1789,10 +1823,12 @@ try {
     }
 
     # The voice relay writes to whatever ports are open now. A new array
-    # each time, so its thread never sees one half-changed.
-    # ponytail: USB only - over Bluetooth the relay does nothing; queue its
-    # E lines for the BLE write if the face matters there.
-    if ($script:relay) { $script:relay.Ports = [IO.Ports.SerialPort[]]@($open.Values) }
+    # each time, so its thread never sees one half-changed. Over Bluetooth it
+    # queues instead, for Send-VoiceBle.
+    if ($script:relay) {
+        $script:relay.Ports = [IO.Ports.SerialPort[]]@($open.Values)
+        $script:relay.BleOn = [bool]$ble
+    }
 
     if ($open.Count -eq 0 -and -not $ble) {
         if (-not $script:waiting) {
@@ -1842,17 +1878,25 @@ try {
         $lastClock = $now
     }
 
-    try {
-        $cpu = (Get-Counter $cpuCounter -ErrorAction Stop
-               ).CounterSamples[0].CookedValue
-        $lines.Add('C ' + [int][math]::Round($cpu))
-    } catch {}
+    # While voice.cmd is talking over Bluetooth, skip the load readings: they
+    # block for about 1.2 s, and the mouth's lines wait on this thread. The
+    # HOST screen keeps its last numbers for a conversation's length.
+    $voiceBle = $ble -and $script:relay -and
+        ([DateTime]::UtcNow - $script:relay.HeardAt).TotalSeconds -lt 5
 
-    try {
-        $os = Get-CimInstance Win32_OperatingSystem
-        $used = 100 * (1 - $os.FreePhysicalMemory / $os.TotalVisibleMemorySize)
-        $lines.Add('M ' + [int][math]::Round($used))
-    } catch {}
+    if (-not $voiceBle) {
+        try {
+            $cpu = (Get-Counter $cpuCounter -ErrorAction Stop
+                   ).CounterSamples[0].CookedValue
+            $lines.Add('C ' + [int][math]::Round($cpu))
+        } catch {}
+
+        try {
+            $os = Get-CimInstance Win32_OperatingSystem
+            $used = 100 * (1 - $os.FreePhysicalMemory / $os.TotalVisibleMemorySize)
+            $lines.Add('M ' + [int][math]::Round($used))
+        } catch {}
+    }
 
     $title, $artist, $playing = Get-NowPlaying
     $np = "$title|$artist|$playing"
@@ -1941,7 +1985,20 @@ try {
         Write-Output 'link lost; waiting for the dongle'
         $script:waiting = $true
     }
-    Start-Sleep -Milliseconds ([int]($Interval * 1000))
+    # The wait between rounds doubles as the voice relay's Bluetooth pump.
+    $until = (Get-Date).AddMilliseconds([int]($Interval * 1000))
+    while ($true) {
+        if ($ble -and $script:relay -and -not (Send-VoiceBle $ble)) {
+            Write-Warning "bluetooth $($ble.Name) lost"
+            Close-BleLink $ble
+            $ble = $null
+            $script:relay.BleOn = $false
+            $nextBle = (Get-Date).AddSeconds($BLE_RESCAN)
+        }
+        $left = ($until - (Get-Date)).TotalMilliseconds
+        if ($left -le 0) { break }
+        Start-Sleep -Milliseconds ([int][math]::Min($left, 40))
+    }
   }
 } finally {
     # The relay first, so nothing else writes to the ports while they close.
