@@ -1107,6 +1107,15 @@ public class BuddyVoice {
     public volatile bool Done;
     public string CloseReason = "";
 
+    // For the window: which mic (-1 is Windows' default), and what to draw.
+    public int MicDevice = -1;
+    public volatile int Mouth;          // 0-4, the dongle's mouth, in time with the voice
+    public volatile int MicRms;         // how loud the mic is, int16 units
+    public volatile string Emotion = "NEUTRAL";
+    public bool Ready { get { return setupDone; } }
+    public bool Talking { get { lock (outLock) return Now() < playEnd; } }
+    Thread startThread;
+
     const int MIC_RATE = 16000, OUT_RATE = 24000, MIC_BUFS = 4, MIC_MS = 100;
     const int WHDR_DONE = 1;
 
@@ -1154,6 +1163,13 @@ public class BuddyVoice {
     // 0-4 for a slice of 16-bit little-endian PCM: how many thresholds its
     // RMS clears.
     public static int Level(byte[] pcm, int offset, int count) {
+        int rms = Rms(pcm, offset, count);
+        int level = 0;
+        foreach (int t in Thresholds) if (rms >= t) level++;
+        return level;
+    }
+
+    static int Rms(byte[] pcm, int offset, int count) {
         int n = count / 2;
         if (n == 0) return 0;
         double sum = 0;
@@ -1161,10 +1177,7 @@ public class BuddyVoice {
             short s = (short)(pcm[offset + 2 * i] | (pcm[offset + 2 * i + 1] << 8));
             sum += (double)s * s;
         }
-        double rms = Math.Sqrt(sum / n);
-        int level = 0;
-        foreach (int t in Thresholds) if (rms >= t) level++;
-        return level;
+        return (int)Math.Sqrt(sum / n);
     }
 
     public void Start() {
@@ -1179,6 +1192,43 @@ public class BuddyVoice {
         recvThread = Spawn(RecvLoop);
         micThread = Spawn(MicLoop);
         pumpThread = Spawn(PumpLoop);
+    }
+
+    // Start() off the caller's thread: connecting can take seconds, and the
+    // window must not freeze meanwhile. A failure ends up in Log and Done.
+    public void BeginStart() {
+        startThread = Spawn(delegate {
+            try {
+                Start();
+            } catch (Exception e) {
+                if (!Done) Say("error: " + e.GetBaseException().Message);
+                Done = true;
+            }
+        });
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct WAVEINCAPS {
+        public ushort wMid, wPid;
+        public uint vDriverVersion;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szPname;
+        public uint dwFormats;
+        public ushort wChannels, wReserved1;
+    }
+
+    [DllImport("winmm.dll")] static extern int waveInGetNumDevs();
+    [DllImport("winmm.dll", CharSet = CharSet.Unicode)] static extern int waveInGetDevCapsW(IntPtr id, ref WAVEINCAPS caps, int size);
+
+    // The microphones, in device-id order. Windows cuts names at 31 letters.
+    public static string[] Mics() {
+        int n = waveInGetNumDevs();
+        string[] names = new string[n];
+        for (int i = 0; i < n; i++) {
+            WAVEINCAPS c = new WAVEINCAPS();
+            names[i] = waveInGetDevCapsW(new IntPtr(i), ref c, Marshal.SizeOf(typeof(WAVEINCAPS))) == 0
+                ? c.szPname : "Microphone " + (i + 1);
+        }
+        return names;
     }
 
     static Thread Spawn(ThreadStart f) {
@@ -1198,7 +1248,7 @@ public class BuddyVoice {
         } catch { }
     }
 
-    void Face(string e) { Line("E " + e); }
+    void Face(string e) { Emotion = e; Line("E " + e); }
 
     // ClientWebSocket takes one send at a time; the mic and tool answers
     // come from different threads.
@@ -1283,7 +1333,7 @@ public class BuddyVoice {
         // int -1 is not on 64-bit Windows. CALLBACK_NULL: buffers are
         // polled for WHDR_DONE instead of a callback into managed code.
         WAVEFORMATEX fin = Pcm16(MIC_RATE), fout = Pcm16(OUT_RATE);
-        int r = waveInOpen(out hwi, new IntPtr(-1), ref fin, IntPtr.Zero, IntPtr.Zero, 0);
+        int r = waveInOpen(out hwi, new IntPtr(MicDevice), ref fin, IntPtr.Zero, IntPtr.Zero, 0);
         if (r != 0) { hwi = IntPtr.Zero; throw new Exception("no microphone (waveInOpen error " + r + ")"); }
         r = waveOutOpen(out hwo, new IntPtr(-1), ref fout, IntPtr.Zero, IntPtr.Zero, 0);
         if (r != 0) { hwo = IntPtr.Zero; throw new Exception("no speakers (waveOutOpen error " + r + ")"); }
@@ -1317,7 +1367,9 @@ public class BuddyVoice {
                 waveInPrepareHeader(hwi, h, HDR);
                 waveInAddBuffer(hwi, h, HDR);
                 i = (i + 1) % inHdrs.Length;
-                if (!setupDone || n == 0) continue;
+                if (n == 0) continue;
+                MicRms = Rms(pcm, 0, n);
+                if (!setupDone) continue;
                 // Half duplex: while Buddy talks, and a moment after, the
                 // mic sends silence. Otherwise the speakers echo into it and
                 // Buddy hears itself, takes that as being interrupted, and
@@ -1396,6 +1448,7 @@ public class BuddyVoice {
                 Line("V " + level);
                 mouth = level;
                 mouthAt = now;
+                Mouth = level;
             }
             Thread.Sleep(30);
         }
@@ -1537,6 +1590,9 @@ public class BuddyVoice {
         Done = true;
         try { cts.Cancel(); } catch { }
         try { if (ws != null) ws.Abort(); } catch { }
+        // A Start() still connecting is cancelled above; wait for it, so it
+        // cannot open the mic after the cleanup below.
+        if (startThread != null) startThread.Join(16000);
         foreach (Thread t in new Thread[] { recvThread, micThread, pumpThread })
             if (t != null) t.Join(2000);
         if (hwi != IntPtr.Zero) {
@@ -1554,6 +1610,7 @@ public class BuddyVoice {
             }
             timeline.Clear();
         }
+        Mouth = 0;
         Line("V 0");
         try { udp.Close(); } catch { }
     }
@@ -1609,12 +1666,138 @@ function Send-VoiceBle($link) {
     }
 }
 
+# The voice window: small and dark, popping up in the corner of the screen.
+# Buddy's face in the middle moves its mouth with the voice, like the
+# dongle's, and its glow is the mood. Built from WPF, which every Windows has.
+$VOICE_XAML = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Buddy" Width="344" Height="540" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" ResizeMode="NoResize" Topmost="True" WindowStartupLocation="Manual"
+        FontFamily="Segoe UI Variable Text, Segoe UI" Foreground="#ECEBFF" UseLayoutRounding="True">
+  <Window.Resources>
+    <Style x:Key="Flat" TargetType="Button">
+      <Setter Property="Foreground" Value="#ECEBFF"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Grid>
+              <Border Background="{TemplateBinding Background}" CornerRadius="999"/>
+              <Border x:Name="Hover" Background="White" CornerRadius="999" Opacity="0"/>
+              <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Hover" Property="Opacity" Value="0.08"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Hover" Property="Opacity" Value="0.16"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <Border x:Name="Card" Margin="14" CornerRadius="26" Background="#F50D0C22" BorderBrush="#2EFFFFFF"
+          BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,1">
+    <Border.Effect>
+      <DropShadowEffect BlurRadius="26" ShadowDepth="4" Direction="270" Opacity="0.5" Color="Black"/>
+    </Border.Effect>
+    <Border.RenderTransform>
+      <ScaleTransform x:Name="Pop" ScaleX="0.9" ScaleY="0.9"/>
+    </Border.RenderTransform>
+    <Grid Margin="18,12,14,18">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="196"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
+      <Grid x:Name="Header" Background="Transparent" Height="34">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Ellipse x:Name="Dot" Width="8" Height="8" Margin="0,0,9,0" VerticalAlignment="Center"/>
+          <TextBlock x:Name="Who" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <TextBlock x:Name="Status" FontSize="13" Foreground="#9C9AC8" Margin="10,1,0,0" VerticalAlignment="Center"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="MinBtn" Style="{StaticResource Flat}" Width="30" Height="30" ToolTip="Minimize">
+            <TextBlock Text="&#xE921;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Foreground="#9C9AC8"/>
+          </Button>
+          <Button x:Name="CloseBtn" Style="{StaticResource Flat}" Width="30" Height="30" ToolTip="Close">
+            <TextBlock Text="&#xE8BB;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Foreground="#9C9AC8"/>
+          </Button>
+        </StackPanel>
+      </Grid>
+
+      <Grid Grid.Row="1" Width="196" Height="196" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Ellipse x:Name="Glow" Width="196" Height="196" RenderTransformOrigin="0.5,0.5">
+          <Ellipse.RenderTransform>
+            <ScaleTransform x:Name="GlowScale"/>
+          </Ellipse.RenderTransform>
+        </Ellipse>
+        <Ellipse Width="122" Height="122" Fill="#171636"/>
+        <Ellipse x:Name="Ring" Width="122" Height="122" StrokeThickness="2"/>
+        <Canvas Width="122" Height="122">
+          <Rectangle Canvas.Left="38" Canvas.Top="40" Width="12" Height="20" RadiusX="6" RadiusY="6"
+                     Fill="#ECEBFF" RenderTransformOrigin="0.5,0.5">
+            <Rectangle.RenderTransform>
+              <ScaleTransform x:Name="EyeL"/>
+            </Rectangle.RenderTransform>
+          </Rectangle>
+          <Rectangle Canvas.Left="72" Canvas.Top="40" Width="12" Height="20" RadiusX="6" RadiusY="6"
+                     Fill="#ECEBFF" RenderTransformOrigin="0.5,0.5">
+            <Rectangle.RenderTransform>
+              <ScaleTransform x:Name="EyeR"/>
+            </Rectangle.RenderTransform>
+          </Rectangle>
+          <Rectangle x:Name="Mouth" Canvas.Left="47" Canvas.Top="76" Width="28" Height="5"
+                     RadiusX="2.5" RadiusY="2.5" Fill="#ECEBFF"/>
+        </Canvas>
+      </Grid>
+
+      <ScrollViewer x:Name="Scroll" Grid.Row="2" VerticalScrollBarVisibility="Hidden" Margin="0,2,4,12">
+        <StackPanel x:Name="Talk"/>
+      </ScrollViewer>
+
+      <Grid Grid.Row="3" Margin="0,0,4,0">
+        <Button x:Name="MicBtn" Style="{StaticResource Flat}" Background="#14FFFFFF" Padding="14,0"
+                Height="36" HorizontalAlignment="Left" ToolTip="Microphone">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE720;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
+                       Foreground="#9C9AC8" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock x:Name="MicName" FontSize="12.5" TextTrimming="CharacterEllipsis" MaxWidth="150"
+                       VerticalAlignment="Center"/>
+            <TextBlock Text="&#xE70D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="9"
+                       Foreground="#9C9AC8" VerticalAlignment="Center" Margin="8,1,0,0"/>
+          </StackPanel>
+        </Button>
+        <Button x:Name="TalkBtn" Style="{StaticResource Flat}" Width="60" Height="60" HorizontalAlignment="Right">
+          <TextBlock x:Name="TalkIcon" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22"
+                     HorizontalAlignment="Center"/>
+        </Button>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>
+'@
+
+# The glow's colour for each face; the rest are magenta, NEXUS's own.
+$VOICE_MOODS = @{
+    HAPPY = '#5CFFC0'; LOVE = '#FF5CA8'; SAD = '#5C8CFF'; ANGRY = '#FF5C6C'
+    SLEEPY = '#8A88C8'; THINKING = '#FFC85C'; SURPRISED = '#FFE05C'; LISTENING = '#00E0FF'
+}
+# How open the eyes are for a face: 1 is round.
+$VOICE_EYES = @{ HAPPY = 0.55; LOVE = 0.5; SLEEPY = 0.25; SURPRISED = 1.25; SAD = 0.8 }
+
 if ($Voice) {
+    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
     $gem = Get-GeminiConfig
-    if (-not $gem.key) {
-        Write-Output "Voice needs a Gemini key in $KEY_FILE"
-        return
-    }
     $p = Get-Content (Get-PersonaPath) -Raw -ErrorAction Stop | ConvertFrom-Json
     $model = if ($gem.liveModel) { $gem.liveModel } else { $LIVE_MODEL }
     $speaker = if ($gem.voice) { $gem.voice } else { $LIVE_VOICE }
@@ -1643,27 +1826,284 @@ if ($Voice) {
         outputAudioTranscription = @{}
     } } | ConvertTo-Json -Depth 12 -Compress
 
-    Add-VoiceTypes
-    [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
-    $bv = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, $setup, "$($p.name)", $faces, $VOICE_PORT)
-    Write-Output "Connecting to Gemini Live ($model, voice $speaker)..."
-    $m = $null
+    $script:buildError = $null
+    $script:mics = @()
     try {
-        $bv.Start()
-        while (-not $bv.Done) {
-            while ($bv.Log.TryDequeue([ref]$m)) { Write-Output $m }
-            Start-Sleep -Milliseconds 100
-        }
+        Add-VoiceTypes
+        $script:mics = @([NexusVoice.BuddyVoice]::Mics())
     } catch {
-        Write-Output "voice: $(Get-Reason $_)"
-    } finally {
-        # Ctrl+C lands here too: mic and speakers closed, mouth shut.
-        $bv.Stop()
-        while ($bv.Log.TryDequeue([ref]$m)) { Write-Output $m }
+        $script:buildError = Get-Reason $_
     }
-    if ($bv.CloseReason -match 'quota|rate|exhaust|429') {
-        Write-Output "Out of Live quota. For more headroom, set `"liveModel`": `"$LIVE_FALLBACK`" in $KEY_FILE."
+    [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
+
+    # Which mic, remembered by name beside the key: device numbers shift
+    # when a headset is plugged in, names do not.
+    $VOICE_PREFS = Join-Path $HOME_DIR 'voice.json'
+    $script:micId = -1
+    try {
+        $saved = "$((Get-Content $VOICE_PREFS -Raw -ErrorAction Stop | ConvertFrom-Json).mic)"
+        $script:micId = [array]::IndexOf([string[]]$script:mics, $saved)
+    } catch {}
+
+    $w = [Windows.Markup.XamlReader]::Parse($VOICE_XAML)
+    $ui = @{}
+    foreach ($n in 'Card', 'Pop', 'Header', 'Dot', 'Who', 'Status', 'MinBtn', 'CloseBtn', 'Glow',
+                   'GlowScale', 'Ring', 'EyeL', 'EyeR', 'Mouth', 'Scroll', 'Talk', 'MicBtn',
+                   'MicName', 'TalkBtn', 'TalkIcon') {
+        $ui[$n] = $w.FindName($n)
     }
+    $w.Title = "$($p.name)"
+    $ui.Who.Text = "$($p.name)"
+
+    function ConvertTo-VoiceColor([string]$hex) { [Windows.Media.ColorConverter]::ConvertFromString($hex) }
+    function New-VoiceBrush([string]$hex) { New-Object Windows.Media.SolidColorBrush (ConvertTo-VoiceColor $hex) }
+
+    # Brushes made here, not in the XAML, so they can be changed every frame.
+    $fx = @{
+        ring = New-VoiceBrush '#00E0FF'; inner = New-Object Windows.Media.GradientStop
+        outer = New-Object Windows.Media.GradientStop
+        mouth = 0.0; glow = 0.0; eye = 1.0; r = 110.0; g = 108.0; b = 154.0
+        blinkAt = (Get-Date).AddSeconds(2); blinkEnd = [datetime]::MinValue
+    }
+    $fx.inner.Offset = 0.42
+    $fx.outer.Offset = 1.0
+    $glowBrush = New-Object Windows.Media.RadialGradientBrush
+    $glowBrush.GradientStops.Add($fx.inner)
+    $glowBrush.GradientStops.Add($fx.outer)
+    $ui.Glow.Fill = $glowBrush
+    $ui.Ring.Stroke = $fx.ring
+    $ui.Dot.Fill = $fx.ring
+
+    function Set-VoiceMic([int]$id) {
+        $script:micId = $id
+        $ui.MicName.Text = if ($id -ge 0 -and $id -lt $script:mics.Count) { $script:mics[$id] } else { 'Default microphone' }
+    }
+    Set-VoiceMic $script:micId
+
+    function Add-VoiceLine([string]$kind, [string]$text) {
+        $tb = New-Object Windows.Controls.TextBlock
+        $tb.Text = $text
+        $tb.TextWrapping = 'Wrap'
+        $tb.FontSize = 13.5
+        if ($kind -eq 'note') {
+            $tb.FontSize = 12
+            $tb.Foreground = New-VoiceBrush '#9C9AC8'
+            $tb.TextAlignment = 'Center'
+            $tb.Margin = New-Object Windows.Thickness(10, 6, 10, 6)
+            $el = $tb
+        } else {
+            $el = New-Object Windows.Controls.Border
+            $el.CornerRadius = New-Object Windows.CornerRadius(16)
+            $el.Padding = New-Object Windows.Thickness(12, 8, 12, 8)
+            $el.Margin = New-Object Windows.Thickness(0, 3, 0, 3)
+            $el.MaxWidth = 250
+            $el.Child = $tb
+            if ($kind -eq 'you') {
+                $el.HorizontalAlignment = 'Right'
+                $el.Background = New-VoiceBrush '#2A00E0FF'
+            } else {
+                $el.HorizontalAlignment = 'Left'
+                $el.Background = New-VoiceBrush '#16FFFFFF'
+            }
+        }
+        [void]$ui.Talk.Children.Add($el)
+        while ($ui.Talk.Children.Count -gt 40) { $ui.Talk.Children.RemoveAt(0) }
+        $ui.Scroll.ScrollToEnd()
+    }
+
+    # The conversation's own lines become bubbles; anything else is a note.
+    function Read-VoiceLog($b) {
+        $m = $null
+        $me = "$($p.name): "
+        while ($b.Log.TryDequeue([ref]$m)) {
+            if ($m.StartsWith('you: ')) { Add-VoiceLine 'you' $m.Substring(5) }
+            elseif ($m.StartsWith($me)) { Add-VoiceLine 'buddy' $m.Substring($me.Length) }
+            elseif (-not $m.StartsWith('connected')) { Add-VoiceLine 'note' $m }
+        }
+    }
+
+    function Set-VoiceButton([bool]$on) {
+        $ui.TalkBtn.Background = New-VoiceBrush $(if ($on) { '#FF4D6A' } else { '#00E0FF' })
+        $ui.TalkIcon.Text = [string][char]$(if ($on) { 0xE71A } else { 0xE720 })
+        $ui.TalkIcon.Foreground = New-VoiceBrush $(if ($on) { '#FFFFFF' } else { '#0B0B1E' })
+        $ui.TalkBtn.ToolTip = if ($on) { 'End' } else { 'Talk' }
+    }
+
+    $script:bv = $null
+    function Start-VoiceTalk {
+        if ($script:bv) { return }
+        if (-not $gem.key) { Add-VoiceLine 'note' "Voice needs a Gemini key in $KEY_FILE"; return }
+        if ($script:buildError) { Add-VoiceLine 'note' "Voice cannot start: $script:buildError"; return }
+        $b = New-Object NexusVoice.BuddyVoice($VOICE_URL, $gem.key, $setup, "$($p.name)", $faces, $VOICE_PORT)
+        $b.MicDevice = $script:micId
+        $script:bv = $b
+        Set-VoiceButton $true
+        $b.BeginStart()
+    }
+    function Stop-VoiceTalk {
+        $b = $script:bv
+        if (-not $b) { return }
+        $script:bv = $null
+        $b.Stop()
+        Read-VoiceLog $b
+        if ($b.CloseReason -match 'quota|rate|exhaust|429') {
+            Add-VoiceLine 'note' "Out of Live quota. For more, set `"liveModel`": `"$LIVE_FALLBACK`" in gemini.json."
+        }
+        Set-VoiceButton $false
+    }
+
+    # The mic list, as a small dark menu above its button.
+    $popup = New-Object Windows.Controls.Primitives.Popup
+    $popup.PlacementTarget = $ui.MicBtn
+    $popup.Placement = 'Top'
+    $popup.VerticalOffset = -8
+    $popup.StaysOpen = $false
+    $popup.AllowsTransparency = $true
+    $ui.MicBtn.Add_Click({
+        $panel = New-Object Windows.Controls.StackPanel
+        for ($i = -1; $i -lt $script:mics.Count; $i++) {
+            $item = New-Object Windows.Controls.Button
+            $item.Style = $w.FindResource('Flat')
+            $item.HorizontalContentAlignment = 'Left'
+            $item.Padding = New-Object Windows.Thickness(12, 7, 14, 7)
+            $item.Tag = $i
+            $tb = New-Object Windows.Controls.TextBlock
+            $tb.Text = if ($i -lt 0) { 'Default microphone' } else { $script:mics[$i] }
+            $tb.FontSize = 12.5
+            if ($i -eq $script:micId) {
+                $tb.FontWeight = [Windows.FontWeights]::SemiBold
+                $tb.Foreground = New-VoiceBrush '#00E0FF'
+            }
+            $item.Content = $tb
+            $item.Add_Click({
+                param($src)
+                $popup.IsOpen = $false
+                Set-VoiceMic ([int]$src.Tag)
+                $name = if ($script:micId -ge 0) { $script:mics[$script:micId] } else { '' }
+                try { @{ mic = $name } | ConvertTo-Json | Set-Content $VOICE_PREFS -Encoding utf8 } catch {}
+                # A new mic takes a new session.
+                if ($script:bv) { Stop-VoiceTalk; Start-VoiceTalk }
+            })
+            [void]$panel.Children.Add($item)
+        }
+        $box = New-Object Windows.Controls.Border
+        $box.CornerRadius = New-Object Windows.CornerRadius(16)
+        $box.Background = New-VoiceBrush '#FA1A1940'
+        $box.BorderBrush = New-VoiceBrush '#2EFFFFFF'
+        $box.BorderThickness = New-Object Windows.Thickness(1)
+        $box.Padding = New-Object Windows.Thickness(6)
+        $box.MinWidth = 220
+        $box.Child = $panel
+        $popup.Child = $box
+        $popup.IsOpen = $true
+    })
+
+    $ui.TalkBtn.Add_Click({ if ($script:bv) { Stop-VoiceTalk } else { Start-VoiceTalk } })
+    $ui.CloseBtn.Add_Click({ $w.Close() })
+    $ui.MinBtn.Add_Click({ $w.WindowState = 'Minimized' })
+    $ui.Header.Add_MouseLeftButtonDown({ $w.DragMove() })
+    $w.Add_KeyDown({ if ($_.Key -eq 'Escape') { $w.Close() } })
+
+    # About 30 frames a second: the conversation's lines, then the face.
+    function Update-VoiceFace {
+        $b = $script:bv
+        $now = Get-Date
+        $state = 'idle'
+        if ($b) {
+            if (-not $b.Ready) { $state = 'connecting' }
+            elseif ($b.Talking) { $state = 'speaking' }
+            elseif ($b.MicRms -gt 700) { $state = 'hearing' }
+            else { $state = 'listening' }
+        }
+        $emo = if ($b) { "$($b.Emotion)" } else { 'NEUTRAL' }
+        $ui.Status.Text = switch ($state) {
+            'connecting' { 'Connecting...' }
+            'speaking' { 'Speaking' }
+            'hearing' { 'Hearing you' }
+            'listening' { 'Listening' }
+            default { 'Tap to talk' }
+        }
+        $hex = switch ($state) {
+            'speaking' { if ($VOICE_MOODS[$emo]) { $VOICE_MOODS[$emo] } else { '#D633FF' } }
+            'hearing' { '#00E0FF' }
+            'listening' { '#00E0FF' }
+            'connecting' { '#9C9AC8' }
+            default { '#6E6C9A' }
+        }
+        $mouthTo = if ($b) { [double]$b.Mouth } else { 0.0 }
+        $glowTo = switch ($state) {
+            'speaking' { 0.55 + 0.11 * $mouthTo }
+            'hearing' { 0.5 + 0.5 * [math]::Min(1.0, $b.MicRms / 5000.0) }
+            'listening' { 0.42 }
+            'connecting' { 0.3 + 0.12 * [math]::Sin($now.TimeOfDay.TotalSeconds * 4) }
+            default { 0.2 }
+        }
+        # Eased toward their targets, so nothing jumps.
+        $fx.mouth += ($mouthTo - $fx.mouth) * 0.5
+        $fx.glow += ($glowTo - $fx.glow) * 0.2
+        $c = ConvertTo-VoiceColor $hex
+        $fx.r += ($c.R - $fx.r) * 0.15
+        $fx.g += ($c.G - $fx.g) * 0.15
+        $fx.b += ($c.B - $fx.b) * 0.15
+        $rgb = [byte[]]@([math]::Round($fx.r), [math]::Round($fx.g), [math]::Round($fx.b))
+        $fx.inner.Color = [Windows.Media.Color]::FromArgb(140, $rgb[0], $rgb[1], $rgb[2])
+        $fx.outer.Color = [Windows.Media.Color]::FromArgb(0, $rgb[0], $rgb[1], $rgb[2])
+        $fx.ring.Color = [Windows.Media.Color]::FromArgb(255, $rgb[0], $rgb[1], $rgb[2])
+        $ui.GlowScale.ScaleX = 0.74 + 0.34 * $fx.glow
+        $ui.GlowScale.ScaleY = $ui.GlowScale.ScaleX
+
+        $h = 5 + 4.5 * $fx.mouth
+        $ui.Mouth.Height = $h
+        [Windows.Controls.Canvas]::SetTop($ui.Mouth, 79 - $h / 2)
+
+        if ($now -ge $fx.blinkAt) {
+            $fx.blinkEnd = $now.AddMilliseconds(130)
+            $fx.blinkAt = $now.AddMilliseconds((Get-Random -Minimum 2500 -Maximum 5500))
+        }
+        $eyeTo = if ($now -lt $fx.blinkEnd) { 0.1 }
+                 elseif ($state -eq 'speaking' -and $VOICE_EYES[$emo]) { $VOICE_EYES[$emo] }
+                 else { 1.0 }
+        $fx.eye += ($eyeTo - $fx.eye) * 0.55
+        $ui.EyeL.ScaleY = $fx.eye
+        $ui.EyeR.ScaleY = $fx.eye
+    }
+
+    $timer = New-Object Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(33)
+    $timer.Add_Tick({
+        $b = $script:bv
+        if ($b) {
+            Read-VoiceLog $b
+            if ($b.Done) { Stop-VoiceTalk }
+        }
+        Update-VoiceFace
+    })
+
+    # Bottom right, above the taskbar, and it pops: a quick fade and a
+    # little overshoot. Then it starts listening at once.
+    $wa = [Windows.SystemParameters]::WorkArea
+    $w.Left = $wa.Right - $w.Width - 6
+    $w.Top = $wa.Bottom - $w.Height - 6
+    $w.Add_Loaded({
+        $ease = New-Object Windows.Media.Animation.BackEase
+        $ease.EasingMode = 'EaseOut'
+        $ease.Amplitude = 0.35
+        $grow = New-Object Windows.Media.Animation.DoubleAnimation(0.9, 1.0, (New-Object Windows.Duration([TimeSpan]::FromMilliseconds(280))))
+        $grow.EasingFunction = $ease
+        $ui.Pop.BeginAnimation([Windows.Media.ScaleTransform]::ScaleXProperty, $grow)
+        $ui.Pop.BeginAnimation([Windows.Media.ScaleTransform]::ScaleYProperty, $grow)
+        $fade = New-Object Windows.Media.Animation.DoubleAnimation(0.0, 1.0, (New-Object Windows.Duration([TimeSpan]::FromMilliseconds(180))))
+        $ui.Card.BeginAnimation([Windows.UIElement]::OpacityProperty, $fade)
+        $timer.Start()
+        Start-VoiceTalk
+    })
+    # Closing the window ends the conversation: mic and speakers off, mouth shut.
+    $w.Add_Closed({
+        $timer.Stop()
+        Stop-VoiceTalk
+    })
+    Set-VoiceButton $false
+    [void]$w.ShowDialog()
     return
 }
 

@@ -201,13 +201,20 @@ that says more ("why are you sad?", "sing about cats") still goes to Gemini.
 The phrases are `commands` in `persona/persona.json`; add your own there.
 
 **Talking out loud.** Double-click `tools/nexus-host/voice.cmd` (or run
-`nexus_host.ps1 -Voice`) and talk through this PC's microphone. Buddy
+`nexus_host.ps1 -Voice`). A small window pops up in the bottom-right corner
+and starts listening at once: talk through this PC's microphone, and Buddy
 answers in a real voice through the speakers, using Gemini Live
 (`liveModel`, `gemini-3.8-live` by default). On the dongle the face shows
 LISTENING while you speak, then the emotion Gemini picks for its answer, and
-the mouth moves with the speech and closes when it stops. The window prints
-what each of you said. Ctrl+C or closing the window ends it, with the mouth
-shut.
+the mouth moves with the speech and closes when it stops.
+
+The window shows the same: a face whose mouth moves with the voice and whose
+glow takes the mood, a status line, and what each of you said. The round
+button ends the conversation and starts a new one. The pill beside it picks
+the microphone, and the window remembers it by name in
+`%LOCALAPPDATA%\NEXUS\voice.json`. Drag the window by its top edge. Closing it,
+or Esc, ends the conversation with the mouth shut. To see errors that happen
+before the window opens, run `nexus_host.ps1 -Voice` from a PowerShell prompt.
 
 The face and mouth go through the companion, which already holds the dongle's
 port: `voice.cmd` sends them to it on `127.0.0.1:47802`, and the companion
