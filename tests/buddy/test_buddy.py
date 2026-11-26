@@ -651,6 +651,21 @@ def voice():
        'timer and camera lists are copied with ToArray, never @()')
     ok('return , $script:cams' not in ps and '\n        , $script:cams\n' not in ps,
        'the camera list is returned plain, so the settings show every camera')
+    # Held keys: dictate anywhere (/) and "what's this?" (Z).
+    ok('$DICTATE_VK = 0x44' in ps and '$EXPLAIN_VK = 0x45' in ps and
+       'Interlocked.Increment(ref releases);' in cs and 'TakeReleases()' in window,
+       'two held hotkeys, with the let-go seen (Windows sends no key-up for a hotkey)')
+    ok('if ($script:bv) { $script:bv.Muted = $true }' in window and '|| Muted) Array.Clear' in cs,
+       'a conversation going on does not hear a held question or dictation')
+    ok("$HEAR_MODELS = @('gemini-3.1-flash-lite'" in ps and 'Hear([string[]]$HEAR_MODELS' in window,
+       'held keys ask the fastest Flash Lite first (measured 1.7-2.8 s against 5.9-7.2 s)')
+    ok('"is is\\" is \\"is\\"' in cs and 'only \\"as an " +' in cs,
+       'dictation drops repeats, and "formal" changes the wording, not the shape')
+    ok('[NexusVoice.Typing]::ModifiersUp(1500)' in window and
+       '$script:clipBack = @{' in window and 'GetClipboardSequenceNumber() -eq $seq' in window,
+       'pastes and copies wait for the hold\'s modifiers, and the clipboard is put back')
+    ok("name = 'paste_text'" in window and 'PasteWords.IsMatch(lastAsk' in cs,
+       'paste_text types into your app only when you ask it to')
     # The deep audit's fixes: privacy, cost, layout.
     ok('if ($b.Away -and $script:view) { Set-CameraView $false }' in window and
        'Away = true;' in cs and '$CAMERA_IDLE_S = 120' in window,
