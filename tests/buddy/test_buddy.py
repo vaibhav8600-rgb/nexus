@@ -624,6 +624,31 @@ def voice():
        'Say("Shared one snapshot of your " + lookAt' in cs and 'SendLook();' in cs,
        'a look needs the owner to have just asked, and every picture sent is said in '
        'the window')
+    # What Buddy saw is shown; cameras are chosen like mics; reminders hold.
+    ok('Shown.Enqueue(jpeg);' in cs and
+       '$b.Shown.TryDequeue([ref]$img)) { Add-VoiceImage $img }' in window,
+       'every picture sent on a look is shown in the chat')
+    ok("New-VoiceMenuHeader 'CAMERA'" in window and "Set-VoicePref 'camera'" in window and
+       "$script:camName = Get-VoicePref 'camera'" in window,
+       'the camera is picked in the settings, like the mic, and remembered by name')
+    run = between('$CAMERA_RUN = {', '\n    }\n')
+    ok('[NexusVoice.Snap]::Brightness($frame) -ge $state.dark' in run and '$tries -ge 5' in run,
+       'a photo waits out a webcam\'s black first frames (measured 0.02, then 0.31)')
+    ok("$CAMERA_SKIP = '(?i)\\bIR\\b|virtual|camo" in window and
+       '$j.at + 1 -lt $j.order.Count' in window and '(++$v.darkRun) -ge 5' in window,
+       'virtual and IR cameras go last, and a black camera moves on to the next')
+    ok('function Set-CameraView' in window and
+       '$b.SendFrame([NexusVoice.Snap]::Jpeg($bytes))' in window and
+       '$CAMERA_EVERY_S = 3' in window and 'Invoke-CameraAsk $m.Substring(5)' in window,
+       'a live camera view, like Mira: on screen, a frame to Gemini every 3 s, said or set')
+    ok('SetThreadDpiAwarenessContext(new IntPtr(-4))' in cs and 'MonitorFromPoint(p, 2)' in cs,
+       'the screen under the mouse, in real pixels whatever the scaling')
+    stop = between('function Stop-VoiceTalk')
+    ok(stop.index('Update-VoiceTimers $b') < stop.index('$script:tiers[$script:tier]'),
+       'a timer set just before the conversation was ended is kept')
+    ok('Invoke-TimerAsk $text' in between('function Send-VoiceMessage') and
+       'at = @{ type = \'STRING\'' in setup and 'It is now $(' in setup,
+       'reminders typed with no conversation are set here; spoken ones take a time of day too')
     tick = between('$timer.Add_Tick({', '\n    })\n')
     ok(tick.index('Update-VoiceTimers $b') < tick.index('if ($b.Done) { Stop-VoiceTalk }'),
        'timers a conversation set are taken before it is stopped, and outlive it')
@@ -727,6 +752,15 @@ def voice():
             "(@('Can you look at my screen?', 'What am I holding?', 'How are you?',",
             "   'Play some music') | ForEach-Object { $v::MayLook($_) }) -join ','",
             "[NexusVoice.Media]::Actions -contains 'play_pause'",
+            # A black picture is told from a lit one.
+            "Add-Type -AssemblyName System.Drawing",
+            "$shade = foreach ($c in 'Black', 'Gray', 'White') {",
+            "  $bmp = New-Object Drawing.Bitmap 64, 48",
+            "  $g = [Drawing.Graphics]::FromImage($bmp); $g.Clear([Drawing.Color]::$c)",
+            "  $j = [NexusVoice.Snap]::Jpeg($bmp)",
+            "  [NexusVoice.Snap]::Brightness($j) -ge 0.06",
+            "}",
+            "$shade -join ','",
         ]))
     err = ''
     try:
@@ -736,7 +770,7 @@ def voice():
         out, err = r.stdout.strip().splitlines(), r.stderr.strip()[:300]
     except (OSError, subprocess.TimeoutExpired) as e:
         out = ['error: %s' % e]
-    out += [''] * 7
+    out += [''] * 8
     ok(out[3] == 'clear,partly cloudy,rain,thunderstorms',
        'the weather codes read as words (%s)' % out[3])
     ok(out[4] == '1,1,2,1,1,True',
@@ -744,6 +778,7 @@ def voice():
     ok(out[5] == 'True,True,False,False',
        'look only follows an ask to look (%s)' % out[5])
     ok(out[6] == 'True', 'the media keys include play/pause (%s)' % out[6])
+    ok(out[7] == 'False,True,True', 'a black picture is told from a lit one (%s)' % out[7])
     ok(out[0] == '0 1 4',
        'the mouth: silence closed, a quiet sine at 1, a loud one wide open (%s %s)'
        % (out[0], err))
