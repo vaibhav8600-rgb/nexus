@@ -4291,7 +4291,7 @@ if ($Voice) {
     # Every one, or those whose label mentions $about.
     function Stop-VoiceTimers([string]$about) {
         $about = ($about -replace '^\s*(all|every|the|my)\s*$', '').Trim()
-        $gone = @($script:timers.ToArray() | Where-Object { -not $about -or $_.label -like "*$about*" })
+        $gone = @($script:timers.ToArray() | Where-Object { -not $about -or "$($_.label)".IndexOf($about, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
         foreach ($t in $gone) { [void]$script:timers.Remove($t) }
         Save-VoiceTimers
         Add-VoiceLine 'note' $(if (-not $gone) { "No timer about $about." } elseif ($about) { "Cancelled: $(($gone | ForEach-Object { $_.label }) -join ', ')." } else { 'All timers cancelled.' })
@@ -4343,7 +4343,7 @@ if ($Voice) {
     $TIMER_IN = '^\W*(?:please\s+)?(?:set\s+(?:a\s+|an\s+)?(?:timer|reminder|alarm)\s+(?:for\s+|in\s+)?|remind\s+me\s+in\s+|timer\s+(?:for\s+)?)' +
                 '(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b\W*(?:to|for|about)?\s*(.*)$'
     $TIMER_AT = '^\W*(?:please\s+)?(?:remind\s+me|set\s+(?:a\s+|an\s+)?(?:reminder|alarm))\s+(?:at|for)\s+(\d{1,2})(?::(\d\d))?\s*(am|pm)?\b\W*(?:to|for|about)?\s*(.*)$'
-    $TIMER_LIST = '^\W*(?:please\s+)?(?:what|which|list|show)\b.*\b(?:reminders?|timers?|alarms?)\b'
+    $TIMER_LIST = '^\W*(?:please\s+)?(?:what|which|list|show)\b.{0,20}\b(?:reminders|timers|alarms|my\s+(?:reminder|timer|alarm))\b'
     $TIMER_STOP = '^\W*(?:please\s+)?(?:cancel|stop|delete|remove)\s+(?:the\s+|my\s+)?(?:(.*?)\s+)?(?:reminders?|timers?|alarms?)\W*$'
     $TIMER_DAILY = '\s*\b(?:daily|every\s*day|each\s+day)\b'
     function Invoke-TimerAsk([string]$text) {
