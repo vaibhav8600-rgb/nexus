@@ -666,6 +666,12 @@ def voice():
        'pastes and copies wait for the hold\'s modifiers, and the clipboard is put back')
     ok("name = 'paste_text'" in window and 'PasteWords.IsMatch(lastAsk' in cs,
        'paste_text types into your app only when you ask it to')
+    ok('if ($a.ask) { $b.Asked($a.ask) }' in window and 'ask = $asked }' in window,
+       'only your spoken question counts as asking to paste, never the selected text')
+    ok('if (code == 200) { LastWhy = ""; return TextOf(raw) ?? ""; }' in cs,
+       'silence is an empty answer, not a busy model to retry down the chain')
+    ok('Peak >= 3 * l[l.Count / 10]' in cs and '$spoke = $long -and $h.rec.Voiced()' in window,
+       'a held clip goes to Gemini only with speech above the room\'s hiss (silence invents words)')
     # The deep audit's fixes: privacy, cost, layout.
     ok('if ($b.Away -and $script:view) { Set-CameraView $false }' in window and
        'Away = true;' in cs and '$CAMERA_IDLE_S = 120' in window,

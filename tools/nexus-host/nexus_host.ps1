@@ -1858,9 +1858,8 @@ public class HotKey {
 public class Recorder {
     const int RATE = 16000, BUFS = 4, MS = 100, MAX_S = 120;
     // The loudest 100 ms heard (RMS, int16), for the note when nothing was.
-    // Whether anything was said is Gemini's call: a fixed level here was too
-    // loud for a quiet laptop mic, and the clip was dropped unheard.
     public volatile int Peak;
+    readonly List<int> levels = new List<int>();
     public string Error;
     IntPtr hwi = IntPtr.Zero;
     IntPtr[] hdrs = new IntPtr[0];
@@ -1904,6 +1903,7 @@ public class Recorder {
             if (n == 0) continue;
             int rms = BuddyVoice.Rms(b, 0, n);
             if (rms > Peak) Peak = rms;
+            lock (gate) levels.Add(rms);
             lock (gate) if (pcm.Length < RATE * 2L * MAX_S) pcm.Write(b, 0, n);
         }
     }
@@ -1919,6 +1919,18 @@ public class Recorder {
             hwi = IntPtr.Zero;
         }
         lock (gate) return pcm.ToArray();
+    }
+
+    // Whether anyone spoke: the loudest moment well above the room's own
+    // hiss (the quietest tenth of the clip). Relative, as no one level fits
+    // every mic - 600 dropped a quiet laptop mic's speech - and needed, as
+    // Flash Lite sent silence makes words up ("The meeting is scheduled...").
+    public bool Voiced() {
+        List<int> l;
+        lock (gate) l = levels.FindAll(x => x > 0);
+        if (l.Count == 0) return false;
+        l.Sort();
+        return Peak >= 100 && Peak >= 3 * l[l.Count / 10];
     }
 }
 
@@ -2005,11 +2017,9 @@ public static class Flash {
         foreach (string model in models) {
             int code;
             string raw = Post(model, body, key, out code);
-            if (code == 200) {
-                string t = TextOf(raw);
-                if (t != null) { LastWhy = ""; return t; }
-                continue;
-            }
+            // A 200 with no text is the answer - nothing was said - and not
+            // a model to skip: the next would only say the same, slower.
+            if (code == 200) { LastWhy = ""; return TextOf(raw) ?? ""; }
             LastWhy = code == 429 ? "out of quota" : code == 0 ? "unreachable" : "busy";
             if (code == 400 || code == 401 || code == 403) { LastWhy = "refusing (HTTP " + code + ")"; break; }
         }
@@ -2842,7 +2852,7 @@ public class BuddyVoice {
     // What the owner said or typed last, and when: look's guard.
     volatile string lastAsk = "";
     long askAt;
-    void Asked(string text) { lastAsk = text; Interlocked.Exchange(ref askAt, Now()); }
+    public void Asked(string text) { lastAsk = text; Interlocked.Exchange(ref askAt, Now()); }
 
     static double NumArg(Dictionary<string, object> d, string k) {
         object v;
@@ -4619,7 +4629,7 @@ if ($Voice) {
     $script:hold = $null       # @{ mode; rec } while a key is held
     $script:holdJob = $null    # @{ mode; task; sel } while Flash Lite listens
     $script:clipBack = $null   # @{ at; text }: the clipboard to put back
-    $script:pendingAsk = $null # @{ text; jpeg } for a conversation starting
+    $script:pendingAsk = $null # @{ text; jpeg; ask } for a conversation starting
 
     function Update-VoiceHolds {
         foreach ($mode in @($script:holdKeys.Keys)) {
@@ -4637,6 +4647,9 @@ if ($Voice) {
         $b = $script:bv
         if ($a -and $b -and $b.Ready) {
             $script:pendingAsk = $null
+            # Only your words, never the selection, count as asking: text
+            # you selected cannot ask Buddy to paste.
+            if ($a.ask) { $b.Asked($a.ask) }
             if ($a.jpeg) { $b.ShowAndAsk($a.jpeg, $a.text) }
             elseif (-not $b.Tell($a.text)) { [void]$b.SendText($a.text) }
         } elseif ($a -and -not $b) {
@@ -4659,12 +4672,13 @@ if ($Voice) {
         $script:hold = $null
         $pcm = $h.rec.Stop()
         if ($script:bv) { $script:bv.Muted = $false }
-        $spoke = $pcm.Length -ge 16000   # half a second held, at 16 kHz 16-bit
-        $script:holdPeak = $h.rec.Peak
+        $long = $pcm.Length -ge 16000   # half a second held, at 16 kHz 16-bit
+        $spoke = $long -and $h.rec.Voiced()
         if (-not $gem.key) { Add-VoiceLine 'note' "This needs a Gemini key in $KEY_FILE"; return }
         if ($h.mode -eq 'dictate') {
             if (-not $spoke) {
-                Add-VoiceLine 'note' 'Hold / a little longer, and talk while it is down.'
+                Add-VoiceLine 'note' $(if (-not $long) { 'Hold / a little longer, and talk while it is down.' }
+                    else { "Didn't hear you (mic level $($h.rec.Peak)) - check the mic picked in the menu." })
                 Send-VoiceFace 'NEUTRAL'; Set-VoiceFaceLine 'E NEUTRAL'; return
             }
             $script:holdJob = @{ mode = 'dictate'; task = [NexusVoice.Flash]::Hear([string[]]$HEAR_MODELS, $gem.key, $pcm, $true) }
@@ -4686,8 +4700,7 @@ if ($Voice) {
         if ($j.mode -eq 'dictate') {
             if (-not $text) {
                 $why = [NexusVoice.Flash]::LastWhy
-                Add-VoiceLine 'note' $(if ($why) { "Didn't catch that - Gemini is $why." }
-                    else { "Didn't catch any words (mic level $script:holdPeak) - check the mic picked in the menu." })
+                Add-VoiceLine 'note' $(if ($why) { "Didn't catch that - Gemini is $why." } else { "Didn't catch any words." })
                 Send-VoiceFace 'SAD'
                 return
             }
@@ -4752,7 +4765,7 @@ if ($Voice) {
             Start-VoiceTalk
             $script:greet = $false   # an answer, not a hello
         }
-        $script:pendingAsk = @{ text = $text; jpeg = $jpeg }
+        $script:pendingAsk = @{ text = $text; jpeg = $jpeg; ask = $asked }
     }
 
     # A face or a trick asked for in a conversation - "show me an angry face",
