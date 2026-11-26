@@ -651,6 +651,10 @@ def voice():
        'timer and camera lists are copied with ToArray, never @()')
     ok('return , $script:cams' not in ps and '\n        , $script:cams\n' not in ps,
        'the camera list is returned plain, so the settings show every camera')
+    # "Remember ..." is kept wherever it is said or typed, and shown.
+    ok('[NexusVoice.Memory]::FromWords($text)' in window and 'Memory.FromWords(you)' in cs and
+       'Enqueue("note\\tRemembered: "' in cs and "'note' { Add-VoiceLine 'note'" in window,
+       'remember works typed and on Flash Lite too, and the window shows what was kept')
     # Held keys: dictate anywhere (/) and "what's this?" (Z).
     ok('$DICTATE_VK = 0x44' in ps and '$EXPLAIN_VK = 0x45' in ps and
        'Interlocked.Increment(ref releases);' in cs and 'TakeReleases()' in window,

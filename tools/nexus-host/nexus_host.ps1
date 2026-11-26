@@ -1644,6 +1644,27 @@ public static class Memory {
             return before - l.Count;
         }
     }
+
+    static readonly Regex RememberWords = new Regex(
+        @"^\s*(?:please\s+|can you\s+|could you\s+)*remember\s+(?:that\s+)?(.{3,})$", RegexOptions.IgnoreCase);
+    static readonly Regex ForgetWords = new Regex(
+        @"^\s*(?:please\s+)?forget\s+(?:about\s+)?(.{3,})$", RegexOptions.IgnoreCase);
+
+    // "Remember ..." or "forget ..." where no tool hears it - typed with no
+    // conversation, or said to Flash Lite - done here: which, or null. Before
+    // this, Buddy said "got it" there and nothing was kept.
+    public static string FromWords(string said) {
+        Match m = RememberWords.Match(said ?? "");
+        if (m.Success) {
+            string fact = m.Groups[1].Value.Trim().TrimEnd('.', '!', '?');
+            return Remember(fact) > 0 ? "Remembered: " + fact : null;
+        }
+        m = ForgetWords.Match(said ?? "");
+        if (!m.Success) return null;
+        string about = m.Groups[1].Value.Trim().TrimEnd('.', '!', '?');
+        if (Regex.IsMatch(about, @"^(it|that|this)$", RegexOptions.IgnoreCase)) return null;
+        return "Forgot " + Forget(about) + " remembered things about " + about + ".";
+    }
 }
 
 // One picture for Buddy to look at, only when asked: the primary screen, or a
@@ -2892,10 +2913,17 @@ public class BuddyVoice {
                 case "cancel_timers":
                     Requests.Enqueue("cancel");
                     return "all timers cancelled";
-                case "remember":
-                    return Memory.Remember(Str(args, "fact")) > 0 ? (object)"remembered" : "nothing to remember";
-                case "forget":
-                    return "forgot " + Memory.Forget(Str(args, "about")) + " things";
+                case "remember": {
+                    string fact = Str(args, "fact");
+                    if (Memory.Remember(fact) == 0) return "nothing to remember";
+                    Requests.Enqueue("note\tRemembered: " + fact.Trim());
+                    return "remembered";
+                }
+                case "forget": {
+                    int n = Memory.Forget(Str(args, "about"));
+                    Requests.Enqueue("note\tForgot " + n + " remembered things.");
+                    return "forgot " + n + " things";
+                }
                 case "look":
                     return Look(Str(args, "at"));
                 case "paste_text": {
@@ -3068,6 +3096,9 @@ public class BuddyVoice {
                 string emo = (Str(got, "emotion") ?? "").ToUpperInvariant();
                 // A typed message is already on screen.
                 if (text == null && you.Length > 0) Say("you: " + you);
+                // Flash Lite has no tools: "remember ..." is kept here.
+                string kept = Memory.FromWords(you);
+                if (kept != null) Requests.Enqueue("note\t" + kept);
                 if (!Held()) Face(faces.Contains(emo) ? emo : "NEUTRAL");
                 if (reply.Length == 0) return;
                 Say(name + ": " + reply);
@@ -4191,6 +4222,7 @@ if ($Voice) {
                 'cancel' { $script:timers.Clear(); Add-VoiceLine 'note' 'All timers cancelled.' }
                 'camera' { Start-VoiceCamera $b }
                 'paste' { if (Insert-VoiceText $r.Substring(6)) { Add-VoiceLine 'note' 'Typed it into your app.' } }
+                'note' { Add-VoiceLine 'note' $r.Substring(5) }
             }
         }
         $img = $null
@@ -4998,6 +5030,9 @@ if ($Voice) {
         if ((Invoke-CameraAsk $text) -and -not $script:bv) { return }
         # A reminder typed with no conversation going: typed chat has no tools.
         if (-not $script:bv -and (Invoke-TimerAsk $text)) { return }
+        # And "remember ..." / "forget ...": kept here, the companion has no tools.
+        $kept = if (-not $script:bv) { [NexusVoice.Memory]::FromWords($text) }
+        if ($kept) { Add-VoiceLine 'note' $kept; Send-VoiceFace 'THUMBSUP'; Set-VoiceFaceLine 'E THUMBSUP'; return }
         # A question about this PC never goes to Gemini, even mid-conversation:
         # the companion answers it from the PC's own numbers (and the dongle
         # shows it); without a companion, this window does.
