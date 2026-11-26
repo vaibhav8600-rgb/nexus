@@ -1857,9 +1857,10 @@ public class HotKey {
 // nothing sent anywhere until it is let go. 16 kHz mono, as Gemini hears it.
 public class Recorder {
     const int RATE = 16000, BUFS = 4, MS = 100, MAX_S = 120;
-    // The level that counts as speech (RMS, int16), for "nothing was said".
-    public static int SpeechRms = 600;
-    public volatile int SpeechMs;
+    // The loudest 100 ms heard (RMS, int16), for the note when nothing was.
+    // Whether anything was said is Gemini's call: a fixed level here was too
+    // loud for a quiet laptop mic, and the clip was dropped unheard.
+    public volatile int Peak;
     public string Error;
     IntPtr hwi = IntPtr.Zero;
     IntPtr[] hdrs = new IntPtr[0];
@@ -1901,7 +1902,8 @@ public class Recorder {
             BuddyVoice.waveInAddBuffer(hwi, h, BuddyVoice.HDR);
             i = (i + 1) % BUFS;
             if (n == 0) continue;
-            if (BuddyVoice.Rms(b, 0, n) >= SpeechRms) SpeechMs += MS;
+            int rms = BuddyVoice.Rms(b, 0, n);
+            if (rms > Peak) Peak = rms;
             lock (gate) if (pcm.Length < RATE * 2L * MAX_S) pcm.Write(b, 0, n);
         }
     }
@@ -4657,10 +4659,14 @@ if ($Voice) {
         $script:hold = $null
         $pcm = $h.rec.Stop()
         if ($script:bv) { $script:bv.Muted = $false }
-        $spoke = $h.rec.SpeechMs -ge 300
+        $spoke = $pcm.Length -ge 16000   # half a second held, at 16 kHz 16-bit
+        $script:holdPeak = $h.rec.Peak
         if (-not $gem.key) { Add-VoiceLine 'note' "This needs a Gemini key in $KEY_FILE"; return }
         if ($h.mode -eq 'dictate') {
-            if (-not $spoke) { Send-VoiceFace 'NEUTRAL'; Set-VoiceFaceLine 'E NEUTRAL'; return }
+            if (-not $spoke) {
+                Add-VoiceLine 'note' 'Hold / a little longer, and talk while it is down.'
+                Send-VoiceFace 'NEUTRAL'; Set-VoiceFaceLine 'E NEUTRAL'; return
+            }
             $script:holdJob = @{ mode = 'dictate'; task = [NexusVoice.Flash]::Hear([string[]]$HEAR_MODELS, $gem.key, $pcm, $true) }
         } else {
             $sel = Get-VoiceSelection
@@ -4679,7 +4685,9 @@ if ($Voice) {
         if ($j.task) { try { $text = "$($j.task.Result)".Trim() } catch {} }
         if ($j.mode -eq 'dictate') {
             if (-not $text) {
-                Add-VoiceLine 'note' "Didn't catch that - Gemini is $([NexusVoice.Flash]::LastWhy), or nothing was said."
+                $why = [NexusVoice.Flash]::LastWhy
+                Add-VoiceLine 'note' $(if ($why) { "Didn't catch that - Gemini is $why." }
+                    else { "Didn't catch any words (mic level $script:holdPeak) - check the mic picked in the menu." })
                 Send-VoiceFace 'SAD'
                 return
             }
