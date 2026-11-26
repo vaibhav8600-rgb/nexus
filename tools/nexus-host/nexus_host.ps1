@@ -136,10 +136,14 @@ $TALK_MODS = 7
 $TALK_VK = 0x4E
 $TALK_KEYS = 'Ctrl+Alt+Shift+N'
 
-# @{ key; model; liveModel; voice; headset } - the environment first, then
-# gemini.json. $null for any that neither says.
+# What Buddy has been asked to remember, from one day to the next: on this PC
+# only, and read into each conversation's prompt (BuddyVoice's Memory).
+$MEMORY_FILE = Join-Path $HOME_DIR 'memory.json'
+
+# @{ key; model; liveModel; voice; headset; city } - the environment first,
+# then gemini.json. $null for any that neither says.
 function Get-GeminiConfig {
-    $cfg = @{ key = "$env:GEMINI_API_KEY".Trim(); model = $null; liveModel = $null; voice = $null; headset = $false }
+    $cfg = @{ key = "$env:GEMINI_API_KEY".Trim(); model = $null; liveModel = $null; voice = $null; headset = $false; city = $null }
     if (Test-Path $KEY_FILE) {
         try {
             $j = Get-Content $KEY_FILE -Raw -ErrorAction Stop | ConvertFrom-Json
@@ -148,6 +152,7 @@ function Get-GeminiConfig {
             if ($j.liveModel) { $cfg.liveModel = "$($j.liveModel)".Trim() }
             if ($j.voice) { $cfg.voice = "$($j.voice)".Trim() }
             if ($j.headset -eq $true) { $cfg.headset = $true }
+            if ($j.city) { $cfg.city = "$($j.city)".Trim() }
         } catch {
             Write-Warning "$KEY_FILE is not valid JSON - ignored"
         }
@@ -672,6 +677,11 @@ function ConvertTo-BuddyLine([string]$text) {
     $s
 }
 
+# The remembered facts, oldest first; none when there is no file.
+function Get-BuddyMemory {
+    try { @(Get-Content $MEMORY_FILE -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json) | Where-Object { $_ } } catch {}
+}
+
 # -Spoken: for a voice conversation, which talks rather than writing lines.
 # Its face is read from what it says (BuddyVoice.FaceFor), not asked for.
 function Get-BuddyPrompt($p, [switch]$Spoken) {
@@ -686,6 +696,11 @@ function Get-BuddyPrompt($p, [switch]$Spoken) {
     }
     $out += 'Never:'
     $out += $p.never | ForEach-Object { "- $_" }
+    $mem = @(Get-BuddyMemory)
+    if ($mem.Count) {
+        $out += "What $owner asked you to remember on earlier days (use it naturally, do not recite it):"
+        $out += $mem | ForEach-Object { "- $_" }
+    }
     if ($Spoken) {
         $out += 'Let your feelings show in your words - laugh, say aww or hmm - since your face follows what you say.'
         # The face or trick itself plays on the dongle by itself (the
@@ -892,6 +907,46 @@ function Get-StatsReply([string]$text) {
     @{ reply = ($say -join ' '); steps = @(, @("E $emo", "S $(ConvertTo-BuddyLine $line)")) }
 }
 
+# ---- the weather, from Open-Meteo (no key, no Gemini quota) ---------------
+
+# Where "the weather" is: gemini.json's "city", else Windows' own location
+# (when location is on for desktop apps). Set once; with neither, the
+# weather says how to set one.
+function Set-WeatherPlace($gem) {
+    if (-not ('NexusVoice.Weather' -as [type])) { return }
+    if ($gem.city) { [NexusVoice.Weather]::City = $gem.city; return }
+    if (-not $script:asTask) { return }
+    try {
+        [Windows.Devices.Geolocation.Geolocator, Windows.Devices.Geolocation, ContentType = WindowsRuntime] | Out-Null
+        $g = New-Object Windows.Devices.Geolocation.Geolocator
+        $pos = Wait-WinRt ($g.GetGeopositionAsync()) ([Windows.Devices.Geolocation.Geoposition]) 4000
+        [NexusVoice.Weather]::Lat = $pos.Coordinate.Point.Position.Latitude
+        [NexusVoice.Weather]::Lon = $pos.Coordinate.Point.Position.Longitude
+    } catch {
+        Write-Verbose "location: $(Get-Reason $_)"
+    }
+}
+
+# A typed "what's the weather?" / "will it rain today?", answered here like a
+# question about the PC: @{ reply; steps }, or $null.
+$WEATHER_ASK = '\b(weather|forecast|umbrella)\b|' +
+               '\b(rain|raining|snow|snowing|temperature)\b.{0,30}\b(today|tomorrow|outside|now)\b|' +
+               '\bhow (hot|cold|warm) is it\b'
+function Get-WeatherReply([string]$text) {
+    if (-not $text -or $text.Length -gt 120 -or $text -notmatch $WEATHER_ASK) { return $null }
+    if (-not ('NexusVoice.Weather' -as [type])) { return $null }
+    try { $d = [NexusVoice.Weather]::Now() } catch {
+        return @{ reply = "I can't see the weather: $(Get-Reason $_)"; steps = @(, @('E SAD', 'S NO WEATHER...')) }
+    }
+    $t = $d['today']
+    $reply = [NexusVoice.Weather]::Summary($d)
+    $emo = if ("$($d['now'])" -match 'rain|drizzle|thunder|snow') { 'SAD' }
+           elseif ("$($d['now'])" -match 'clear') { 'HAPPY' } else { 'NEUTRAL' }
+    $line = "$($d['temperature_c'])C $($d['now'])"
+    if ($t.ContainsKey('rain_chance_percent') -and $t['rain_chance_percent'] -ge 50) { $line = "RAIN $($t['rain_chance_percent'])% TODAY" }
+    @{ reply = $reply; steps = @(, @("E $emo", "S $(ConvertTo-BuddyLine $line)")) }
+}
+
 function Write-BuddyWarning([string]$kind, [string]$text) {
     # Once per kind of failure. Never the key.
     if (-not $script:bud.complained.ContainsKey($kind)) {
@@ -1071,6 +1126,7 @@ function Get-BuddyLines($cpu, $mem, $np, [switch]$ChatOnly) {
     $cmd = if ($msg) { Get-BuddyCommand $msg.text }
     # A question about this PC: answered from its own numbers, like a command.
     if (-not $cmd -and $msg) { $cmd = Get-StatsReply $msg.text }
+    if (-not $cmd -and $msg) { $cmd = Get-WeatherReply $msg.text }
     if ($cmd) {
         # A face or a trick: no Gemini, no wait. A new one replaces any
         # still playing.
@@ -1183,6 +1239,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Globalization;
 using Microsoft.Win32;
 
 namespace NexusVoice {
@@ -1390,6 +1449,261 @@ public static class Machine {
         List<string> top = (List<string>)d["top_memory_apps"];
         if (top.Count > 0) s.Add("most memory: " + string.Join(", ", top.ToArray()));
         return string.Join("; ", s.ToArray());
+    }
+}
+
+// The weather, for "what's the weather?": from Open-Meteo, free and with no
+// key, so it costs no Gemini quota. Where: gemini.json's "city", looked up by
+// Open-Meteo's geocoder, else Windows' own location (Set-WeatherPlace). Only
+// that place goes out, and only when asked.
+public static class Weather {
+    public static string City = "";
+    public static double Lat = double.NaN, Lon = double.NaN;
+
+    static string Get(string url) {
+        ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+        HttpWebRequest r = (HttpWebRequest)WebRequest.Create(url);
+        r.Timeout = r.ReadWriteTimeout = 8000;
+        r.UserAgent = "NEXUS-companion";
+        using (WebResponse resp = r.GetResponse())
+        using (StreamReader rd = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+            return rd.ReadToEnd();
+    }
+
+    static object Get(Dictionary<string, object> d, string k) {
+        object v;
+        return d != null && d.TryGetValue(k, out v) ? v : null;
+    }
+
+    static double Num(object o) { return Convert.ToDouble(o, CultureInfo.InvariantCulture); }
+
+    // WMO weather codes, as Open-Meteo gives them.
+    public static string Sky(int code) {
+        if (code == 0) return "clear";
+        if (code <= 2) return "partly cloudy";
+        if (code == 3) return "overcast";
+        if (code == 45 || code == 48) return "foggy";
+        if (code >= 51 && code <= 57) return "drizzle";
+        if (code >= 61 && code <= 67) return "rain";
+        if (code >= 71 && code <= 77) return "snow";
+        if (code >= 80 && code <= 82) return "rain showers";
+        if (code == 85 || code == 86) return "snow showers";
+        if (code >= 95) return "thunderstorms";
+        return "unknown";
+    }
+
+    // The city, looked up once: a place does not move.
+    static string geoCity;
+    static double geoLat, geoLon;
+    static string geoPlace;
+
+    public static Dictionary<string, object> Now() {
+        JavaScriptSerializer json = new JavaScriptSerializer();
+        double lat = Lat, lon = Lon;
+        string place = "";
+        string city = City;
+        if (!string.IsNullOrEmpty(city)) {
+            if (geoCity != city) {
+                object[] found = Get(json.DeserializeObject(Get(
+                    "https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + Uri.EscapeDataString(city)))
+                    as Dictionary<string, object>, "results") as object[];
+                if (found == null || found.Length == 0) throw new Exception("no place called " + city);
+                Dictionary<string, object> f = found[0] as Dictionary<string, object>;
+                geoLat = Num(Get(f, "latitude"));
+                geoLon = Num(Get(f, "longitude"));
+                geoPlace = Get(f, "name") + (Get(f, "country") != null ? ", " + Get(f, "country") : "");
+                geoCity = city;
+            }
+            lat = geoLat;
+            lon = geoLon;
+            place = geoPlace;
+        }
+        if (double.IsNaN(lat))
+            throw new Exception("no location - put \"city\" in gemini.json, or turn on Windows location for desktop apps");
+        Dictionary<string, object> w = json.DeserializeObject(Get(string.Format(CultureInfo.InvariantCulture,
+            "https://api.open-meteo.com/v1/forecast?latitude={0:0.###}&longitude={1:0.###}" +
+            "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m" +
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+            "&forecast_days=2&timezone=auto", lat, lon))) as Dictionary<string, object>;
+        Dictionary<string, object> cur = Get(w, "current") as Dictionary<string, object>;
+        Dictionary<string, object> day = Get(w, "daily") as Dictionary<string, object>;
+        Dictionary<string, object> d = new Dictionary<string, object>();
+        if (place.Length > 0) d["place"] = place;
+        d["now"] = Sky((int)Num(Get(cur, "weather_code")));
+        d["temperature_c"] = Math.Round(Num(Get(cur, "temperature_2m")));
+        d["feels_like_c"] = Math.Round(Num(Get(cur, "apparent_temperature")));
+        d["humidity_percent"] = (int)Num(Get(cur, "relative_humidity_2m"));
+        d["wind_kmh"] = Math.Round(Num(Get(cur, "wind_speed_10m")));
+        string[] when = { "today", "tomorrow" };
+        for (int i = 0; i < 2; i++) {
+            Dictionary<string, object> x = new Dictionary<string, object>();
+            x["sky"] = Sky((int)Num((Get(day, "weather_code") as object[])[i]));
+            x["high_c"] = Math.Round(Num((Get(day, "temperature_2m_max") as object[])[i]));
+            x["low_c"] = Math.Round(Num((Get(day, "temperature_2m_min") as object[])[i]));
+            object rain = (Get(day, "precipitation_probability_max") as object[])[i];
+            if (rain != null) x["rain_chance_percent"] = (int)Num(rain);
+            d[when[i]] = x;
+        }
+        return d;
+    }
+
+    // A reading as a sentence, for a typed question.
+    public static string Summary(Dictionary<string, object> d) {
+        Dictionary<string, object> t = d["today"] as Dictionary<string, object>;
+        string s = (d.ContainsKey("place") ? "In " + d["place"] + " it is " : "It is ") + d["now"] + ", " +
+            d["temperature_c"] + "C (feels like " + d["feels_like_c"] + "C). Today " + t["sky"] + ", " +
+            t["high_c"] + "C / " + t["low_c"] + "C";
+        if (t.ContainsKey("rain_chance_percent")) s += ", " + t["rain_chance_percent"] + "% chance of rain";
+        return s + ".";
+    }
+}
+
+// Media keys, as a keyboard's own would send them: play/pause, next,
+// previous, volume. Instant, local, no quota.
+public static class Media {
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    const uint EXTENDED = 1, KEYUP = 2;
+    static readonly Dictionary<string, byte> Keys = new Dictionary<string, byte> {
+        { "play_pause", 0xB3 }, { "next", 0xB0 }, { "previous", 0xB1 },
+        { "volume_up", 0xAF }, { "volume_down", 0xAE }, { "mute", 0xAD }
+    };
+    public static string[] Actions { get { return new List<string>(Keys.Keys).ToArray(); } }
+
+    // Each volume press is a 2 % step.
+    public static bool Press(string action, int times) {
+        byte vk;
+        if (!Keys.TryGetValue(action ?? "", out vk)) return false;
+        for (int i = 0; i < Math.Max(1, Math.Min(times, 25)); i++) {
+            keybd_event(vk, 0, EXTENDED, UIntPtr.Zero);
+            keybd_event(vk, 0, EXTENDED | KEYUP, UIntPtr.Zero);
+        }
+        return true;
+    }
+}
+
+// What Buddy remembers about its owner from one day to the next, when told
+// to ("remember my exam is on Friday"): a small file beside the key, on this
+// PC only, read into each new conversation's prompt.
+public static class Memory {
+    public static string Path = "";
+    public const int MAX = 60;
+    static readonly object gate = new object();
+
+    public static List<string> All() {
+        lock (gate) {
+            List<string> l = new List<string>();
+            try {
+                object[] a = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(Path, Encoding.UTF8)) as object[];
+                if (a != null) foreach (object o in a) if (o != null) l.Add(o.ToString());
+            } catch { }
+            return l;
+        }
+    }
+
+    static void Save(List<string> l) {
+        File.WriteAllText(Path, new JavaScriptSerializer().Serialize(l), Encoding.UTF8);
+    }
+
+    // Dated, newest last, the same fact once; the oldest go past MAX.
+    public static int Remember(string fact) {
+        fact = Regex.Replace(fact ?? "", @"\s+", " ").Trim();
+        if (fact.Length == 0) return 0;
+        if (fact.Length > 200) fact = fact.Substring(0, 200);
+        lock (gate) {
+            List<string> l = All();
+            l.RemoveAll(delegate (string s) { return s.EndsWith(": " + fact, StringComparison.OrdinalIgnoreCase); });
+            l.Add(DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ": " + fact);
+            while (l.Count > MAX) l.RemoveAt(0);
+            Save(l);
+            return l.Count;
+        }
+    }
+
+    // Every fact mentioning it - or all of them, for "everything".
+    public static int Forget(string about) {
+        about = (about ?? "").Trim().ToLowerInvariant();
+        if (about.Length == 0) return 0;
+        lock (gate) {
+            List<string> l = All();
+            int before = l.Count;
+            if (about == "everything" || about == "all") l.Clear();
+            else l.RemoveAll(delegate (string s) { return s.ToLowerInvariant().Contains(about); });
+            Save(l);
+            return before - l.Count;
+        }
+    }
+}
+
+// One picture for Buddy to look at, only when asked: the primary screen, or a
+// camera photo the window took, at most 1280 wide, as JPEG.
+public static class Snap {
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT p, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO mi);
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
+    // The screen the mouse is on - with two monitors, the one being looked
+    // at, not always the primary - in real pixels: this thread is made
+    // per-monitor DPI aware for the capture, so scaling neither crops nor
+    // shifts it (measured: 2560x1440 monitors read as other sizes).
+    public static byte[] Screen() {
+        IntPtr old = IntPtr.Zero;
+        try { old = SetThreadDpiAwarenessContext(new IntPtr(-4)); } catch (EntryPointNotFoundException) { }
+        try {
+            POINT p;
+            GetCursorPos(out p);
+            MONITORINFO mi = new MONITORINFO();
+            mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+            GetMonitorInfo(MonitorFromPoint(p, 2), ref mi);   // MONITOR_DEFAULTTONEAREST
+            int w = mi.rcMonitor.Right - mi.rcMonitor.Left, h = mi.rcMonitor.Bottom - mi.rcMonitor.Top;
+            using (Bitmap full = new Bitmap(w, h)) {
+                using (Graphics g = Graphics.FromImage(full))
+                    g.CopyFromScreen(mi.rcMonitor.Left, mi.rcMonitor.Top, 0, 0, full.Size);
+                return Jpeg(full);
+            }
+        } finally {
+            if (old != IntPtr.Zero) SetThreadDpiAwarenessContext(old);
+        }
+    }
+
+    // 0 (black) to 1 (white), from a grid of samples: a camera behind a
+    // closed shutter, a closed lid or a virtual camera with nothing running
+    // gives ~0.02 (measured) - not a picture worth sending.
+    public static double Brightness(byte[] image) {
+        using (MemoryStream ms = new MemoryStream(image))
+        using (Bitmap b = new Bitmap(ms)) {
+            double sum = 0;
+            int n = 0;
+            for (int x = 0; x < b.Width; x += Math.Max(1, b.Width / 24))
+                for (int y = 0; y < b.Height; y += Math.Max(1, b.Height / 16)) {
+                    sum += b.GetPixel(x, y).GetBrightness();
+                    n++;
+                }
+            return n == 0 ? 0 : sum / n;
+        }
+    }
+
+    public static byte[] Jpeg(byte[] image) {
+        using (MemoryStream ms = new MemoryStream(image))
+        using (Image img = Image.FromStream(ms)) return Jpeg(img);
+    }
+
+    public static byte[] Jpeg(Image img) {
+        double k = Math.Min(1.0, 1280.0 / img.Width);
+        using (Bitmap small = new Bitmap(img, Math.Max(1, (int)(img.Width * k)), Math.Max(1, (int)(img.Height * k))))
+        using (MemoryStream ms = new MemoryStream()) {
+            ImageCodecInfo jpg = null;
+            foreach (ImageCodecInfo c in ImageCodecInfo.GetImageEncoders()) if (c.MimeType == "image/jpeg") jpg = c;
+            EncoderParameters q = new EncoderParameters(1);
+            q.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 70L);
+            small.Save(ms, jpg, q);
+            return ms.ToArray();
+        }
     }
 }
 
@@ -1751,16 +2065,23 @@ public class BuddyVoice {
         Done = true;
     }
 
-    // Locked, logged off or switched away from: nobody is at the mic.
+    // Locked, logged off or switched away from: nobody is at the mic - or
+    // the camera, which the window turns off when it sees Away.
+    public volatile bool Away;
+
     void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
         if (e.Reason == SessionSwitchReason.SessionLock || e.Reason == SessionSwitchReason.SessionLogoff ||
-            e.Reason == SessionSwitchReason.ConsoleDisconnect || e.Reason == SessionSwitchReason.RemoteDisconnect)
+            e.Reason == SessionSwitchReason.ConsoleDisconnect || e.Reason == SessionSwitchReason.RemoteDisconnect) {
+            Away = true;
             End("This PC was locked - the conversation ended and the mic is off.");
+        }
     }
 
     void OnPowerMode(object sender, PowerModeChangedEventArgs e) {
-        if (e.Mode == PowerModes.Suspend)
+        if (e.Mode == PowerModes.Suspend) {
+            Away = true;
             End("This PC went to sleep - the conversation ended and the mic is off.");
+        }
     }
 
     void Heard() { Interlocked.Exchange(ref heardAt, Now()); }
@@ -1829,6 +2150,7 @@ public class BuddyVoice {
     public bool SendText(string text) {
         if (!setupDone || string.IsNullOrEmpty(text)) return false;
         Heard();
+        Asked(text);
         if (lite) {
             if (asking) return false;
             Ask(null, text);
@@ -2174,7 +2496,7 @@ public class BuddyVoice {
                 firstAudioAt = 0;
             }
             string t = Str(Obj(sc, "inputTranscription"), "text");
-            if (!string.IsNullOrEmpty(t)) { heard.Append(t); Heard(); Listening(); }
+            if (!string.IsNullOrEmpty(t)) { heard.Append(t); Heard(); Asked(heard.ToString()); Listening(); }
             t = Str(Obj(sc, "outputTranscription"), "text");
             if (!string.IsNullOrEmpty(t)) { said.Append(t); FaceFromWords(); }
             object[] parts = Arr(Obj(sc, "modelTurn"), "parts");
@@ -2212,11 +2534,7 @@ public class BuddyVoice {
                 Dictionary<string, object> c = o as Dictionary<string, object>;
                 if (c == null) continue;
                 string fn = Str(c, "name");
-                object result = "ok";
-                if (fn == "get_pc_stats") {
-                    // The owner asked about this PC. Read now, sent once.
-                    try { result = Machine.Stats(); } catch (Exception ex) { result = "unavailable: " + ex.Message; }
-                }
+                object result = Tool(fn, Obj(c, "args"));
                 Dictionary<string, object> a = new Dictionary<string, object>();
                 if (Str(c, "id") != null) a["id"] = Str(c, "id");
                 a["name"] = fn;
@@ -2228,11 +2546,166 @@ public class BuddyVoice {
             Dictionary<string, object> reply = new Dictionary<string, object>();
             reply["toolResponse"] = tr;
             Send(json.Serialize(reply));
+            SendLook();
         }
 
         // Google closes every connection after a while (~10-15 minutes).
         // PumpLoop ends this one in a pause and the window reconnects.
         if (m.ContainsKey("goAway") && goAwayAt == 0) goAwayAt = Now();
+    }
+
+    // ---- tools: things only this PC can do, each run when Gemini asks -------
+
+    // For the window: timers ("timer\t<seconds>\t<label>", "cancel") and
+    // camera pictures ("camera") it does itself.
+    public readonly ConcurrentQueue<string> Requests = new ConcurrentQueue<string>();
+    // Every picture sent to Gemini on a look, for the window to show in the
+    // chat: what Buddy saw is what you see.
+    public readonly ConcurrentQueue<byte[]> Shown = new ConcurrentQueue<byte[]>();
+
+    // The window's live camera view: a frame now and then, which Gemini sees
+    // as video. False when there is no Live conversation to send it to.
+    public bool SendFrame(byte[] jpeg) {
+        if (lite || !setupDone || jpeg == null) return false;
+        Dictionary<string, object> v = new Dictionary<string, object>();
+        v["mimeType"] = "image/jpeg";
+        v["data"] = Convert.ToBase64String(jpeg);
+        Dictionary<string, object> input = new Dictionary<string, object>();
+        input["video"] = v;
+        Dictionary<string, object> m = new Dictionary<string, object>();
+        m["realtimeInput"] = input;
+        return Send(json.Serialize(m));
+    }
+
+    // Something for Gemini to know without it showing as yours: the camera
+    // going on or off, a timer ending.
+    public bool Tell(string text) {
+        if (!setupDone || string.IsNullOrEmpty(text)) return false;
+        if (lite) return false;
+        Dictionary<string, object> t = new Dictionary<string, object>();
+        t["text"] = text;
+        Dictionary<string, object> m = new Dictionary<string, object>();
+        m["realtimeInput"] = t;
+        return Send(json.Serialize(m));
+    }
+
+    // What the owner said or typed last, and when: look's guard.
+    volatile string lastAsk = "";
+    long askAt;
+    void Asked(string text) { lastAsk = text; Interlocked.Exchange(ref askAt, Now()); }
+
+    static double NumArg(Dictionary<string, object> d, string k) {
+        object v;
+        if (d == null || !d.TryGetValue(k, out v) || v == null) return double.NaN;
+        try { return Convert.ToDouble(v, CultureInfo.InvariantCulture); } catch { return double.NaN; }
+    }
+
+    object Tool(string fn, Dictionary<string, object> args) {
+        try {
+            switch (fn) {
+                // The owner asked about this PC, or the weather: read now, sent once.
+                case "get_pc_stats": return Machine.Stats();
+                case "get_weather": return Weather.Now();
+                case "control_media": {
+                    string act = Str(args, "action");
+                    double n = NumArg(args, "times");
+                    // "Turn it up" is a noticeable step: five presses, 10 %.
+                    int times = double.IsNaN(n) ? (act != null && act.StartsWith("volume_") ? 5 : 1) : (int)n;
+                    return Media.Press(act, times) ? (object)"done" : "unknown action";
+                }
+                case "set_timer": {
+                    double min = NumArg(args, "minutes");
+                    // "At 5:30": the next time the clock says so.
+                    DateTime at;
+                    string when = Str(args, "at");
+                    if (double.IsNaN(min) && when != null &&
+                        DateTime.TryParse(when, CultureInfo.InvariantCulture, DateTimeStyles.None, out at)) {
+                        DateTime due = DateTime.Today.Add(at.TimeOfDay);
+                        if (due <= DateTime.Now) due = due.AddDays(1);
+                        min = (due - DateTime.Now).TotalMinutes;
+                    }
+                    if (double.IsNaN(min) || min <= 0 || min > 24 * 60) return "give minutes (more than 0, at most 1440) or a time as HH:mm";
+                    string label = (Str(args, "label") ?? "").Trim();
+                    Requests.Enqueue("timer\t" + (int)Math.Round(min * 60) + "\t" + (label.Length > 0 ? label : "timer"));
+                    return "set: it ends at " + DateTime.Now.AddMinutes(min).ToString("HH:mm", CultureInfo.InvariantCulture);
+                }
+                case "cancel_timers":
+                    Requests.Enqueue("cancel");
+                    return "all timers cancelled";
+                case "remember":
+                    return Memory.Remember(Str(args, "fact")) > 0 ? (object)"remembered" : "nothing to remember";
+                case "forget":
+                    return "forgot " + Memory.Forget(Str(args, "about")) + " things";
+                case "look":
+                    return Look(Str(args, "at"));
+            }
+            return "unknown tool";
+        } catch (Exception ex) {
+            return "unavailable: " + ex.GetBaseException().Message;
+        }
+    }
+
+    // One picture of the screen or the camera, sent as a video frame - and
+    // only when the owner has just asked Buddy to look: Gemini deciding to
+    // look by itself is refused here, whatever it calls.
+    static readonly Regex LookWords = new Regex(
+        @"\b(look|see|screen|camera|watch|show(ing)? you|holding|read (this|that)|what('s| is) (this|that))\b",
+        RegexOptions.IgnoreCase);
+    readonly AutoResetEvent frameReady = new AutoResetEvent(false);
+    volatile byte[] frame;
+
+    // The window's camera picture (or null: none to be had).
+    public void ProvideFrame(byte[] jpeg) { frame = jpeg; frameReady.Set(); }
+
+    public static bool MayLook(string asked) { return LookWords.IsMatch(asked ?? ""); }
+
+    string Look(string at) {
+        if (Now() - Interlocked.Read(ref askAt) > 30000 || !MayLook(lastAsk))
+            return "not allowed: only when the owner asks you to look";
+        bool cam = at == "camera";
+        byte[] jpeg;
+        if (cam) {
+            frame = null;
+            frameReady.Reset();
+            Requests.Enqueue("camera");
+            if (!frameReady.WaitOne(12000) || frame == null) return "the camera gave no picture";
+            jpeg = frame;
+        } else {
+            jpeg = Snap.Screen();
+        }
+        lookAt = cam ? "camera" : "screen";
+        lookJpeg = jpeg;
+        return "taking the picture now; it comes next, with the owner's question again";
+    }
+
+    // The picture goes after the tool's answer, then the question again as a
+    // turn of its own. Measured on 3.8 Live: a frame sent with or before the
+    // tool's answer was not looked at ("my little eyes can't make it out"),
+    // or no answer came at all; this order read the test screen word for word.
+    string lookAt;
+    byte[] lookJpeg;
+
+    void SendLook() {
+        byte[] jpeg = lookJpeg;
+        lookJpeg = null;
+        if (jpeg == null) return;
+        Dictionary<string, object> v = new Dictionary<string, object>();
+        v["mimeType"] = "image/jpeg";
+        v["data"] = Convert.ToBase64String(jpeg);
+        Dictionary<string, object> input = new Dictionary<string, object>();
+        input["video"] = v;
+        Dictionary<string, object> m = new Dictionary<string, object>();
+        m["realtimeInput"] = input;
+        if (!Send(json.Serialize(m))) return;
+        // Every picture that leaves this PC is said in the window, and shown.
+        Say("Shared one snapshot of your " + lookAt + " with Gemini:");
+        Shown.Enqueue(jpeg);
+        Thread.Sleep(600);
+        Dictionary<string, object> t = new Dictionary<string, object>();
+        t["text"] = "(The picture of my " + lookAt + " is in your video input now. " + lastAsk + ")";
+        Dictionary<string, object> q = new Dictionary<string, object>();
+        q["realtimeInput"] = t;
+        Send(json.Serialize(q));
     }
 
     // A face or trick the owner asked for is playing: the faces read from
@@ -2530,7 +3003,7 @@ function Add-VoiceTypes {
     }
     try {
         New-Item -ItemType Directory -Force $HOME_DIR -ErrorAction Stop | Out-Null
-        Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions, System.Speech `
+        Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions, System.Speech, System.Drawing `
             -OutputAssembly $dll -ErrorAction Stop
         Add-Type -Path $dll -ErrorAction Stop
         # Older builds go; one still loaded by a running copy stays until next time.
@@ -2539,7 +3012,7 @@ function Add-VoiceTypes {
     } catch {
         # Cannot write there (or another copy is writing it now): in memory.
         if (-not ('NexusVoice.BuddyVoice' -as [type])) {
-            Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions, System.Speech -ErrorAction Stop
+            Add-Type -TypeDefinition $VOICE_CS -ReferencedAssemblies System.Web.Extensions, System.Speech, System.Drawing -ErrorAction Stop
         }
     }
 }
@@ -2560,6 +3033,7 @@ function Open-VoiceRelay {
         Write-Warning "voice: port $VOICE_PORT is in use - voice.cmd cannot move the face"
     }
     [NexusVoice.Machine]::Warm()
+    Set-WeatherPlace (Get-GeminiConfig)
 }
 
 # The voice window's face shows what the dongle's does: Buddy's lines from
@@ -3083,12 +3557,23 @@ if ($Voice) {
     # The chain this window walks down: gemini.json's model if it names one,
     # the Live models, then Flash Lite ('lite').
     $script:tiers = @(@(@($model) + $LIVE_CHAIN | Select-Object -Unique) + 'lite')
-    $prompt = (Get-BuddyPrompt $p -Spoken) + "`n" +
-        'When the owner asks about their computer - CPU, memory, disk, battery, uptime, what is using memory - ' +
-        'call get_pc_stats and answer from it in plain, friendly words.'
-    # Flash Lite hears the owner in a clip and answers as JSON.
-    $litePrompt = (Get-BuddyPrompt $p -Spoken) + "`n" +
-        'The owner speaks to you in the audio. "heard" is exactly what they said, "reply" is what you say ' +
+    # What the tools are for. The prompt itself is built afresh for every
+    # connection, so a fact remembered a minute ago is in the next one.
+    $toolsHint = @(
+        'When the owner asks about their computer - CPU, memory, disk, battery, uptime, what is using memory - call get_pc_stats and answer from it in plain, friendly words.'
+        'For the weather, call get_weather and answer from it briefly.'
+        'To play, pause or skip music or change the volume, call control_media.'
+        'For a timer or a reminder, call set_timer: minutes for "in 20 minutes" (a pomodoro is 25), or at as HH:mm for "at 5:30 pm"; cancel_timers stops them all. When one ends you will be told: say so.'
+        'The owner can turn on a live camera view; while it is on you see their camera every few seconds and can talk about it.'
+        'When the owner asks you to remember something, call remember with the fact in a short sentence; forget when they ask you to forget it.'
+        'Only when the owner asks you to look at their screen or their camera (or at something they are holding), call look - never on your own.'
+        # The persona's never-list keeps Buddy off screens and documents - right
+        # unasked, but measured: it then refused to read a screen it was shown.
+        'When you have looked because the owner asked, describe and read what you see plainly; your rule about screens and documents is only about not bringing them up yourself.'
+    ) -join "`n"
+    # Flash Lite hears the owner in a clip and answers as JSON; it has no
+    # tools, so the weather, timers and looking wait for a Live model.
+    $liteHint = 'The owner speaks to you in the audio. "heard" is exactly what they said, "reply" is what you say ' +
         'back out loud, and "emotion" is the face that fits your reply.'
     # One setup per connection: the model, a resumption handle for 3.8 (it
     # keeps the conversation), or the conversation so far for any other.
@@ -3096,7 +3581,9 @@ if ($Voice) {
     # setup ("You exceeded your current quota"), measured 2026-11-25. No
     # set_face either: the face comes from the words (BuddyVoice.FaceFor).
     function Get-VoiceSetup([string]$m, [string]$handle, [string[]]$recent) {
-        $text = $prompt
+        # The time, so "remind me at 5" and "in an hour" mean something.
+        $text = (Get-BuddyPrompt $p -Spoken) + "`n" + $toolsHint + "`n" +
+            "It is now $([datetime]::Now.ToString('dddd d MMMM, HH:mm', [Globalization.CultureInfo]::InvariantCulture))."
         if ($recent) {
             $text += "`n`nThe conversation so far, which carries on now - do not greet again:`n" + ($recent -join "`n")
         }
@@ -3105,13 +3592,86 @@ if ($Voice) {
             generationConfig = @{
                 responseModalities = @('AUDIO')
                 speechConfig = @{ voiceConfig = @{ prebuiltVoiceConfig = @{ voiceName = $speaker } } }
+                # Screens are small text: a look reads them at full detail.
+                # Pictures go only on request, so this costs nothing otherwise.
+                mediaResolution = 'MEDIA_RESOLUTION_HIGH'
             }
             systemInstruction = @{ parts = @(@{ text = $text }) }
-            tools = @(@{ functionDeclarations = @(@{
-                name = 'get_pc_stats'
-                description = "The owner's computer right now: CPU load and model, memory, system disk, battery, uptime, Windows version and the apps using the most memory"
-                behavior = 'BLOCKING'
-            }) })
+            # Each runs on this PC when Gemini calls it (BuddyVoice.Tool):
+            # nothing here costs quota beyond the call itself.
+            tools = @(@{ functionDeclarations = @(
+                @{
+                    name = 'get_pc_stats'
+                    description = "The owner's computer right now: CPU load and model, memory, system disk, battery, uptime, Windows version and the apps using the most memory"
+                    behavior = 'BLOCKING'
+                },
+                @{
+                    name = 'get_weather'
+                    description = "The weather where the owner is: now, and today's and tomorrow's forecast"
+                    behavior = 'BLOCKING'
+                },
+                @{
+                    name = 'control_media'
+                    description = "Press a media key on the owner's PC: play/pause, next or previous track, volume up or down (2 % a press), mute"
+                    behavior = 'BLOCKING'
+                    parameters = @{
+                        type = 'OBJECT'
+                        properties = @{
+                            action = @{ type = 'STRING'; enum = @([NexusVoice.Media]::Actions) }
+                            times = @{ type = 'INTEGER'; description = 'How many presses; volume defaults to 5' }
+                        }
+                        required = @('action')
+                    }
+                },
+                @{
+                    name = 'set_timer'
+                    description = 'Start a timer or reminder on the PC; when it ends the owner is told'
+                    behavior = 'BLOCKING'
+                    parameters = @{
+                        type = 'OBJECT'
+                        properties = @{
+                            minutes = @{ type = 'NUMBER'; description = 'How long, in minutes (or give at)' }
+                            at = @{ type = 'STRING'; description = 'Or a time of day, 24-hour HH:mm' }
+                            label = @{ type = 'STRING'; description = 'What it is for, in a few words' }
+                        }
+                    }
+                },
+                @{
+                    name = 'cancel_timers'
+                    description = 'Stop every timer'
+                    behavior = 'BLOCKING'
+                },
+                @{
+                    name = 'remember'
+                    description = 'Remember a fact about the owner from now on, across days'
+                    behavior = 'BLOCKING'
+                    parameters = @{
+                        type = 'OBJECT'
+                        properties = @{ fact = @{ type = 'STRING'; description = 'The fact, in one short sentence' } }
+                        required = @('fact')
+                    }
+                },
+                @{
+                    name = 'forget'
+                    description = 'Forget every remembered fact that mentions this ("everything" forgets all)'
+                    behavior = 'BLOCKING'
+                    parameters = @{
+                        type = 'OBJECT'
+                        properties = @{ about = @{ type = 'STRING' } }
+                        required = @('about')
+                    }
+                },
+                @{
+                    name = 'look'
+                    description = "Take one picture of the owner's screen or camera to look at. Only when the owner asks you to look."
+                    behavior = 'BLOCKING'
+                    parameters = @{
+                        type = 'OBJECT'
+                        properties = @{ at = @{ type = 'STRING'; enum = @('screen', 'camera') } }
+                        required = @('at')
+                    }
+                }
+            ) })
             inputAudioTranscription = @{}
             outputAudioTranscription = @{}
             sessionResumption = if ($handle) { @{ handle = $handle } } else { @{} }
@@ -3124,6 +3684,33 @@ if ($Voice) {
     $script:mics = @()
     try {
         Add-VoiceTypes
+        [NexusVoice.Memory]::Path = $MEMORY_FILE
+        # Windows' location can take seconds: looked up off this thread, so
+        # the window is not held back from showing (Weather's statics are
+        # the same in every runspace of this process).
+        if (-not $Shot) {
+            if ($gem.city) {
+                [NexusVoice.Weather]::City = $gem.city
+            } else {
+                $loc = [powershell]::Create()
+                [void]$loc.AddScript({
+                    try {
+                        Add-Type -AssemblyName System.Runtime.WindowsRuntime
+                        $op = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+                            $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+                            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
+                        [Windows.Devices.Geolocation.Geolocator, Windows.Devices.Geolocation, ContentType = WindowsRuntime] | Out-Null
+                        $t = $op.MakeGenericMethod([Windows.Devices.Geolocation.Geoposition]).Invoke($null,
+                            @((New-Object Windows.Devices.Geolocation.Geolocator).GetGeopositionAsync()))
+                        if ($t.Wait(8000)) {
+                            [NexusVoice.Weather]::Lat = $t.Result.Coordinate.Point.Position.Latitude
+                            [NexusVoice.Weather]::Lon = $t.Result.Coordinate.Point.Position.Longitude
+                        }
+                    } catch {}
+                })
+                [void]$loc.BeginInvoke()
+            }
+        }
         $script:mics = @([NexusVoice.BuddyVoice]::Mics())
         [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
         # Not $chat: PowerShell names ignore case, and that is the -Chat switch.
@@ -3147,6 +3734,19 @@ if ($Voice) {
     # Which mic, remembered by name beside the key: device numbers shift
     # when a headset is plugged in, names do not.
     $VOICE_PREFS = Join-Path $HOME_DIR 'voice.json'
+    # One setting in voice.json read, or written with the others kept.
+    function Get-VoicePref([string]$name) {
+        try { "$((Get-Content $VOICE_PREFS -Raw -ErrorAction Stop | ConvertFrom-Json).$name)" } catch { '' }
+    }
+    function Set-VoicePref([string]$name, $value) {
+        $prefs = @{}
+        try {
+            (Get-Content $VOICE_PREFS -Raw -ErrorAction Stop | ConvertFrom-Json).PSObject.Properties |
+                ForEach-Object { $prefs[$_.Name] = $_.Value }
+        } catch {}
+        $prefs[$name] = $value
+        try { $prefs | ConvertTo-Json | Set-Content $VOICE_PREFS -Encoding utf8 } catch {}
+    }
     $script:micId = -1
     try {
         $saved = "$((Get-Content $VOICE_PREFS -Raw -ErrorAction Stop | ConvertFrom-Json).mic)"
@@ -3296,6 +3896,469 @@ if ($Voice) {
         while ($script:recent.Count -gt 12) { $script:recent.RemoveAt(0) }
     }
 
+    # Timers and reminders Buddy set (set_timer). They live in this window,
+    # which opens at sign-in; closing it drops them.
+    $script:timers = New-Object System.Collections.Generic.List[object]
+    $script:greet = $false
+    $script:camJob = $null
+    $script:faceUdp = $null
+
+    # A face on the dongle, through the companion's relay (which passes on
+    # emotions and mouths only).
+    function Send-VoiceFace([string]$emo) {
+        try {
+            if (-not $script:faceUdp) {
+                $script:faceUdp = New-Object Net.Sockets.UdpClient(
+                    (New-Object Net.IPEndPoint([Net.IPAddress]::Loopback, 0)))
+            }
+            $bytes = [Text.Encoding]::ASCII.GetBytes("E $emo")
+            [void]$script:faceUdp.Send($bytes, $bytes.Length, (New-Object Net.IPEndPoint([Net.IPAddress]::Loopback, $VOICE_PORT)))
+        } catch {}
+    }
+
+    function Add-VoiceTimer([int]$seconds, [string]$label) {
+        if ($script:timers.Count -ge 10) { Add-VoiceLine 'note' 'Ten timers already - cancel some first.'; return }
+        $t = @{ due = (Get-Date).AddSeconds($seconds); label = $label }
+        $script:timers.Add($t)
+        Add-VoiceLine 'note' "Timer: $label, at $($t.due.ToString('HH:mm'))."
+    }
+
+    # The conversation's requests (timers, a camera picture) and pictures to
+    # show, then timers due. Also called as a conversation stops - ended with
+    # the button, its last requests used to be lost with it.
+    function Update-VoiceTimers($b) {
+        $r = $null
+        while ($b -and $b.Requests.TryDequeue([ref]$r)) {
+            $f = $r.Split("`t")
+            switch ($f[0]) {
+                'timer' { Add-VoiceTimer ([int]$f[1]) $f[2] }
+                'cancel' { $script:timers.Clear(); Add-VoiceLine 'note' 'All timers cancelled.' }
+                'camera' { Start-VoiceCamera $b }
+            }
+        }
+        $img = $null
+        while ($b -and $b.Shown.TryDequeue([ref]$img)) { Add-VoiceImage $img }
+        $now = Get-Date
+        # ToArray, not @(): @() of a List of hashtables throws "Argument types
+        # do not match" in Windows PowerShell - measured, and it stopped every
+        # timer from firing and the rest of the window's tick with it.
+        foreach ($t in $script:timers.ToArray()) {
+            if ($now -lt $t.due) { continue }
+            [void]$script:timers.Remove($t)
+            Invoke-VoiceTimerDone $t.label
+        }
+        Receive-VoiceCamera
+        Update-CameraView
+        Clear-CameraRuns
+    }
+
+    # A typed "remind me in 10 minutes to stretch", "set a timer for 5 min",
+    # "remind me at 5:30 pm to call mom" with no conversation going: set
+    # here, at once - typed chat has no tools. $true when it was one.
+    $TIMER_IN = '^\W*(?:please\s+)?(?:set\s+(?:a\s+|an\s+)?(?:timer|reminder|alarm)\s+(?:for\s+|in\s+)?|remind\s+me\s+in\s+|timer\s+(?:for\s+)?)' +
+                '(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b\W*(?:to|for|about)?\s*(.*)$'
+    $TIMER_AT = '^\W*(?:please\s+)?(?:remind\s+me|set\s+(?:a\s+|an\s+)?(?:reminder|alarm))\s+(?:at|for)\s+(\d{1,2})(?::(\d\d))?\s*(am|pm)?\b\W*(?:to|for|about)?\s*(.*)$'
+    function Invoke-TimerAsk([string]$text) {
+        if ($text -match $TIMER_IN) {
+            $n = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+            $unit = $Matches[2].Substring(0, 1).ToLower()
+            $seconds = [int]($n * $(switch ($unit) { 's' { 1 } 'm' { 60 } default { 3600 } }))
+        } elseif ($text -match $TIMER_AT) {
+            $hour = [int]$Matches[1]
+            $min = if ($Matches[2]) { [int]$Matches[2] } else { 0 }
+            $now = Get-Date
+            # With am/pm, that one; a bare "5" is the next 5 o'clock, am or pm.
+            $hours = if ($Matches[3] -eq 'am') { @($hour % 12) } elseif ($Matches[3] -eq 'pm') { @($hour % 12 + 12) }
+                     elseif ($hour -ge 12) { @($hour) } else { @($hour, ($hour + 12)) }
+            $due = @(foreach ($h in $hours) { foreach ($d in 0, 1) { $now.Date.AddDays($d).AddHours($h).AddMinutes($min) } }) |
+                Where-Object { $_ -gt $now } | Sort-Object | Select-Object -First 1
+            if (-not $due) { return $false }
+            $seconds = [int]($due - $now).TotalSeconds
+            $Matches[3] = $Matches[4]
+        } else {
+            return $false
+        }
+        if ($seconds -lt 1 -or $seconds -gt 86400) { return $false }
+        $label = "$($Matches[3])".Trim(' ', '.', '!', '?')
+        Add-VoiceTimer $seconds $(if ($label) { $label } else { 'timer' })
+        Send-VoiceFace 'THUMBSUP'
+        Set-VoiceFaceLine 'E THUMBSUP'
+        $true
+    }
+
+    # A picture in the chat, as Buddy got it.
+    function ConvertTo-VoiceBitmap([byte[]]$bytes, [int]$width) {
+        $bi = New-Object Windows.Media.Imaging.BitmapImage
+        $bi.BeginInit()
+        $bi.StreamSource = New-Object IO.MemoryStream(, $bytes)
+        $bi.CacheOption = 'OnLoad'
+        $bi.DecodePixelWidth = $width
+        $bi.EndInit()
+        $bi.Freeze()
+        $bi
+    }
+    function Add-VoiceImage([byte[]]$bytes) {
+        try {
+            # The frame's background, so its rounded corners clip the picture
+            # (an Image child poked out square - rendered); sized to it.
+            $bi = ConvertTo-VoiceBitmap $bytes 440
+            $frame = New-Object Windows.Controls.Border
+            $frame.Width = 220
+            $frame.Height = [math]::Round(220 * $bi.PixelHeight / [math]::Max(1, $bi.PixelWidth))
+            $frame.CornerRadius = New-Object Windows.CornerRadius(14)
+            $frame.BorderThickness = New-Object Windows.Thickness(1)
+            $frame.BorderBrush = New-VoiceBrush '#3300E0FF'
+            $frame.Margin = New-Object Windows.Thickness(36, 2, 0, 6)
+            $frame.HorizontalAlignment = 'Left'
+            $brush = New-Object Windows.Media.ImageBrush $bi
+            $brush.Stretch = 'UniformToFill'
+            $frame.Background = $brush
+            [Windows.Automation.AutomationProperties]::SetName($frame, 'What Buddy saw')
+            [void]$ui.Talk.Children.Add($frame)
+            while ($ui.Talk.Children.Count -gt 40) { $ui.Talk.Children.RemoveAt(0) }
+            $ui.Scroll.ScrollToEnd()
+        } catch {}
+    }
+
+    # ---- the camera: which one, a live view, and a photo for a look -------
+    #
+    # A virtual camera (Camo, OBS) or an IR face-unlock camera shows black
+    # unless something feeds it, and a laptop's own camera is black with the
+    # lid shut - measured here: Windows picked one giving 0.02 brightness.
+    # So the cameras are listed (virtual ones last), chosen in the settings
+    # like the mic and remembered by name, and a black picture moves on to
+    # the next camera by itself.
+    $CAMERA_SKIP = '(?i)\bIR\b|virtual|camo|obs|snap camera|xsplit|droidcam|ndi|iriun'
+    $CAMERA_DARK = 0.06       # brightness below which a picture is "black"
+    # Live view: a frame to Gemini this often - measured ~200 tokens a frame
+    # at HIGH media resolution, so ~4k tokens a minute of the 65k.
+    $CAMERA_EVERY_S = 3
+    $CAMERA_IDLE_S = 120      # live view off after this long with no conversation
+    $script:cams = $null
+    $script:camName = Get-VoicePref 'camera'
+
+    function Get-VoiceCameras {
+        if ($null -ne $script:cams) { return $script:cams }
+        $script:cams = @()
+        try {
+            [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType = WindowsRuntime] | Out-Null
+            [Windows.Devices.Enumeration.DeviceInformationCollection, Windows.Devices.Enumeration, ContentType = WindowsRuntime] | Out-Null
+            $all = Wait-WinRt ([Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync(
+                [Windows.Devices.Enumeration.DeviceClass]::VideoCapture)) ([Windows.Devices.Enumeration.DeviceInformationCollection]) 5000
+            $found = @($all | Where-Object { $_.IsEnabled } | ForEach-Object { @{ name = $_.Name; id = $_.Id } })
+            $script:cams = @($found | Where-Object { $_.name -notmatch $CAMERA_SKIP }) + @($found | Where-Object { $_.name -match $CAMERA_SKIP })
+        } catch {}
+        # Not ", $script:cams": callers wrap it in @(), which then held one
+        # item - the whole list - and the settings showed no camera at all.
+        $script:cams
+    }
+
+    # The chosen camera first, then the rest in order.
+    function Get-VoiceCameraOrder {
+        $all = Get-VoiceCameras
+        @($all | Where-Object { $_.name -eq $script:camName }) + @($all | Where-Object { $_.name -ne $script:camName })
+    }
+
+    # One camera on a thread of its own: Windows' MediaCapture, a photo -
+    # or, for the live view, one after another until told to stop - into a
+    # shared table the window reads.
+    $CAMERA_RUN = {
+        param($id, $state)
+        try {
+            Add-Type -AssemblyName System.Runtime.WindowsRuntime
+            $act = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+                $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+                $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' } | Select-Object -First 1
+            [Windows.Media.Capture.MediaCapture, Windows.Media.Capture, ContentType = WindowsRuntime] | Out-Null
+            [Windows.Media.MediaProperties.ImageEncodingProperties, Windows.Media.MediaProperties, ContentType = WindowsRuntime] | Out-Null
+            [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage.Streams, ContentType = WindowsRuntime] | Out-Null
+            $mc = New-Object Windows.Media.Capture.MediaCapture
+            $set = New-Object Windows.Media.Capture.MediaCaptureInitializationSettings
+            $set.StreamingCaptureMode = [Windows.Media.Capture.StreamingCaptureMode]::Video
+            if ($id) { $set.VideoDeviceId = $id }
+            if (-not $act.Invoke($null, @($mc.InitializeAsync($set))).Wait(8000)) { throw 'the camera did not start' }
+            Start-Sleep -Milliseconds 500
+            $tries = 0
+            do {
+                $st = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+                $jpg = [Windows.Media.MediaProperties.ImageEncodingProperties]::CreateJpeg()
+                if (-not $act.Invoke($null, @($mc.CapturePhotoToStreamAsync($jpg, $st))).Wait(8000)) { throw 'no picture' }
+                $s = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($st.GetInputStreamAt(0))
+                $ms = New-Object IO.MemoryStream
+                $s.CopyTo($ms)
+                $frame = $ms.ToArray()
+                $state.frame = $frame
+                $state.seq++
+                $tries++
+                if ($state.once) {
+                    # A webcam's first pictures are black while it finds its
+                    # exposure - measured: 0.02, then 0.31 half a second on -
+                    # so a photo is the first lit one, five tries at most.
+                    $lit = $true
+                    try { $lit = [NexusVoice.Snap]::Brightness($frame) -ge $state.dark } catch {}
+                    if ($lit -or $tries -ge 5) { break }
+                }
+                Start-Sleep -Milliseconds 250
+            } while ($state.run)
+            $mc.Dispose()
+        } catch {
+            $state.err = $_.Exception.GetBaseException().Message
+        }
+        $state.done = $true
+    }
+
+    function Start-CameraRun($cam, [bool]$once) {
+        $state = [hashtable]::Synchronized(@{ run = $true; once = $once; frame = $null; seq = 0; err = $null; done = $false; dark = $CAMERA_DARK })
+        $ps = [powershell]::Create()
+        [void]$ps.AddScript($CAMERA_RUN).AddArgument($cam.id).AddArgument($state)
+        @{ ps = $ps; handle = $ps.BeginInvoke(); state = $state; cam = $cam }
+    }
+
+    # Told to stop; disposed by Clear-CameraRuns once it has let go of the
+    # camera - never waited for here, on the window's thread.
+    $script:oldRuns = New-Object System.Collections.Generic.List[object]
+    function Stop-CameraRun($run) {
+        if (-not $run) { return }
+        $run.state.run = $false
+        $script:oldRuns.Add($run)
+    }
+    function Clear-CameraRuns {
+        foreach ($r in $script:oldRuns.ToArray()) {
+            if (-not $r.handle.IsCompleted) { continue }
+            try { $r.ps.Dispose() } catch {}
+            [void]$script:oldRuns.Remove($r)
+        }
+    }
+
+    # A photo for the look tool: the live view's latest frame if it is on,
+    # else one photo, from the next camera if a black one came back.
+    function Start-VoiceCamera($b) {
+        $v = $script:view
+        if ($v -and $v.run.state.frame) {
+            $b.ProvideFrame([NexusVoice.Snap]::Jpeg([byte[]]$v.run.state.frame))
+            return
+        }
+        if ($script:camJob) { return }
+        $order = @(Get-VoiceCameraOrder)
+        if (-not $order.Count) {
+            Add-VoiceLine 'note' 'No camera found.'
+            $b.ProvideFrame($null)
+            return
+        }
+        $script:camJob = @{ b = $b; order = $order; at = 0; run = (Start-CameraRun $order[0] $true) }
+    }
+
+    function Receive-VoiceCamera {
+        $j = $script:camJob
+        if (-not $j -or -not $j.run.state.done) { return }
+        $st = $j.run.state
+        $name = $j.run.cam.name
+        Stop-CameraRun $j.run
+        $jpeg = $null
+        if ($st.frame) {
+            $dark = $true
+            try { $dark = [NexusVoice.Snap]::Brightness([byte[]]$st.frame) -lt $CAMERA_DARK } catch {}
+            if (-not $dark) { $jpeg = [NexusVoice.Snap]::Jpeg([byte[]]$st.frame) }
+        }
+        if (-not $jpeg -and $j.at + 1 -lt $j.order.Count) {
+            $why = if ($st.frame) { 'a black picture (lid shut, shutter closed, or nothing feeding it?)' } else { "no picture ($($st.err))" }
+            $j.at++
+            Add-VoiceLine 'note' "$name gave $why - trying $($j.order[$j.at].name)."
+            $j.run = Start-CameraRun $j.order[$j.at] $true
+            return
+        }
+        $script:camJob = $null
+        if ($jpeg) {
+            # This camera works: first from now on, until another is chosen.
+            if (-not $script:camName -or $j.at -gt 0) { $script:camName = $name; Set-VoicePref 'camera' $name }
+        } else {
+            Add-VoiceLine 'note' 'No camera gave a picture - check the shutter, or pick one in the settings.'
+        }
+        $j.b.ProvideFrame($jpeg)
+    }
+
+    # The live view, like Mira's: the camera in the corner of Buddy's stage,
+    # a few frames a second here, and one every $CAMERA_EVERY_S to Gemini
+    # while a conversation is on, so Buddy sees what you show it. On and off
+    # from the settings, or by saying "turn on the camera" / "camera off".
+    $script:view = $null
+
+    # The live view: a card between Buddy and the chat, the chat's width -
+    # not over the stage, where it covered Buddy's ear (rendered). The frame
+    # is the card's background, so its rounded corners clip the picture.
+    $CAMERA_CARD_H = 120
+    # While it is on, Buddy's stage is drawn at this scale - all of Buddy, a
+    # little smaller - so the chat under the card keeps room (rendered).
+    $CAMERA_STAGE_SCALE = 0.7
+    function New-CameraBox {
+        $box = New-Object Windows.Controls.Border
+        $box.Height = $CAMERA_CARD_H
+        $box.CornerRadius = New-Object Windows.CornerRadius(16)
+        $box.BorderThickness = New-Object Windows.Thickness(1.5)
+        $box.BorderBrush = New-VoiceBrush '#FF4D6A'
+        $box.Background = New-VoiceBrush '#0B0B1E'
+        $box.VerticalAlignment = 'Top'
+        $box.Margin = New-Object Windows.Thickness(0, 4, 0, 0)
+        $tag = New-Object Windows.Controls.Border
+        $tag.CornerRadius = New-Object Windows.CornerRadius(8)
+        $tag.Background = New-VoiceBrush '#CC0B0B1E'
+        $tag.Padding = New-Object Windows.Thickness(8, 3, 8, 3)
+        $tag.Margin = New-Object Windows.Thickness(8)
+        $tag.HorizontalAlignment = 'Left'
+        $tag.VerticalAlignment = 'Bottom'
+        $label = New-Object Windows.Controls.TextBlock
+        $label.Text = [string][char]0x25CF + ' LIVE - Buddy sees this'
+        $label.FontSize = 11
+        $label.Foreground = New-VoiceBrush '#FF8FA3'
+        $tag.Child = $label
+        $box.Child = $tag
+        [Windows.Automation.AutomationProperties]::SetName($box, 'Camera view')
+        $box
+    }
+
+    # A picture as a brush that fills a rounded frame.
+    function New-VoiceImageBrush([byte[]]$bytes, [int]$width) {
+        $brush = New-Object Windows.Media.ImageBrush (ConvertTo-VoiceBitmap $bytes $width)
+        $brush.Stretch = 'UniformToFill'
+        $brush.Freeze()
+        $brush
+    }
+
+    # The card goes above the chat, which steps down under it while it is on.
+    $script:stageRow = $null
+    function Show-CameraBox($box, [bool]$show) {
+        $grid = $ui.Scroll.Parent
+        if (-not $script:stageRow) {
+            $script:stageRow = $ui.Stage.Parent.RowDefinitions[[Windows.Controls.Grid]::GetRow($ui.Stage)]
+            $script:stageHeight = $script:stageRow.Height
+        }
+        $m = $ui.Scroll.Margin
+        if ($show) {
+            [Windows.Controls.Grid]::SetRow($box, [Windows.Controls.Grid]::GetRow($ui.Scroll))
+            [void]$grid.Children.Add($box)
+            $ui.Scroll.Margin = New-Object Windows.Thickness($m.Left, ($CAMERA_CARD_H + 10), $m.Right, $m.Bottom)
+            $ui.Stage.LayoutTransform = New-Object Windows.Media.ScaleTransform($CAMERA_STAGE_SCALE, $CAMERA_STAGE_SCALE)
+            $script:stageRow.Height = New-Object Windows.GridLength([math]::Round($script:stageHeight.Value * $CAMERA_STAGE_SCALE))
+        } else {
+            [void]$grid.Children.Remove($box)
+            $ui.Scroll.Margin = New-Object Windows.Thickness($m.Left, 4, $m.Right, $m.Bottom)
+            $ui.Stage.LayoutTransform = $null
+            $script:stageRow.Height = $script:stageHeight
+        }
+    }
+
+    # -Said: asked for out loud or typed in a conversation, which Gemini heard
+    # itself - telling it as well made it answer twice.
+    function Set-CameraView([bool]$on, $cam, [switch]$Said, [string]$why = 'Camera off.') {
+        if (-not $on) {
+            if (-not $script:view) { return }
+            Stop-CameraRun $script:view.run
+            Show-CameraBox $script:view.box $false
+            $script:view = $null
+            Add-VoiceLine 'note' $why
+            if ($script:bv -and -not $Said) { [void]$script:bv.Tell('(The owner turned the camera off: you no longer see it.)') }
+            return
+        }
+        # Already on: "camera on" again is not a restart (it flickered).
+        if ($script:view -and -not $cam) { return }
+        $order = @(Get-VoiceCameraOrder)
+        if (-not $order.Count) { Add-VoiceLine 'note' 'No camera found.'; return }
+        if (-not $cam) { $cam = $order[0] }
+        if ($script:view) { Stop-CameraRun $script:view.run; Show-CameraBox $script:view.box $false }
+        $box = New-CameraBox
+        $box.ToolTip = "Camera: $($cam.name) - Buddy sees this"
+        Show-CameraBox $box $true
+        $script:view = @{ run = (Start-CameraRun $cam $false); box = $box; seen = 0; darkRun = 0
+                          sentAt = [datetime]::MinValue; checked = $false; tried = @($cam.name) }
+        Add-VoiceLine 'note' "Camera on ($($cam.name)). Buddy sees it every $CAMERA_EVERY_S s while you talk. It goes off when the PC locks, or after $CAMERA_IDLE_S s with no conversation."
+        if ($script:bv -and -not $Said) { [void]$script:bv.Tell("(The owner turned the camera on: you now see it live, every $CAMERA_EVERY_S seconds.)") }
+    }
+
+    function Update-CameraView {
+        $v = $script:view
+        if (-not $v) { return }
+        # With nobody talking for a while, the camera does not stay on (its
+        # light would, with the window minimised or forgotten).
+        if ($script:bv) { $v.idleSince = $null }
+        elseif (-not $v.idleSince) { $v.idleSince = Get-Date }
+        elseif (((Get-Date) - $v.idleSince).TotalSeconds -ge $CAMERA_IDLE_S) {
+            Set-CameraView $false -why "Camera off - no conversation for $CAMERA_IDLE_S s."
+            return
+        }
+        $st = $v.run.state
+        if ($st.done -and $st.seq -eq $v.seen) {
+            Add-VoiceLine 'note' "The camera stopped: $(if ($st.err) { $st.err } else { 'no picture' })"
+            Set-CameraView $false
+            return
+        }
+        if (-not $st.frame -or $st.seq -eq $v.seen) { return }
+        $v.seen = $st.seq
+        $bytes = [byte[]]$st.frame
+        # Until a lit frame: a webcam's first ones are black while it finds
+        # its exposure, so five black ones in a row mean this camera shows
+        # nothing - the next one, once round.
+        if (-not $v.checked) {
+            $dark = $false
+            try { $dark = [NexusVoice.Snap]::Brightness($bytes) -lt $CAMERA_DARK } catch {}
+            if (-not $dark) {
+                $v.checked = $true
+                if ($script:camName -ne $v.run.cam.name -and ($v.tried.Count -gt 1 -or -not $script:camName)) {
+                    $script:camName = $v.run.cam.name
+                    Set-VoicePref 'camera' $script:camName
+                }
+            } elseif ((++$v.darkRun) -ge 5) {
+                $v.checked = $true
+                $next = @(Get-VoiceCameraOrder | Where-Object { $v.tried -notcontains $_.name }) | Select-Object -First 1
+                if ($next) {
+                    Add-VoiceLine 'note' "$($v.run.cam.name) is black (lid shut, shutter closed, or nothing feeding it?) - trying $($next.name)."
+                    $tried = $v.tried + $next.name
+                    Set-CameraView $true $next
+                    $script:view.tried = $tried
+                    return
+                }
+                Add-VoiceLine 'note' 'Every camera is black - check the shutter, or pick one in the settings.'
+            }
+        }
+        try { $v.box.Background = New-VoiceImageBrush $bytes 640 } catch {}
+        $b = $script:bv
+        if ($b -and $b.Ready -and ((Get-Date) - $v.sentAt).TotalSeconds -ge $CAMERA_EVERY_S) {
+            if ($b.SendFrame([NexusVoice.Snap]::Jpeg($bytes))) { $v.sentAt = Get-Date }
+        }
+    }
+
+    # "Turn on the camera", "camera off" - spoken or typed. $true when it was.
+    $CAMERA_ON = '\b(?:turn|switch|put)\s+on\s+(?:the\s+|my\s+|your\s+)?(?:camera|cam|webcam)\b|\b(?:camera|cam|webcam)\s+on\b|\bopen\s+(?:the\s+|my\s+)?(?:camera|cam|webcam)\b|\bstart\s+(?:the\s+)?(?:camera|cam|webcam)\b'
+    $CAMERA_OFF = '\b(?:turn|switch)\s+off\s+(?:the\s+|my\s+|your\s+)?(?:camera|cam|webcam)\b|\b(?:camera|cam|webcam)\s+off\b|\bclose\s+(?:the\s+|my\s+)?(?:camera|cam|webcam)\b|\bstop\s+(?:the\s+)?(?:camera|cam|webcam)\b'
+    function Invoke-CameraAsk([string]$text) {
+        if ($text -match $CAMERA_OFF) { Set-CameraView $false -Said; return $true }
+        if ($text -match $CAMERA_ON) { Set-CameraView $true -Said; return $true }
+        $false
+    }
+
+    # Time's up: said in the window, shown on the dongle, and spoken - by
+    # Buddy in a conversation, else by the Windows voice.
+    function Invoke-VoiceTimerDone([string]$label) {
+        Add-VoiceLine 'note' "Time's up: $label."
+        if ($w.WindowState -eq 'Minimized') { $w.WindowState = 'Normal' }
+        Send-VoiceFace 'SURPRISED'
+        Set-VoiceFaceLine 'E SURPRISED'
+        try { [Media.SystemSounds]::Exclamation.Play() } catch {}
+        $b = $script:bv
+        # In a conversation Buddy says it in its own voice; else (or on Flash
+        # Lite, which takes no notices) the Windows voice does.
+        if ($b -and $b.Ready -and -not $b.Done -and $b.Tell("(A timer just ended: $label. Tell the owner, in a few words.)")) {
+            return
+        }
+        try {
+            if (-not $script:synth) {
+                Add-Type -AssemblyName System.Speech
+                $script:synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+                try { $script:synth.SelectVoiceByHints('Female') } catch {}
+            }
+            [void]$script:synth.SpeakAsync("Time's up: $label")
+        } catch {}
+    }
+
     # A face or a trick asked for in a conversation - "show me an angry face",
     # "sing a song", "bang" - plays on the dongle at once, the same as typed
     # to chat: the companion plays it (it holds the dongle's port, and the
@@ -3317,7 +4380,7 @@ if ($Voice) {
             if ($m.StartsWith('you: ')) {
                 Add-VoiceLine 'you' $m.Substring(5)
                 Add-VoiceRecent 'Owner' $m.Substring(5)
-                Invoke-VoiceCommand $m.Substring(5)
+                if (-not (Invoke-CameraAsk $m.Substring(5))) { Invoke-VoiceCommand $m.Substring(5) }
             } elseif ($m.StartsWith($me)) {
                 Add-VoiceLine 'buddy' $m.Substring($me.Length)
                 Add-VoiceRecent "$($p.name)" $m.Substring($me.Length)
@@ -3386,12 +4449,17 @@ if ($Voice) {
         if ($script:bv) { return }
         if (-not $gem.key) { Add-VoiceLine 'note' "Voice needs a Gemini key in $KEY_FILE"; return }
         if ($script:buildError) { Add-VoiceLine 'note' "Voice cannot start: $script:buildError"; return }
-        if (-not $Carry) { $script:recent.Clear(); $script:resume = @{} }
+        if (-not $Carry) {
+            $script:recent.Clear()
+            $script:resume = @{}
+            # Buddy speaks first, once a day, in the first conversation.
+            $script:greet = (Get-VoicePref 'greeted') -ne (Get-Date -Format 'yyyy-MM-dd')
+        }
         $i = Get-VoiceTier
         $m = $script:tiers[$i]
         $recent = [string[]]$script:recent.ToArray()
         if ($m -eq 'lite') {
-            $lp = $litePrompt
+            $lp = (Get-BuddyPrompt $p -Spoken) + "`n" + $liteHint
             if ($recent) { $lp += "`n`nThe conversation so far, which carries on now:`n" + ($recent -join "`n") }
             $b = New-Object NexusVoice.BuddyVoice([string[]]$LITE_MODELS, $gem.key, $lp, "$($p.name)", $faces, $VOICE_PORT)
         } else {
@@ -3417,6 +4485,10 @@ if ($Voice) {
         $script:pending = $null
         $b.Stop()
         Read-VoiceLog $b
+        # A timer or a picture from its last moments is kept, not lost.
+        Update-VoiceTimers $b
+        # Away from the PC (locked, asleep): the camera goes off too.
+        if ($b.Away -and $script:view) { Set-CameraView $false }
         $m = $script:tiers[$script:tier]
         if ($b.ResumeHandle) { $script:resume = @{ model = $m; handle = $b.ResumeHandle } }
         $kind = "$($b.EndKind)"
@@ -3512,6 +4584,11 @@ if ($Voice) {
         if (-not $text -or $script:asking) { return }
         $ui.Msg.Text = ''
         Add-VoiceLine 'you' $text
+        # "Camera on/off" is the window's own, typed or said; mid-conversation
+        # it still goes to Buddy too, who answers it.
+        if ((Invoke-CameraAsk $text) -and -not $script:bv) { return }
+        # A reminder typed with no conversation going: typed chat has no tools.
+        if (-not $script:bv -and (Invoke-TimerAsk $text)) { return }
         # A question about this PC never goes to Gemini, even mid-conversation:
         # the companion answers it from the PC's own numbers (and the dongle
         # shows it); without a companion, this window does.
@@ -3627,11 +4704,40 @@ if ($Voice) {
                 if ([int]$src.Tag -eq $script:micId) { return }
                 Set-VoiceMic ([int]$src.Tag)
                 $keep = if ($script:micId -ge 0) { $script:mics[$script:micId] } else { '' }
-                try { @{ mic = $keep } | ConvertTo-Json | Set-Content $VOICE_PREFS -Encoding utf8 } catch {}
+                Set-VoicePref 'mic' $keep
                 # A new mic takes a new session.
                 if ($script:bv) { Stop-VoiceTalk; Start-VoiceTalk }
             })
             [void]$panel.Children.Add($item)
+        }
+        # The cameras, like the mics: the one chosen is remembered by name and
+        # used first, and the live view goes on and off here too. Listed
+        # afresh each time, so a webcam plugged in since shows up.
+        $script:cams = $null
+        $cams = @(Get-VoiceCameras)
+        if ($cams.Count) {
+            [void]$panel.Children.Add((New-VoiceMenuHeader 'CAMERA'))
+            $viewItem = New-VoiceMenuItem 'Live camera view' ([bool]$script:view) 'view'
+            $viewItem.Add_Click({
+                $popup.IsOpen = $false
+                Set-CameraView (-not $script:view)
+            })
+            [void]$panel.Children.Add($viewItem)
+            $current = (Get-VoiceCameraOrder)[0].name
+            foreach ($c in $cams) {
+                $item = New-VoiceMenuItem $c.name ($c.name -eq $current) $c.name
+                $item.Add_Click({
+                    param($src)
+                    $popup.IsOpen = $false
+                    $script:camName = [string]$src.Tag
+                    Set-VoicePref 'camera' $script:camName
+                    # The live view moves to it at once.
+                    if ($script:view) {
+                        Set-CameraView $true (@(Get-VoiceCameras) | Where-Object { $_.name -eq $script:camName } | Select-Object -First 1)
+                    }
+                })
+                [void]$panel.Children.Add($item)
+            }
         }
         $rule = New-Object Windows.Controls.Border
         $rule.Height = 1
@@ -4037,8 +5143,16 @@ if ($Voice) {
     $timer.Interval = [TimeSpan]::FromMilliseconds(33)
     $timer.Add_Tick({
         $b = $script:bv
+        # Before a finished conversation is stopped: a timer it just set
+        # must not be lost with it.
+        Update-VoiceTimers $b
         if ($b) {
             Read-VoiceLog $b
+            if ($script:greet -and $b.Ready) {
+                $script:greet = $false
+                [void]$b.Tell("(This is the owner's first conversation with you today. Greet them warmly, in one short sentence.)")
+                Set-VoicePref 'greeted' (Get-Date -Format 'yyyy-MM-dd')
+            }
             if ($script:pending -and $b.Ready) {
                 if ($b.SendText($script:pending)) {
                     Add-VoiceRecent 'Owner' $script:pending
@@ -4121,6 +5235,8 @@ if ($Voice) {
     $w.Add_Closed({
         $timer.Stop()
         Stop-VoiceTalk -Closing
+        # The camera is let go of with the window.
+        if ($script:view) { $script:view.run.state.run = $false }
         if ($script:mirror) { $script:mirror.Close() }
         if ($script:hotkey) { $script:hotkey.Close() }
     })

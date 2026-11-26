@@ -164,6 +164,7 @@ picks up a key pasted in within 30 seconds.
 | `liveModel` | `gemini-3.8-live` | What `voice.cmd` talks to first (Windows); the rest of the chain follows it (see *When a model gives out*). |
 | `voice` | `Achernar` | The voice Buddy speaks in, one of Gemini Live's prebuilt voices. Achernar is soft and calm; `Vindemiatrix`, `Sulafat`, `Despina` and `Aoede` are other gentle ones. |
 | `headset` | `false` | `true` keeps the mic open while Buddy talks, so you can cut in. Only with a headset: speakers echo. |
+| `city` | - | Where the weather is for, e.g. `"Pune"`. Without it, Windows' own location (Settings > Privacy > Location, on for desktop apps). |
 
 Everything but `key` is optional. The `GEMINI_API_KEY` environment variable works too and
 wins over the file; `--gemini-model` / `-GeminiModel` wins over `model`. The
@@ -276,6 +277,26 @@ Asked out loud, in a voice conversation, the answer has to come back in
 Buddy's voice, which Gemini makes: there Gemini calls a `get_pc_stats` tool
 and gets the same numbers, for that answer only.
 
+**Things Buddy does on this PC.** In a voice conversation Gemini can ask the
+PC to do a few things, each run here and costing no quota beyond the ask:
+
+| Say | What happens |
+| --- | --- |
+| "What's the weather?", "will it rain tomorrow?" | The weather now, today and tomorrow, from [Open-Meteo](https://open-meteo.com) - free, no key - for `city` in `gemini.json` or Windows' location. Typed to chat it is answered the same way, without Gemini. |
+| "Pause the music", "next song", "turn it up" | A media key, as the keyboard's own would send: play/pause, next, previous, volume (2 % a press; "up" is five), mute. |
+| "Remind me in 20 minutes to stretch", "remind me at 5:30 pm to call mom", "start a pomodoro" | A timer in the window - said in a conversation, or typed with none going ("set a timer for 5 min"). When it ends the window chimes and says so, the dongle looks surprised, and Buddy says it - in a conversation in its own voice, else in the Windows voice. Up to ten; "cancel my timers" stops them. They live in the window (which opens at sign-in), so closing it drops them. |
+| "Remember my exam is on Friday", "forget about the exam" | A fact kept in `%LOCALAPPDATA%\NEXUS\memory.json` - this PC only, dated, the last 60 - and put into every conversation's prompt, typed chat included, so Buddy knows it tomorrow. Delete the file to forget everything, or say "forget everything". |
+| "Look at my screen - what does this error say?", "what am I holding?" | One picture of the screen your mouse is on (in real pixels, whatever the scaling), or one photo from the camera (its light comes on), sent to Gemini to answer from - and shown in the chat, so you see exactly what Buddy saw. Only when you have just asked it to look: the window refuses a look Gemini asks for by itself. |
+
+**The camera.** The settings list every camera, like the microphones; the one you pick is remembered by name. Virtual cameras (Camo, OBS) and IR face-unlock cameras go last, a webcam's black first frames are waited out, and a camera that stays black - a laptop with its lid shut, a closed shutter - is skipped for the next, with a note. **Live camera view**, in the settings or by saying "turn on the camera": a card above the chat - Buddy drawn a little smaller to make room - with a LIVE tag, and while you talk Gemini sees a frame every 3 seconds (about 200 tokens each), so you can show it things and talk about them. It goes off by itself when the PC locks or sleeps, or after two minutes with no conversation; "camera off" stops it sooner.
+
+Remembered facts are also how Buddy learns things it sees: "this blue mug is
+mine - remember it" keeps the description, and the next look can match it.
+
+And once a day, in the first conversation, Buddy speaks first: a short
+greeting. These need a Live model; Flash Lite, the last step of the chain,
+only talks.
+
 **Typing in the window.** The message box above the buttons goes where the
 conversation is:
 
@@ -375,8 +396,12 @@ track playing and why it is being asked - and in a chat, what you type to
 it. A typed question about the PC is answered on the PC and never sent; a
 spoken one, in a voice conversation, sends its numbers for that answer
 (above): load, memory, disk, battery, uptime, Windows version and the names
-of the three apps using the most memory. Never keystrokes, window titles,
-screen contents or files. The dongle sends nothing back at all.
+of the three apps using the most memory. What you asked Buddy to remember
+goes into its prompt; a picture of the screen or camera goes only when you
+ask it to look, and the window notes each one. The weather asks Open-Meteo
+for your city or location, and nothing else. Never keystrokes, window titles
+or files, and the screen only in a picture you asked for. The dongle sends
+nothing back at all.
 
 Every answer is checked before the dongle sees it: an emotion it does not
 have, a line over 24 characters or with characters the font cannot draw, or

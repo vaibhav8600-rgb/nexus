@@ -508,7 +508,7 @@ def voice():
 
     # A typed question about this PC is answered by the PC itself; its
     # numbers go to Gemini only when spoken, because Gemini says the answer.
-    ok("name = 'get_pc_stats'" in window and 'fn == "get_pc_stats"' in cs,
+    ok("name = 'get_pc_stats'" in window and 'case "get_pc_stats"' in cs,
        'a spoken question about this PC is answered through get_pc_stats')
     ask = between('function Start-BuddyAsk')
     ok('Machine' not in ask, "a typed chat never sends the PC's numbers to Gemini")
@@ -606,6 +606,80 @@ def voice():
        "$script:resumed -and $kind -in 'refused', 'drop'" in window,
        'a resume that comes back too soon is retried with the conversation told, '
        'never rests 3.8 for an hour; and Stop says goodbye so Google lets go sooner')
+    # Tools only this PC can run: each declared, and each run here.
+    setup = between('function Get-VoiceSetup')
+    tools = ['get_pc_stats', 'get_weather', 'control_media', 'set_timer', 'cancel_timers',
+             'remember', 'forget', 'look']
+    ok(all("name = '%s'" % t in setup and 'case "%s"' % t in cs for t in tools),
+       'every tool is declared in the setup and handled in BuddyVoice.Tool')
+    ok('api.open-meteo.com' in cs and 'geocoding-api.open-meteo.com' in cs and
+       'Set-WeatherPlace (Get-GeminiConfig)' in ps and
+       '[NexusVoice.Weather]::City = $gem.city' in window,
+       'the weather comes from Open-Meteo (no key, no quota), for the city or Windows location')
+    ok('Get-WeatherReply $msg.text' in between('function Get-BuddyLines'),
+       'a typed weather question is answered by the companion, like one about the PC')
+    ok("$MEMORY_FILE = Join-Path $HOME_DIR 'memory.json'" in ps and
+       '$mem = @(Get-BuddyMemory)' in between('function Get-BuddyPrompt'),
+       'memory lives beside the key, never in a repo, and every prompt carries it')
+    ok('if (Now() - Interlocked.Read(ref askAt) > 30000 || !MayLook(lastAsk))' in cs and
+       'Say("Shared one snapshot of your " + lookAt' in cs and 'SendLook();' in cs,
+       'a look needs the owner to have just asked, and every picture sent is said in '
+       'the window')
+    # What Buddy saw is shown; cameras are chosen like mics; reminders hold.
+    ok('Shown.Enqueue(jpeg);' in cs and
+       '$b.Shown.TryDequeue([ref]$img)) { Add-VoiceImage $img }' in window,
+       'every picture sent on a look is shown in the chat')
+    ok("New-VoiceMenuHeader 'CAMERA'" in window and "Set-VoicePref 'camera'" in window and
+       "$script:camName = Get-VoicePref 'camera'" in window,
+       'the camera is picked in the settings, like the mic, and remembered by name')
+    run = between('$CAMERA_RUN = {', '\n    }\n')
+    ok('[NexusVoice.Snap]::Brightness($frame) -ge $state.dark' in run and '$tries -ge 5' in run,
+       'a photo waits out a webcam\'s black first frames (measured 0.02, then 0.31)')
+    ok("$CAMERA_SKIP = '(?i)\\bIR\\b|virtual|camo" in window and
+       '$j.at + 1 -lt $j.order.Count' in window and '(++$v.darkRun) -ge 5' in window,
+       'virtual and IR cameras go last, and a black camera moves on to the next')
+    ok('function Set-CameraView' in window and
+       '$b.SendFrame([NexusVoice.Snap]::Jpeg($bytes))' in window and
+       '$CAMERA_EVERY_S = 3' in window and 'Invoke-CameraAsk $m.Substring(5)' in window,
+       'a live camera view, like Mira: on screen, a frame to Gemini every 3 s, said or set')
+    ok('SetThreadDpiAwarenessContext(new IntPtr(-4))' in cs and 'MonitorFromPoint(p, 2)' in cs,
+       'the screen under the mouse, in real pixels whatever the scaling')
+    # @() of a List of hashtables throws "Argument types do not match" in
+    # Windows PowerShell: it stopped every timer, and the window's tick.
+    ok('$script:timers.ToArray()' in window and '$script:oldRuns.ToArray()' in window and
+       '@($script:timers)' not in ps and '@($script:oldRuns)' not in ps,
+       'timer and camera lists are copied with ToArray, never @()')
+    ok('return , $script:cams' not in ps and '\n        , $script:cams\n' not in ps,
+       'the camera list is returned plain, so the settings show every camera')
+    # The deep audit's fixes: privacy, cost, layout.
+    ok('if ($b.Away -and $script:view) { Set-CameraView $false }' in window and
+       'Away = true;' in cs and '$CAMERA_IDLE_S = 120' in window,
+       'the camera goes off when the PC locks or sleeps, or after 2 min with no conversation')
+    ok('static string geoCity;' in cs and 'Summary(Dictionary<string, object> d)' in cs and
+       '[NexusVoice.Weather]::Summary($d)' in ps,
+       'a typed weather question is one request: the city looked up once, one forecast')
+    ok('$loc.BeginInvoke()' in window and 'Set-WeatherPlace $gem' not in window,
+       'Windows location is looked up off the window\'s thread, not before it shows')
+    ok("$script:cams = $null\n        $cams = @(Get-VoiceCameras)" in window,
+       'the camera list is read afresh each time the settings open')
+    ok('if ($script:view -and -not $cam) { return }' in window and
+       'Set-CameraView $true -Said' in window,
+       '"camera on" twice is no restart, and a spoken one is not told to Gemini again')
+    ok('function Show-CameraBox' in window and '$ui.Stage.LayoutTransform' in window and
+       'New-VoiceImageBrush' in window and '$frame.Background = $brush' in window,
+       'the camera card sits above the chat with Buddy drawn smaller, and pictures are '
+       'clipped by their rounded frames (both rendered)')
+    stop = between('function Stop-VoiceTalk')
+    ok(stop.index('Update-VoiceTimers $b') < stop.index('$script:tiers[$script:tier]'),
+       'a timer set just before the conversation was ended is kept')
+    ok('Invoke-TimerAsk $text' in between('function Send-VoiceMessage') and
+       'at = @{ type = \'STRING\'' in setup and 'It is now $(' in setup,
+       'reminders typed with no conversation are set here; spoken ones take a time of day too')
+    tick = between('$timer.Add_Tick({', '\n    })\n')
+    ok(tick.index('Update-VoiceTimers $b') < tick.index('if ($b.Done) { Stop-VoiceTalk }'),
+       'timers a conversation set are taken before it is stopped, and outlive it')
+    ok("Set-VoicePref 'greeted'" in tick and "(Get-VoicePref 'greeted')" in window,
+       'Buddy greets first once a day')
     prompt = ps.split('function Get-BuddyPrompt')[1].split('\n}\n')[0]
     ok('your face really does it on the dongle by itself' in prompt and
        "never say you can't" in prompt,
@@ -661,8 +735,8 @@ def voice():
     script = os.path.join(tmp, 'level.ps1')
     with io.open(script, 'w', encoding='utf-8') as f:
         f.write('\n'.join([
-            "Add-Type -TypeDefinition (Get-Content -Raw $args[0]) "
-            "-ReferencedAssemblies System.Web.Extensions, System.Speech -ErrorAction Stop",
+            "Add-Type -TypeDefinition (Get-Content -Raw $args[0]) -ReferencedAssemblies "
+            "System.Web.Extensions, System.Speech, System.Drawing -ErrorAction Stop",
             # 50 ms at 24 kHz: silence, a quiet sine, a loud one.
             "function Get-Sine($amp) {",
             "  $b = New-Object byte[] 2400",
@@ -687,6 +761,32 @@ def voice():
             "   'The service is currently unavailable', 'Failed to generate content',",
             "   'PolicyViolation: session is already connected to an existing client') |",
             "  ForEach-Object { $v::Classify($_) }) -join ','",
+            # WMO codes for the weather, as Open-Meteo gives them.
+            "(@(0, 2, 63, 95) | ForEach-Object { [NexusVoice.Weather]::Sky($_) }) -join ','",
+            # Memory: dated, once per fact, forgotten by a word in it.
+            "[NexusVoice.Memory]::Path = Join-Path $env:TEMP "
+            "('mem-' + [guid]::NewGuid() + '.json')",
+            "$n1 = [NexusVoice.Memory]::Remember('likes pav bhaji')",
+            "$n2 = [NexusVoice.Memory]::Remember('likes pav bhaji')",
+            "$n3 = [NexusVoice.Memory]::Remember('exam on Friday')",
+            "$gone = [NexusVoice.Memory]::Forget('EXAM')",
+            "$left = [NexusVoice.Memory]::All()",
+            "$dated = $left[0] -match '^\\d{4}-\\d\\d-\\d\\d: likes pav bhaji$'",
+            "\"$n1,$n2,$n3,$gone,$($left.Count),$dated\"",
+            "Remove-Item ([NexusVoice.Memory]::Path)",
+            # look: only when the owner asked to look.
+            "(@('Can you look at my screen?', 'What am I holding?', 'How are you?',",
+            "   'Play some music') | ForEach-Object { $v::MayLook($_) }) -join ','",
+            "[NexusVoice.Media]::Actions -contains 'play_pause'",
+            # A black picture is told from a lit one.
+            "Add-Type -AssemblyName System.Drawing",
+            "$shade = foreach ($c in 'Black', 'Gray', 'White') {",
+            "  $bmp = New-Object Drawing.Bitmap 64, 48",
+            "  $g = [Drawing.Graphics]::FromImage($bmp); $g.Clear([Drawing.Color]::$c)",
+            "  $j = [NexusVoice.Snap]::Jpeg($bmp)",
+            "  [NexusVoice.Snap]::Brightness($j) -ge 0.06",
+            "}",
+            "$shade -join ','",
         ]))
     err = ''
     try:
@@ -696,7 +796,15 @@ def voice():
         out, err = r.stdout.strip().splitlines(), r.stderr.strip()[:300]
     except (OSError, subprocess.TimeoutExpired) as e:
         out = ['error: %s' % e]
-    out += [''] * 3
+    out += [''] * 8
+    ok(out[3] == 'clear,partly cloudy,rain,thunderstorms',
+       'the weather codes read as words (%s)' % out[3])
+    ok(out[4] == '1,1,2,1,1,True',
+       'memory keeps a fact once, dated, and forgets by a word in it (%s)' % out[4])
+    ok(out[5] == 'True,True,False,False',
+       'look only follows an ask to look (%s)' % out[5])
+    ok(out[6] == 'True', 'the media keys include play/pause (%s)' % out[6])
+    ok(out[7] == 'False,True,True', 'a black picture is told from a lit one (%s)' % out[7])
     ok(out[0] == '0 1 4',
        'the mouth: silence closed, a quiet sine at 1, a loud one wide open (%s %s)'
        % (out[0], err))
