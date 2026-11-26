@@ -146,6 +146,9 @@ $EXPLAIN_KEYS = 'Ctrl+Alt+Shift+E'
 # What Buddy has been asked to remember, from one day to the next: on this PC
 # only, and read into each conversation's prompt (BuddyVoice's Memory).
 $MEMORY_FILE = Join-Path $HOME_DIR 'memory.json'
+# Timers and reminders, kept across closing the window and restarting the PC:
+# a daily one comes back every day ("every day at 7:30 pm, my pill").
+$REMINDERS_FILE = Join-Path $HOME_DIR 'reminders.json'
 
 # @{ key; model; liveModel; voice; headset; city } - the environment first,
 # then gemini.json. $null for any that neither says.
@@ -1667,6 +1670,28 @@ public static class Memory {
     }
 }
 
+// The window's timers and reminders as it last saved them, for list_timers:
+// the window keeps them (reminders.json), Gemini only asks.
+public static class Reminders {
+    public static string Path = "";
+
+    public static string List() {
+        List<string> l = new List<string>();
+        try {
+            object[] a = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(Path, Encoding.UTF8)) as object[];
+            if (a != null) foreach (object o in a) {
+                Dictionary<string, object> t = o as Dictionary<string, object>;
+                if (t == null) continue;
+                DateTime due = DateTime.Parse(t["due"].ToString(), CultureInfo.InvariantCulture);
+                bool daily = t.ContainsKey("daily") && t["daily"] is bool && (bool)t["daily"];
+                l.Add(t["label"] + ": " + (daily ? "every day at " : due.Date == DateTime.Today ? "today at " : "tomorrow at ") +
+                      due.ToString("HH:mm", CultureInfo.InvariantCulture));
+            }
+        } catch { }
+        return l.Count == 0 ? "no timers or reminders set" : string.Join("; ", l.ToArray());
+    }
+}
+
 // One picture for Buddy to look at, only when asked: the primary screen, or a
 // camera photo the window took, at most 1280 wide, as JPEG.
 public static class Snap {
@@ -2906,13 +2931,21 @@ public class BuddyVoice {
                         min = (due - DateTime.Now).TotalMinutes;
                     }
                     if (double.IsNaN(min) || min <= 0 || min > 24 * 60) return "give minutes (more than 0, at most 1440) or a time as HH:mm";
-                    string label = (Str(args, "label") ?? "").Trim();
-                    Requests.Enqueue("timer\t" + (int)Math.Round(min * 60) + "\t" + (label.Length > 0 ? label : "timer"));
-                    return "set: it ends at " + DateTime.Now.AddMinutes(min).ToString("HH:mm", CultureInfo.InvariantCulture);
+                    string label = (Str(args, "label") ?? "").Trim().Replace("\t", " ");
+                    object d;
+                    bool daily = args != null && args.TryGetValue("daily", out d) && d is bool && (bool)d;
+                    Requests.Enqueue("timer\t" + (int)Math.Round(min * 60) + "\t" + (label.Length > 0 ? label : "timer") +
+                                     "\t" + (daily ? "1" : "0"));
+                    string at2 = DateTime.Now.AddMinutes(min).ToString("HH:mm", CultureInfo.InvariantCulture);
+                    return daily ? "set: every day at " + at2 + ", kept across restarts" : "set: it ends at " + at2;
                 }
-                case "cancel_timers":
-                    Requests.Enqueue("cancel");
-                    return "all timers cancelled";
+                case "cancel_timers": {
+                    string about = (Str(args, "about") ?? "").Trim();
+                    Requests.Enqueue("cancel\t" + about);
+                    return about.Length > 0 ? "cancelling the ones about " + about : "all timers cancelled";
+                }
+                case "list_timers":
+                    return Reminders.List();
                 case "remember": {
                     string fact = Str(args, "fact");
                     if (Memory.Remember(fact) == 0) return "nothing to remember";
@@ -3099,6 +3132,7 @@ public class BuddyVoice {
                 // Flash Lite has no tools: "remember ..." is kept here.
                 string kept = Memory.FromWords(you);
                 if (kept != null) Requests.Enqueue("note\t" + kept);
+                else if (you.Length > 0) Requests.Enqueue("heard\t" + you);
                 if (!Held()) Face(faces.Contains(emo) ? emo : "NEUTRAL");
                 if (reply.Length == 0) return;
                 Say(name + ": " + reply);
@@ -3839,7 +3873,7 @@ if ($Voice) {
         'When the owner asks about their computer - CPU, memory, disk, battery, uptime, what is using memory - call get_pc_stats and answer from it in plain, friendly words.'
         'For the weather, call get_weather and answer from it briefly.'
         'To play, pause or skip music or change the volume, call control_media.'
-        'For a timer or a reminder, call set_timer: minutes for "in 20 minutes" (a pomodoro is 25), or at as HH:mm for "at 5:30 pm"; cancel_timers stops them all. When one ends you will be told: say so.'
+        'For a timer or a reminder, call set_timer: minutes for "in 20 minutes" (a pomodoro is 25), or at as HH:mm for "at 5:30 pm"; for every day ("daily at 7:30 pm, my pill") add daily true. list_timers says what is set; cancel_timers with about cancels one, without it all. When one ends you will be told: say so.'
         'The owner can turn on a live camera view; while it is on you see their camera every few seconds and can talk about it.'
         'When the owner asks you to remember something, call remember with the fact in a short sentence; forget when they ask you to forget it.'
         'Only when the owner asks you to look at their screen or their camera (or at something they are holding), call look - never on your own.'
@@ -3910,12 +3944,22 @@ if ($Voice) {
                             minutes = @{ type = 'NUMBER'; description = 'How long, in minutes (or give at)' }
                             at = @{ type = 'STRING'; description = 'Or a time of day, 24-hour HH:mm' }
                             label = @{ type = 'STRING'; description = 'What it is for, in a few words' }
+                            daily = @{ type = 'BOOLEAN'; description = 'True to repeat every day at that time' }
                         }
                     }
                 },
                 @{
                     name = 'cancel_timers'
-                    description = 'Stop every timer'
+                    description = 'Stop timers and reminders: the ones whose label mentions about, or every one'
+                    behavior = 'BLOCKING'
+                    parameters = @{
+                        type = 'OBJECT'
+                        properties = @{ about = @{ type = 'STRING'; description = 'A word from its label, e.g. pill; leave out for all' } }
+                    }
+                },
+                @{
+                    name = 'list_timers'
+                    description = 'The timers and reminders set now, daily ones included'
                     behavior = 'BLOCKING'
                 },
                 @{
@@ -3972,6 +4016,7 @@ if ($Voice) {
     try {
         Add-VoiceTypes
         [NexusVoice.Memory]::Path = $MEMORY_FILE
+        [NexusVoice.Reminders]::Path = $REMINDERS_FILE
         # Windows' location can take seconds: looked up off this thread, so
         # the window is not held back from showing (Weather's statics are
         # the same in every runspace of this process).
@@ -4183,8 +4228,9 @@ if ($Voice) {
         while ($script:recent.Count -gt 12) { $script:recent.RemoveAt(0) }
     }
 
-    # Timers and reminders Buddy set (set_timer). They live in this window,
-    # which opens at sign-in; closing it drops them.
+    # Timers and reminders Buddy set (set_timer): @{ due; label; daily }. They
+    # ring in this window, which opens at sign-in, and are kept in
+    # reminders.json, so closing it or restarting loses none.
     $script:timers = New-Object System.Collections.Generic.List[object]
     $script:greet = $false
     $script:camJob = $null
@@ -4203,11 +4249,52 @@ if ($Voice) {
         } catch {}
     }
 
-    function Add-VoiceTimer([int]$seconds, [string]$label) {
+    function Add-VoiceTimer([int]$seconds, [string]$label, [bool]$daily = $false) {
         if ($script:timers.Count -ge 10) { Add-VoiceLine 'note' 'Ten timers already - cancel some first.'; return }
-        $t = @{ due = (Get-Date).AddSeconds($seconds); label = $label }
+        $due = (Get-Date).AddSeconds($seconds)
+        # "At 9 am" arrives as seconds from now, a moment short: 08:59:59.4,
+        # which a daily one would keep. Within 2 s of a minute is that minute.
+        $off = $due.TimeOfDay.TotalSeconds % 60
+        if ($off -lt 2 -or $off -gt 58) { $due = $due.Date.AddMinutes([math]::Round($due.TimeOfDay.TotalMinutes)) }
+        $t = @{ due = $due; label = $label; daily = $daily }
         $script:timers.Add($t)
-        Add-VoiceLine 'note' "Timer: $label, at $($t.due.ToString('HH:mm'))."
+        Save-VoiceTimers
+        Add-VoiceLine 'note' "$(if ($daily) { 'Every day' } else { 'Timer' }): $label, at $($t.due.ToString('HH:mm'))."
+    }
+
+    function Save-VoiceTimers {
+        $rows = foreach ($t in $script:timers.ToArray()) {
+            [pscustomobject]@{ due = $t.due.ToString('s'); label = $t.label; daily = [bool]$t.daily }
+        }
+        $json = if ($rows) { ConvertTo-Json -InputObject @($rows) -Compress } else { '[]' }
+        try { [IO.File]::WriteAllText($REMINDERS_FILE, $json) } catch {}
+    }
+
+    # The saved ones, as the window opens: one that came due while it was
+    # closed is shown as missed - a daily one then waits for its next day.
+    function Restore-VoiceTimers {
+        $now = Get-Date
+        $rows = try { Get-Content -LiteralPath $REMINDERS_FILE -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+        foreach ($r in $rows) {
+            try { $due = [datetime]::Parse($r.due, [Globalization.CultureInfo]::InvariantCulture) } catch { continue }
+            if (-not $r.label) { continue }
+            if ($due -le $now) {
+                Add-VoiceLine 'note' "Missed while Buddy was closed: $($r.label), at $($due.ToString('HH:mm'))."
+                if (-not $r.daily) { continue }
+                while ($due -le $now) { $due = $due.AddDays(1) }
+            }
+            $script:timers.Add(@{ due = $due; label = "$($r.label)"; daily = [bool]$r.daily })
+        }
+        Save-VoiceTimers
+    }
+
+    # Every one, or those whose label mentions $about.
+    function Stop-VoiceTimers([string]$about) {
+        $about = ($about -replace '^\s*(all|every|the|my)\s*$', '').Trim()
+        $gone = @($script:timers.ToArray() | Where-Object { -not $about -or $_.label -like "*$about*" })
+        foreach ($t in $gone) { [void]$script:timers.Remove($t) }
+        Save-VoiceTimers
+        Add-VoiceLine 'note' $(if (-not $gone) { "No timer about $about." } elseif ($about) { "Cancelled: $(($gone | ForEach-Object { $_.label }) -join ', ')." } else { 'All timers cancelled.' })
     }
 
     # The conversation's requests (timers, a camera picture) and pictures to
@@ -4218,8 +4305,9 @@ if ($Voice) {
         while ($b -and $b.Requests.TryDequeue([ref]$r)) {
             $f = $r.Split("`t")
             switch ($f[0]) {
-                'timer' { Add-VoiceTimer ([int]$f[1]) $f[2] }
-                'cancel' { $script:timers.Clear(); Add-VoiceLine 'note' 'All timers cancelled.' }
+                'timer' { Add-VoiceTimer ([int]$f[1]) $f[2] ($f.Count -gt 3 -and $f[3] -eq '1') }
+                'cancel' { Stop-VoiceTimers $(if ($f.Count -gt 1) { $f[1] } else { '' }) }
+                'heard' { [void](Invoke-TimerAsk $r.Substring(6)) }
                 'camera' { Start-VoiceCamera $b }
                 'paste' { if (Insert-VoiceText $r.Substring(6)) { Add-VoiceLine 'note' 'Typed it into your app.' } }
                 'note' { Add-VoiceLine 'note' $r.Substring(5) }
@@ -4231,11 +4319,19 @@ if ($Voice) {
         # ToArray, not @(): @() of a List of hashtables throws "Argument types
         # do not match" in Windows PowerShell - measured, and it stopped every
         # timer from firing and the rest of the window's tick with it.
+        $rang = $false
         foreach ($t in $script:timers.ToArray()) {
             if ($now -lt $t.due) { continue }
             [void]$script:timers.Remove($t)
+            # A daily one is set again for tomorrow, same time.
+            if ($t.daily) {
+                while ($t.due -le $now) { $t.due = $t.due.AddDays(1) }
+                $script:timers.Add($t)
+            }
+            $rang = $true
             Invoke-VoiceTimerDone $t.label
         }
+        if ($rang) { Save-VoiceTimers }
         Receive-VoiceCamera
         Update-CameraView
         Clear-CameraRuns
@@ -4247,8 +4343,23 @@ if ($Voice) {
     $TIMER_IN = '^\W*(?:please\s+)?(?:set\s+(?:a\s+|an\s+)?(?:timer|reminder|alarm)\s+(?:for\s+|in\s+)?|remind\s+me\s+in\s+|timer\s+(?:for\s+)?)' +
                 '(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b\W*(?:to|for|about)?\s*(.*)$'
     $TIMER_AT = '^\W*(?:please\s+)?(?:remind\s+me|set\s+(?:a\s+|an\s+)?(?:reminder|alarm))\s+(?:at|for)\s+(\d{1,2})(?::(\d\d))?\s*(am|pm)?\b\W*(?:to|for|about)?\s*(.*)$'
+    $TIMER_LIST = '^\W*(?:please\s+)?(?:what|which|list|show)\b.*\b(?:reminders?|timers?|alarms?)\b'
+    $TIMER_STOP = '^\W*(?:please\s+)?(?:cancel|stop|delete|remove)\s+(?:the\s+|my\s+)?(?:(.*?)\s+)?(?:reminders?|timers?|alarms?)\W*$'
+    $TIMER_DAILY = '\s*\b(?:daily|every\s*day|each\s+day)\b'
     function Invoke-TimerAsk([string]$text) {
+        if ($text -match $TIMER_LIST) {
+            $rows = foreach ($t in $script:timers.ToArray()) {
+                "$($t.label): $(if ($t.daily) { 'every day' } else { $t.due.ToString('ddd') }) at $($t.due.ToString('HH:mm'))"
+            }
+            Add-VoiceLine 'note' $(if ($rows) { "Set: $($rows -join '; ')." } else { 'No timers or reminders set.' })
+            return $true
+        }
+        if ($text -match $TIMER_STOP) { Stop-VoiceTimers $Matches[1]; return $true }
+        # "Every day" anywhere makes it daily, and is no part of the time or label.
+        $daily = $text -match $TIMER_DAILY
+        if ($daily) { $text = $text -replace $TIMER_DAILY, '' }
         if ($text -match $TIMER_IN) {
+            $daily = $false   # "every day in 10 minutes" is just in 10 minutes
             $n = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
             $unit = $Matches[2].Substring(0, 1).ToLower()
             $seconds = [int]($n * $(switch ($unit) { 's' { 1 } 'm' { 60 } default { 3600 } }))
@@ -4268,8 +4379,8 @@ if ($Voice) {
             return $false
         }
         if ($seconds -lt 1 -or $seconds -gt 86400) { return $false }
-        $label = "$($Matches[3])".Trim(' ', '.', '!', '?')
-        Add-VoiceTimer $seconds $(if ($label) { $label } else { 'timer' })
+        $label = ("$($Matches[3])" -replace '^\s*(?:(?:to|for|about)\s+)+', '').Trim(' ', '.', '!', '?')
+        Add-VoiceTimer $seconds $(if ($label) { $label } else { 'timer' }) $daily
         Send-VoiceFace 'THUMBSUP'
         Set-VoiceFaceLine 'E THUMBSUP'
         $true
@@ -5662,6 +5773,7 @@ if ($Voice) {
         if (-not $relayUp) {
             Add-VoiceLine 'note' "The companion is not running (or needs install.cmd again), so the dongle's face will not move."
         }
+        Restore-VoiceTimers
         $timer.Start()
         $script:hotkey = $null
         if (-not $script:buildError) {

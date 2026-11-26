@@ -651,6 +651,15 @@ def voice():
        'timer and camera lists are copied with ToArray, never @()')
     ok('return , $script:cams' not in ps and '\n        , $script:cams\n' not in ps,
        'the camera list is returned plain, so the settings show every camera')
+    # Reminders: daily ones, kept across restarts, listed and cancelled one by one.
+    ok("$REMINDERS_FILE = Join-Path $HOME_DIR 'reminders.json'" in ps and
+       "daily = @{ type = 'BOOLEAN'" in window and "name = 'list_timers'" in window and
+       'case "list_timers":' in cs, 'set_timer takes daily, and list_timers reads the saved list')
+    ok('if ($t.daily) {' in window and 'Restore-VoiceTimers\n' in window and
+       'Missed while Buddy was closed' in window,
+       'a daily reminder comes back tomorrow; saved ones return, missed ones are shown')
+    ok("'heard' { [void](Invoke-TimerAsk" in window and 'Enqueue("heard\\t"' in cs,
+       'reminders said to Flash Lite, which has no tools, are set by the window')
     # "Remember ..." is kept wherever it is said or typed, and shown.
     ok('[NexusVoice.Memory]::FromWords($text)' in window and 'Memory.FromWords(you)' in cs and
        'Enqueue("note\\tRemembered: "' in cs and "'note' { Add-VoiceLine 'note'" in window,
