@@ -262,6 +262,35 @@ It is not Ctrl+Alt+N because a hotkey wins over every app, and that one is
 VS Code's *Run Code*. If another app already has the combination, the window
 says so and the button still works.
 
+**Dictate anywhere - hold /.** Hold the key, talk, let go: what you said is
+typed where your caret is, in any app - cleaned up by Flash Lite: fillers and
+repeats gone, punctuation and capitals in, "new line", "new paragraph" and
+"bullet point" made real. Start with an instruction and it is followed, not
+typed: "make it formal ...", "translate to Hindi ...", "shorter ...". About
+two seconds after you let go (gemini-3.1-flash-lite first: measured
+1.7-2.8 s, where 3.5 Flash Lite took 6-7). The window notes what it typed.
+
+**"What's this?" - hold Z.** Select something in any app - an error, a
+paragraph, code, a sentence in another language - hold the key and ask, or
+say nothing; let go: Buddy answers out loud, in a conversation it starts if
+none is going, so you can follow up by voice ("how do I fix it?", "shorter").
+"Paste that", "replace it with a politer one" types the answer over your
+selection (`paste_text`, refused unless you asked). With nothing selected it
+looks at the screen instead, and shows you what it saw.
+
+Both hold their keys as Ctrl+Alt+Shift+D (/) and Ctrl+Alt+Shift+E (Z), so
+your config's keymap sends those on hold:
+
+```c
+&buddy_ht LC(LA(LS(E))) Z      /* hold: what's this? */
+&buddy_ht LC(LA(LS(D))) FSLH   /* hold: dictate */
+```
+
+The text is pasted, then your clipboard put back (text only: a picture on
+the clipboard is replaced). A conversation going on does not hear what you
+say while a key is held. Nothing is recorded until a key is held, and the
+clip goes only to Gemini.
+
 **Asking about this PC.** Type "how's my laptop doing?", "what's using my
 memory?", "how much battery is left?", "disk space" or "what are my specs?" -
 in the window or `chat.cmd` - and the PC answers it itself, at once, from its

@@ -135,6 +135,13 @@ $LIVE_VOICE = 'Achernar'
 $TALK_MODS = 7
 $TALK_VK = 0x4E
 $TALK_KEYS = 'Ctrl+Alt+Shift+N'
+# Held, not pressed: dictate anywhere (Ctrl+Alt+Shift+D - the keyboard's
+# hold of /) and "what's this?" about a selection (Ctrl+Alt+Shift+E - hold
+# of Z, the left hand, free while the right one selects with the mouse).
+$DICTATE_VK = 0x44
+$DICTATE_KEYS = 'Ctrl+Alt+Shift+D'
+$EXPLAIN_VK = 0x45
+$EXPLAIN_KEYS = 'Ctrl+Alt+Shift+E'
 
 # What Buddy has been asked to remember, from one day to the next: on this PC
 # only, and read into each conversation's prompt (BuddyVoice's Memory).
@@ -1221,6 +1228,10 @@ $LIVE_CHAIN = @('gemini-3.8-live', 'gemini-3.1-flash-live-preview', 'gemini-2.5-
 # Flash Lite hears a whole spoken sentence and answers in one request (about
 # 3.5 s), which the Windows voice then says. Also the companion's text chain.
 $LITE_MODELS = @('gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite')
+# Dictation and a held question wait on Flash Lite while you watch, so the
+# fastest first - measured on one clip: 3.1 1.7-2.8 s, latest 1.4-4 s,
+# 3.5 5.9-7.2 s.
+$HEAR_MODELS = @('gemini-3.1-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite')
 # Gemini trims the oldest of the conversation past this, so a long chat costs
 # no more a turn than a short one: the limit that runs out is tokens a minute.
 $LIVE_TRIGGER_TOKENS = 16000
@@ -1238,6 +1249,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -1798,9 +1810,11 @@ public class HotKey {
 
     const uint WM_HOTKEY = 0x0312, WM_QUIT = 0x0012, MOD_NOREPEAT = 0x4000;
 
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+
     // False when another app already has this combination.
     public volatile bool Ok;
-    int presses;
+    int presses, releases;
     uint threadId;
 
     public HotKey(uint mods, uint vk) {
@@ -1812,8 +1826,16 @@ public class HotKey {
             ready.Set();
             if (!Ok) return;
             MSG m;
-            while (GetMessage(out m, IntPtr.Zero, 0, 0) > 0)
-                if (m.message == WM_HOTKEY) Interlocked.Increment(ref presses);
+            while (GetMessage(out m, IntPtr.Zero, 0, 0) > 0) {
+                if (m.message != WM_HOTKEY) continue;
+                Interlocked.Increment(ref presses);
+                // Windows says when a hotkey goes down, never when it comes
+                // up: its letter is watched until let go - which, sent by a
+                // ZMK hold (Z, /), is when the key on the keyboard is. Two
+                // minutes at most.
+                for (int i = 0; i < 6000 && (GetAsyncKeyState((int)vk) & 0x8000) != 0; i++) Thread.Sleep(20);
+                Interlocked.Increment(ref releases);
+            }
             UnregisterHotKey(IntPtr.Zero, 1);
         });
         t.IsBackground = true;
@@ -1823,9 +1845,228 @@ public class HotKey {
 
     // Presses since the last call.
     public int Take() { return Interlocked.Exchange(ref presses, 0); }
+    // Let-gos since the last call: a hold has ended.
+    public int TakeReleases() { return Interlocked.Exchange(ref releases, 0); }
 
     public void Close() {
         if (Ok) PostThreadMessage(threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+    }
+}
+
+// The mic while a key is held - dictation, a "what's this?" question - and
+// nothing sent anywhere until it is let go. 16 kHz mono, as Gemini hears it.
+public class Recorder {
+    const int RATE = 16000, BUFS = 4, MS = 100, MAX_S = 120;
+    // The loudest 100 ms heard (RMS, int16), for the note when nothing was.
+    public volatile int Peak;
+    readonly List<int> levels = new List<int>();
+    public string Error;
+    IntPtr hwi = IntPtr.Zero;
+    IntPtr[] hdrs = new IntPtr[0];
+    Thread thread;
+    volatile bool stop;
+    readonly MemoryStream pcm = new MemoryStream();
+    readonly object gate = new object();
+
+    public bool Start(int device) {
+        BuddyVoice.WAVEFORMATEX f = BuddyVoice.Pcm16(RATE);
+        int r = BuddyVoice.waveInOpen(out hwi, new IntPtr(device), ref f, IntPtr.Zero, IntPtr.Zero, 0);
+        if (r != 0) { hwi = IntPtr.Zero; Error = "no microphone (waveInOpen error " + r + ")"; return false; }
+        hdrs = new IntPtr[BUFS];
+        for (int i = 0; i < BUFS; i++) {
+            hdrs[i] = BuddyVoice.NewHeader(null, RATE * 2 * MS / 1000);
+            BuddyVoice.waveInPrepareHeader(hwi, hdrs[i], BuddyVoice.HDR);
+            BuddyVoice.waveInAddBuffer(hwi, hdrs[i], BuddyVoice.HDR);
+        }
+        BuddyVoice.waveInStart(hwi);
+        thread = new Thread(Loop);
+        thread.IsBackground = true;
+        thread.Start();
+        return true;
+    }
+
+    void Loop() {
+        int i = 0;
+        while (!stop) {
+            IntPtr h = hdrs[i];
+            if (!BuddyVoice.IsDone(h)) { Thread.Sleep(10); continue; }
+            int n = Marshal.ReadInt32(h, BuddyVoice.RECORDED);
+            BuddyVoice.WAVEHDR w = (BuddyVoice.WAVEHDR)Marshal.PtrToStructure(h, typeof(BuddyVoice.WAVEHDR));
+            byte[] b = new byte[n];
+            Marshal.Copy(w.lpData, b, 0, n);
+            BuddyVoice.waveInUnprepareHeader(hwi, h, BuddyVoice.HDR);
+            Marshal.WriteInt32(h, BuddyVoice.FLAGS, 0);
+            Marshal.WriteInt32(h, BuddyVoice.RECORDED, 0);
+            BuddyVoice.waveInPrepareHeader(hwi, h, BuddyVoice.HDR);
+            BuddyVoice.waveInAddBuffer(hwi, h, BuddyVoice.HDR);
+            i = (i + 1) % BUFS;
+            if (n == 0) continue;
+            int rms = BuddyVoice.Rms(b, 0, n);
+            if (rms > Peak) Peak = rms;
+            lock (gate) levels.Add(rms);
+            lock (gate) if (pcm.Length < RATE * 2L * MAX_S) pcm.Write(b, 0, n);
+        }
+    }
+
+    // Off, and what was heard (16-bit PCM).
+    public byte[] Stop() {
+        stop = true;
+        if (thread != null) thread.Join(1000);
+        if (hwi != IntPtr.Zero) {
+            BuddyVoice.waveInReset(hwi);
+            foreach (IntPtr h in hdrs) { BuddyVoice.waveInUnprepareHeader(hwi, h, BuddyVoice.HDR); BuddyVoice.FreeHeader(h); }
+            BuddyVoice.waveInClose(hwi);
+            hwi = IntPtr.Zero;
+        }
+        lock (gate) return pcm.ToArray();
+    }
+
+    // Whether anyone spoke: the loudest moment well above the room's own
+    // hiss (the quietest tenth of the clip). Relative, as no one level fits
+    // every mic - 600 dropped a quiet laptop mic's speech - and needed, as
+    // Flash Lite sent silence makes words up ("The meeting is scheduled...").
+    public bool Voiced() {
+        List<int> l;
+        lock (gate) l = levels.FindAll(x => x > 0);
+        if (l.Count == 0) return false;
+        l.Sort();
+        return Peak >= 100 && Peak >= 3 * l[l.Count / 10];
+    }
+}
+
+// The keyboard's copy and paste, pressed for the owner: a selection read for
+// "what's this?", dictation and "paste that" typed where the caret is.
+public static class Typing {
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+    [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+    const byte CTRL = 0x11;
+
+    static void Chord(byte key) {
+        keybd_event(CTRL, 0, 0, UIntPtr.Zero);
+        keybd_event(key, 0, 0, UIntPtr.Zero);
+        keybd_event(key, 0, 2, UIntPtr.Zero);
+        keybd_event(CTRL, 0, 2, UIntPtr.Zero);
+    }
+
+    public static void Copy() { Chord(0x43); }
+    public static void Paste() { Chord(0x56); }
+
+    // Until Shift, Ctrl and Alt are up: the hold just let go of sent all
+    // three, and Ctrl+V with them still down is another shortcut entirely.
+    public static bool ModifiersUp(int ms) {
+        for (int t = 0; t < ms; t += 20) {
+            if ((GetAsyncKeyState(0x10) & 0x8000) == 0 && (GetAsyncKeyState(0x11) & 0x8000) == 0 &&
+                (GetAsyncKeyState(0x12) & 0x8000) == 0) return true;
+            Thread.Sleep(20);
+        }
+        return false;
+    }
+}
+
+// One generateContent request down a chain of models - busy, out of quota or
+// gone moves on to the next; a bad key or request does not, it fails the
+// same everywhere.
+public static class Flash {
+    public static volatile string LastWhy = "";
+
+    // The body of a 200, or null with the HTTP code (0: no answer at all).
+    public static string Post(string model, string body, string key, out int code) {
+        code = 0;
+        try {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            HttpWebRequest r = (HttpWebRequest)WebRequest.Create(
+                "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent");
+            r.Method = "POST";
+            r.ContentType = "application/json; charset=utf-8";
+            r.Timeout = r.ReadWriteTimeout = 20000;
+            r.Headers["x-goog-api-key"] = key;
+            byte[] b = Encoding.UTF8.GetBytes(body);
+            using (Stream s = r.GetRequestStream()) s.Write(b, 0, b.Length);
+            using (HttpWebResponse resp = (HttpWebResponse)r.GetResponse())
+            using (StreamReader rd = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) {
+                code = (int)resp.StatusCode;
+                return rd.ReadToEnd();
+            }
+        } catch (WebException e) {
+            HttpWebResponse resp = e.Response as HttpWebResponse;
+            if (resp != null) { code = (int)resp.StatusCode; resp.Close(); }
+            return null;
+        }
+    }
+
+    static string TextOf(string raw) {
+        try {
+            Dictionary<string, object> d = new JavaScriptSerializer().DeserializeObject(raw) as Dictionary<string, object>;
+            object[] cands = d["candidates"] as object[];
+            object[] parts = (((Dictionary<string, object>)cands[0])["content"] as Dictionary<string, object>)["parts"] as object[];
+            StringBuilder sb = new StringBuilder();
+            foreach (object p in parts) {
+                object t;
+                if (((Dictionary<string, object>)p).TryGetValue("text", out t)) sb.Append(t);
+            }
+            return sb.ToString().Trim();
+        } catch {
+            return null;
+        }
+    }
+
+    // What the model wrote, or null (LastWhy says why).
+    public static string Text(string[] models, string key, string body) {
+        LastWhy = "busy";
+        foreach (string model in models) {
+            int code;
+            string raw = Post(model, body, key, out code);
+            // A 200 with no text is the answer - nothing was said - and not
+            // a model to skip: the next would only say the same, slower.
+            if (code == 200) { LastWhy = ""; return TextOf(raw) ?? ""; }
+            LastWhy = code == 429 ? "out of quota" : code == 0 ? "unreachable" : "busy";
+            if (code == 400 || code == 401 || code == 403) { LastWhy = "refusing (HTTP " + code + ")"; break; }
+        }
+        return null;
+    }
+
+    public const string DICTATE =
+        "You turn the owner's dictation into the text they want typed. Write exactly what they said, cleaned up: " +
+        "drop fillers (um, uh, like, you know, so at the start), false starts, and words said twice by mistake " +
+        "(\"is is\" is \"is\"); fix grammar, spelling, capitals and punctuation; keep their words, language and " +
+        "meaning - never add, answer or summarise. Spoken formatting becomes the real thing: \"new line\", " +
+        "\"new paragraph\", \"comma\", \"full stop\", \"question mark\", \"bullet point\" (a line starting \"- \"). " +
+        "If they begin with an instruction about the text - \"make it formal\", \"translate to Hindi\", \"shorter\" - " +
+        "apply it to the rest and leave the instruction out; \"formal\" changes the wording only, and only \"as an " +
+        "email\" or \"as a letter\" adds a greeting or a sign-off. Reply with the text only, no quotes and no notes. " +
+        "If nothing is said, reply with nothing.";
+    public const string TRANSCRIBE =
+        "Transcribe exactly what is said, in the language spoken. Reply with the words only - no quotes, no notes. " +
+        "If nothing is said, reply with nothing.";
+
+    // A held key's clip as text, off the caller's thread: cleaned dictation,
+    // or a question word for word.
+    public static Task<string> Hear(string[] models, string key, byte[] pcm, bool dictate) {
+        return Task.Factory.StartNew(delegate {
+            Dictionary<string, object> audio = new Dictionary<string, object>();
+            audio["mimeType"] = "audio/wav";
+            audio["data"] = Convert.ToBase64String(BuddyVoice.Wav(pcm, 16000));
+            Dictionary<string, object> part = new Dictionary<string, object>();
+            part["inlineData"] = audio;
+            Dictionary<string, object> user = new Dictionary<string, object>();
+            user["role"] = "user";
+            user["parts"] = new object[] { part };
+            Dictionary<string, object> sys = new Dictionary<string, object>();
+            Dictionary<string, object> sysText = new Dictionary<string, object>();
+            sysText["text"] = dictate ? DICTATE : TRANSCRIBE;
+            sys["parts"] = new object[] { sysText };
+            Dictionary<string, object> config = new Dictionary<string, object>();
+            config["temperature"] = 0.2;
+            config["maxOutputTokens"] = 2000;
+            Dictionary<string, object> body = new Dictionary<string, object>();
+            body["systemInstruction"] = sys;
+            body["contents"] = new object[] { user };
+            body["generationConfig"] = config;
+            JavaScriptSerializer json = new JavaScriptSerializer();
+            json.MaxJsonLength = int.MaxValue;
+            return Text(models, key, json.Serialize(body));
+        });
     }
 }
 
@@ -1840,6 +2081,9 @@ public class BuddyVoice {
     // Off with a headset (gemini.json "headset": true): no echo to fear,
     // so the mic stays open and you can cut in.
     public static bool HalfDuplex = true;
+    // Held silent while Z or / is held for "what's this?" or dictation: the
+    // question is for the key, not for the conversation going on.
+    public volatile bool Muted;
     // Nobody heard and nothing said for this long: the conversation ends,
     // so a forgotten window does not stream an empty room to Google.
     public static int IdleMs = 120000;
@@ -2002,7 +2246,7 @@ public class BuddyVoice {
         return level;
     }
 
-    static int Rms(byte[] pcm, int offset, int count) {
+    internal static int Rms(byte[] pcm, int offset, int count) {
         int n = count / 2;
         if (n == 0) return 0;
         double sum = 0;
@@ -2166,14 +2410,14 @@ public class BuddyVoice {
     // ---- audio --------------------------------------------------------------
 
     [StructLayout(LayoutKind.Sequential, Pack = 2)]
-    struct WAVEFORMATEX {
+    internal struct WAVEFORMATEX {
         public ushort wFormatTag, nChannels;
         public uint nSamplesPerSec, nAvgBytesPerSec;
         public ushort nBlockAlign, wBitsPerSample, cbSize;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct WAVEHDR {
+    internal struct WAVEHDR {
         public IntPtr lpData;
         public uint dwBufferLength, dwBytesRecorded;
         public IntPtr dwUser;
@@ -2181,17 +2425,17 @@ public class BuddyVoice {
         public IntPtr lpNext, reserved;
     }
 
-    static readonly int HDR = Marshal.SizeOf(typeof(WAVEHDR));
-    static readonly int FLAGS = (int)Marshal.OffsetOf(typeof(WAVEHDR), "dwFlags");
-    static readonly int RECORDED = (int)Marshal.OffsetOf(typeof(WAVEHDR), "dwBytesRecorded");
+    internal static readonly int HDR = Marshal.SizeOf(typeof(WAVEHDR));
+    internal static readonly int FLAGS = (int)Marshal.OffsetOf(typeof(WAVEHDR), "dwFlags");
+    internal static readonly int RECORDED = (int)Marshal.OffsetOf(typeof(WAVEHDR), "dwBytesRecorded");
 
-    [DllImport("winmm.dll")] static extern int waveInOpen(out IntPtr h, IntPtr dev, ref WAVEFORMATEX f, IntPtr cb, IntPtr inst, int flags);
-    [DllImport("winmm.dll")] static extern int waveInPrepareHeader(IntPtr h, IntPtr hdr, int size);
-    [DllImport("winmm.dll")] static extern int waveInUnprepareHeader(IntPtr h, IntPtr hdr, int size);
-    [DllImport("winmm.dll")] static extern int waveInAddBuffer(IntPtr h, IntPtr hdr, int size);
-    [DllImport("winmm.dll")] static extern int waveInStart(IntPtr h);
-    [DllImport("winmm.dll")] static extern int waveInReset(IntPtr h);
-    [DllImport("winmm.dll")] static extern int waveInClose(IntPtr h);
+    [DllImport("winmm.dll")] internal static extern int waveInOpen(out IntPtr h, IntPtr dev, ref WAVEFORMATEX f, IntPtr cb, IntPtr inst, int flags);
+    [DllImport("winmm.dll")] internal static extern int waveInPrepareHeader(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] internal static extern int waveInUnprepareHeader(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] internal static extern int waveInAddBuffer(IntPtr h, IntPtr hdr, int size);
+    [DllImport("winmm.dll")] internal static extern int waveInStart(IntPtr h);
+    [DllImport("winmm.dll")] internal static extern int waveInReset(IntPtr h);
+    [DllImport("winmm.dll")] internal static extern int waveInClose(IntPtr h);
     [DllImport("winmm.dll")] static extern int waveOutOpen(out IntPtr h, IntPtr dev, ref WAVEFORMATEX f, IntPtr cb, IntPtr inst, int flags);
     [DllImport("winmm.dll")] static extern int waveOutPrepareHeader(IntPtr h, IntPtr hdr, int size);
     [DllImport("winmm.dll")] static extern int waveOutUnprepareHeader(IntPtr h, IntPtr hdr, int size);
@@ -2199,7 +2443,7 @@ public class BuddyVoice {
     [DllImport("winmm.dll")] static extern int waveOutReset(IntPtr h);
     [DllImport("winmm.dll")] static extern int waveOutClose(IntPtr h);
 
-    static WAVEFORMATEX Pcm16(int rate) {
+    internal static WAVEFORMATEX Pcm16(int rate) {
         WAVEFORMATEX f = new WAVEFORMATEX();
         f.wFormatTag = 1;          // WAVE_FORMAT_PCM
         f.nChannels = 1;
@@ -2213,7 +2457,7 @@ public class BuddyVoice {
     // A header and its data, both in unmanaged memory: winmm keeps writing
     // to them after the call returns, and the garbage collector must not
     // move them meanwhile.
-    static IntPtr NewHeader(byte[] data, int size) {
+    internal static IntPtr NewHeader(byte[] data, int size) {
         WAVEHDR h = new WAVEHDR();
         h.lpData = Marshal.AllocHGlobal(size);
         h.dwBufferLength = (uint)size;
@@ -2223,13 +2467,13 @@ public class BuddyVoice {
         return p;
     }
 
-    static void FreeHeader(IntPtr p) {
+    internal static void FreeHeader(IntPtr p) {
         WAVEHDR h = (WAVEHDR)Marshal.PtrToStructure(p, typeof(WAVEHDR));
         Marshal.FreeHGlobal(h.lpData);
         Marshal.FreeHGlobal(p);
     }
 
-    static bool IsDone(IntPtr p) { return (Marshal.ReadInt32(p, FLAGS) & WHDR_DONE) != 0; }
+    internal static bool IsDone(IntPtr p) { return (Marshal.ReadInt32(p, FLAGS) & WHDR_DONE) != 0; }
 
     void OpenAudio() {
         // WAVE_MAPPER is (UINT_PTR)-1: a pointer-sized -1, which a plain
@@ -2286,7 +2530,7 @@ public class BuddyVoice {
                 // stops mid-sentence.
                 // ponytail: a headset has no echo and could stay full duplex
                 // on its own; for now gemini.json "headset" says so.
-                if (HalfDuplex && Speaking()) Array.Clear(pcm, 0, n);
+                if ((HalfDuplex && Speaking()) || Muted) Array.Clear(pcm, 0, n);
                 // A failed send is the connection, which the receive loop reports.
                 Send("{\"realtimeInput\":{\"audio\":{\"mimeType\":\"audio/pcm;rate=16000\",\"data\":\""
                      + Convert.ToBase64String(pcm) + "\"}}}");
@@ -2579,6 +2823,22 @@ public class BuddyVoice {
 
     // Something for Gemini to know without it showing as yours: the camera
     // going on or off, a timer ending.
+    static readonly Regex PasteWords = new Regex(@"\b(paste|replace|type|insert|put|write)\b", RegexOptions.IgnoreCase);
+
+    // A picture and a question about it, from "what's this?" with nothing
+    // selected: the screen, then the question as its own turn - the one
+    // order Gemini looks in (see SendLook). Off the caller's thread.
+    public void ShowAndAsk(byte[] jpeg, string text) {
+        if (lite) { SendText(text); return; }
+        Spawn(delegate {
+            if (!SendFrame(jpeg)) return;
+            Say("Shared one snapshot of your screen with Gemini:");
+            Shown.Enqueue(jpeg);
+            Thread.Sleep(600);
+            Tell(text);
+        });
+    }
+
     public bool Tell(string text) {
         if (!setupDone || string.IsNullOrEmpty(text)) return false;
         if (lite) return false;
@@ -2592,7 +2852,7 @@ public class BuddyVoice {
     // What the owner said or typed last, and when: look's guard.
     volatile string lastAsk = "";
     long askAt;
-    void Asked(string text) { lastAsk = text; Interlocked.Exchange(ref askAt, Now()); }
+    public void Asked(string text) { lastAsk = text; Interlocked.Exchange(ref askAt, Now()); }
 
     static double NumArg(Dictionary<string, object> d, string k) {
         object v;
@@ -2638,6 +2898,16 @@ public class BuddyVoice {
                     return "forgot " + Memory.Forget(Str(args, "about")) + " things";
                 case "look":
                     return Look(Str(args, "at"));
+                case "paste_text": {
+                    // Typing into the owner's app is theirs to ask for:
+                    // "paste that", "replace it", "type it in".
+                    string text = Str(args, "text");
+                    if (Now() - Interlocked.Read(ref askAt) > 30000 || !PasteWords.IsMatch(lastAsk ?? ""))
+                        return "not allowed: only when the owner asks you to paste, replace or type it";
+                    if (string.IsNullOrEmpty(text)) return "nothing to paste";
+                    Requests.Enqueue("paste\t" + text);
+                    return "typed into the owner's app";
+                }
             }
             return "unknown tool";
         } catch (Exception ex) {
@@ -2777,7 +3047,7 @@ public class BuddyVoice {
                 foreach (string model in liteModels) {
                     if (Done) return;
                     int code;
-                    string raw = Post(model, body, out code);
+                    string raw = Flash.Post(model, body, key, out code);
                     if (code == 200) {
                         got = LiteReply(raw);
                         if (got != null) break;
@@ -2869,31 +3139,6 @@ public class BuddyVoice {
         body["contents"] = contents;
         body["generationConfig"] = config;
         return json.Serialize(body);
-    }
-
-    // The body of a 200, or null with the HTTP code (0: no answer at all).
-    string Post(string model, string body, out int code) {
-        code = 0;
-        try {
-            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-            HttpWebRequest r = (HttpWebRequest)WebRequest.Create(
-                "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent");
-            r.Method = "POST";
-            r.ContentType = "application/json; charset=utf-8";
-            r.Timeout = r.ReadWriteTimeout = 20000;
-            r.Headers["x-goog-api-key"] = key;
-            byte[] b = Encoding.UTF8.GetBytes(body);
-            using (Stream s = r.GetRequestStream()) s.Write(b, 0, b.Length);
-            using (HttpWebResponse resp = (HttpWebResponse)r.GetResponse())
-            using (StreamReader rd = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) {
-                code = (int)resp.StatusCode;
-                return rd.ReadToEnd();
-            }
-        } catch (WebException e) {
-            HttpWebResponse resp = e.Response as HttpWebResponse;
-            if (resp != null) { code = (int)resp.StatusCode; resp.Close(); }
-            return null;
-        }
     }
 
     // {heard, emotion, reply} from a generateContent answer, or null.
@@ -3570,6 +3815,7 @@ if ($Voice) {
         # The persona's never-list keeps Buddy off screens and documents - right
         # unasked, but measured: it then refused to read a screen it was shown.
         'When you have looked because the owner asked, describe and read what you see plainly; your rule about screens and documents is only about not bringing them up yourself.'
+        'When the owner asks about text they selected, answer about it plainly and briefly; if they then ask you to paste, replace or type something (a fix, a rewrite, a translation), call paste_text with exactly that text.'
     ) -join "`n"
     # Flash Lite hears the owner in a clip and answers as JSON; it has no
     # tools, so the weather, timers and looking wait for a Live model.
@@ -3669,6 +3915,16 @@ if ($Voice) {
                         type = 'OBJECT'
                         properties = @{ at = @{ type = 'STRING'; enum = @('screen', 'camera') } }
                         required = @('at')
+                    }
+                },
+                @{
+                    name = 'paste_text'
+                    description = "Type text into the app the owner is working in, where their selection was (it replaces it). Only when they ask you to paste, replace or type it."
+                    behavior = 'BLOCKING'
+                    parameters = @{
+                        type = 'OBJECT'
+                        properties = @{ text = @{ type = 'STRING'; description = 'Exactly the text to type' } }
+                        required = @('text')
                     }
                 }
             ) })
@@ -3934,6 +4190,7 @@ if ($Voice) {
                 'timer' { Add-VoiceTimer ([int]$f[1]) $f[2] }
                 'cancel' { $script:timers.Clear(); Add-VoiceLine 'note' 'All timers cancelled.' }
                 'camera' { Start-VoiceCamera $b }
+                'paste' { if (Insert-VoiceText $r.Substring(6)) { Add-VoiceLine 'note' 'Typed it into your app.' } }
             }
         }
         $img = $null
@@ -4357,6 +4614,158 @@ if ($Voice) {
             }
             [void]$script:synth.SpeakAsync("Time's up: $label")
         } catch {}
+    }
+
+    # ---- held keys: dictate anywhere, and "what's this?" ---------------------
+    #
+    # Hold / and talk, let go: what you said, cleaned up by Flash Lite (fillers
+    # gone, punctuation in, "new line" a new line, "make it formal" obeyed), is
+    # typed where your caret is, in any app. Hold Z over a selection - or over
+    # nothing, for the screen - and ask, or say nothing; let go: Buddy answers
+    # out loud in a conversation, so "how do I fix it?" and "paste that"
+    # follow. A conversation going on hears neither question: its mic is
+    # muted while a key is held.
+    $script:holdKeys = @{}
+    $script:hold = $null       # @{ mode; rec } while a key is held
+    $script:holdJob = $null    # @{ mode; task; sel } while Flash Lite listens
+    $script:clipBack = $null   # @{ at; text }: the clipboard to put back
+    $script:pendingAsk = $null # @{ text; jpeg; ask } for a conversation starting
+
+    function Update-VoiceHolds {
+        foreach ($mode in @($script:holdKeys.Keys)) {
+            $k = $script:holdKeys[$mode]
+            if ($k.Take() -gt 0) { Start-VoiceHold $mode }
+            if ($k.TakeReleases() -gt 0 -and $script:hold -and $script:hold.mode -eq $mode) { Stop-VoiceHold }
+        }
+        Receive-VoiceHold
+        $c = $script:clipBack
+        if ($c -and (Get-Date) -ge $c.at) {
+            $script:clipBack = $null
+            try { [Windows.Clipboard]::SetText($c.text) } catch {}
+        }
+        $a = $script:pendingAsk
+        $b = $script:bv
+        if ($a -and $b -and $b.Ready) {
+            $script:pendingAsk = $null
+            # Only your words, never the selection, count as asking: text
+            # you selected cannot ask Buddy to paste.
+            if ($a.ask) { $b.Asked($a.ask) }
+            if ($a.jpeg) { $b.ShowAndAsk($a.jpeg, $a.text) }
+            elseif (-not $b.Tell($a.text)) { [void]$b.SendText($a.text) }
+        } elseif ($a -and -not $b) {
+            $script:pendingAsk = $null   # the conversation did not start
+        }
+    }
+
+    function Start-VoiceHold([string]$mode) {
+        if ($script:hold -or $script:holdJob) { return }
+        $rec = New-Object NexusVoice.Recorder
+        if (-not $rec.Start($script:micId)) { Add-VoiceLine 'note' "Cannot listen: $($rec.Error)"; return }
+        $script:hold = @{ mode = $mode; rec = $rec }
+        if ($script:bv) { $script:bv.Muted = $true }
+        Send-VoiceFace 'LISTENING'
+        Set-VoiceFaceLine 'E LISTENING'
+    }
+
+    function Stop-VoiceHold {
+        $h = $script:hold
+        $script:hold = $null
+        $pcm = $h.rec.Stop()
+        if ($script:bv) { $script:bv.Muted = $false }
+        $long = $pcm.Length -ge 16000   # half a second held, at 16 kHz 16-bit
+        $spoke = $long -and $h.rec.Voiced()
+        if (-not $gem.key) { Add-VoiceLine 'note' "This needs a Gemini key in $KEY_FILE"; return }
+        if ($h.mode -eq 'dictate') {
+            if (-not $spoke) {
+                Add-VoiceLine 'note' $(if (-not $long) { 'Hold / a little longer, and talk while it is down.' }
+                    else { "Didn't hear you (mic level $($h.rec.Peak)) - check the mic picked in the menu." })
+                Send-VoiceFace 'NEUTRAL'; Set-VoiceFaceLine 'E NEUTRAL'; return
+            }
+            $script:holdJob = @{ mode = 'dictate'; task = [NexusVoice.Flash]::Hear([string[]]$HEAR_MODELS, $gem.key, $pcm, $true) }
+        } else {
+            $sel = Get-VoiceSelection
+            $task = if ($spoke) { [NexusVoice.Flash]::Hear([string[]]$HEAR_MODELS, $gem.key, $pcm, $false) }
+            $script:holdJob = @{ mode = 'explain'; task = $task; sel = $sel }
+        }
+        Send-VoiceFace 'THINKING'
+        Set-VoiceFaceLine 'E THINKING'
+    }
+
+    function Receive-VoiceHold {
+        $j = $script:holdJob
+        if (-not $j -or ($j.task -and -not $j.task.IsCompleted)) { return }
+        $script:holdJob = $null
+        $text = ''
+        if ($j.task) { try { $text = "$($j.task.Result)".Trim() } catch {} }
+        if ($j.mode -eq 'dictate') {
+            if (-not $text) {
+                $why = [NexusVoice.Flash]::LastWhy
+                Add-VoiceLine 'note' $(if ($why) { "Didn't catch that - Gemini is $why." } else { "Didn't catch any words." })
+                Send-VoiceFace 'SAD'
+                return
+            }
+            if (Insert-VoiceText $text) {
+                Send-VoiceFace 'THUMBSUP'
+                Set-VoiceFaceLine 'E THUMBSUP'
+                Add-VoiceLine 'note' "Typed: $(if ($text.Length -gt 90) { $text.Substring(0, 90) + '...' } else { $text })"
+            }
+        } else {
+            Invoke-VoiceExplain $j.sel $text
+        }
+    }
+
+    # Text where the caret is, in whichever app has it (a selection there is
+    # replaced): pasted, then the clipboard you had is put back.
+    # ponytail: only text is put back; a picture on the clipboard is lost.
+    function Insert-VoiceText([string]$text) {
+        [void][NexusVoice.Typing]::ModifiersUp(1500)
+        $old = $null
+        try { if ([Windows.Clipboard]::ContainsText()) { $old = [Windows.Clipboard]::GetText() } } catch {}
+        $set = $false
+        for ($i = 0; $i -lt 5 -and -not $set; $i++) {
+            try { [Windows.Clipboard]::SetText($text); $set = $true } catch { Start-Sleep -Milliseconds 40 }
+        }
+        if (-not $set) { Add-VoiceLine 'note' 'Could not type it: another app has the clipboard.'; return $false }
+        [NexusVoice.Typing]::Paste()
+        if ($null -ne $old) { $script:clipBack = @{ at = (Get-Date).AddMilliseconds(700); text = $old } }
+        $true
+    }
+
+    # The text selected in the app you are in - copied, then your clipboard
+    # put back - or $null when nothing is selected (the copy changes nothing).
+    function Get-VoiceSelection {
+        [void][NexusVoice.Typing]::ModifiersUp(1500)
+        $seq = [NexusVoice.Typing]::GetClipboardSequenceNumber()
+        $old = $null
+        try { if ([Windows.Clipboard]::ContainsText()) { $old = [Windows.Clipboard]::GetText() } } catch {}
+        [NexusVoice.Typing]::Copy()
+        for ($i = 0; $i -lt 20 -and [NexusVoice.Typing]::GetClipboardSequenceNumber() -eq $seq; $i++) { Start-Sleep -Milliseconds 20 }
+        if ([NexusVoice.Typing]::GetClipboardSequenceNumber() -eq $seq) { return $null }
+        $sel = $null
+        try { $sel = [Windows.Clipboard]::GetText() } catch {}
+        if ($null -ne $old) { try { [Windows.Clipboard]::SetText($old) } catch {} }
+        if ("$sel".Trim()) { $sel } else { $null }
+    }
+
+    # The question, with the selection - or, with nothing selected, the
+    # screen - into a conversation (started if need be), answered out loud.
+    function Invoke-VoiceExplain($sel, [string]$asked) {
+        $ask = if ($asked) { $asked } else { 'What is this? Explain it briefly.' }
+        Add-VoiceLine 'you' $ask
+        if ($sel) {
+            $clip = if ($sel.Length -gt 6000) { $sel.Substring(0, 6000) + ' ...' } else { $sel }
+            Add-VoiceLine 'note' "About the $($sel.Length) characters you selected."
+            $text = "(The owner selected this text in another app:`n<<<`n$clip`n>>>`nThey ask: $ask`nAnswer out loud, briefly.)"
+            $jpeg = $null
+        } else {
+            $text = "(Nothing was selected, so here is the owner's screen. They ask: $ask`nAnswer out loud, briefly.)"
+            $jpeg = [NexusVoice.Snap]::Screen()
+        }
+        if (-not $script:bv) {
+            Start-VoiceTalk
+            $script:greet = $false   # an answer, not a hello
+        }
+        $script:pendingAsk = @{ text = $text; jpeg = $jpeg; ask = $asked }
     }
 
     # A face or a trick asked for in a conversation - "show me an angry face",
@@ -5170,6 +5579,7 @@ if ($Voice) {
             if ($w.WindowState -eq 'Minimized') { $w.WindowState = 'Normal' }
             if ($script:bv) { Stop-VoiceTalk } else { Start-VoiceTalk }
         }
+        Update-VoiceHolds
         Receive-VoiceChat
         Read-VoiceMirror
         $v = Get-VoiceView
@@ -5225,6 +5635,11 @@ if ($Voice) {
                 $script:hotkey = $null
                 Add-VoiceLine 'note' "$TALK_KEYS is taken by another app, so it cannot start a conversation. The Talk button still can."
             }
+            foreach ($k in @(@('dictate', $DICTATE_VK, $DICTATE_KEYS), @('explain', $EXPLAIN_VK, $EXPLAIN_KEYS))) {
+                $h = New-Object NexusVoice.HotKey($TALK_MODS, $k[1])
+                if ($h.Ok) { $script:holdKeys[$k[0]] = $h }
+                else { Add-VoiceLine 'note' "$($k[2]) is taken by another app, so holding its key does nothing." }
+            }
         }
         # Not focusing the message box: its blinking caret redraws the whole
         # see-through window twice a second, and a window that pops up at
@@ -5239,6 +5654,8 @@ if ($Voice) {
         if ($script:view) { $script:view.run.state.run = $false }
         if ($script:mirror) { $script:mirror.Close() }
         if ($script:hotkey) { $script:hotkey.Close() }
+        foreach ($k in $script:holdKeys.Values) { $k.Close() }
+        if ($script:hold) { [void]$script:hold.rec.Stop() }
     })
     Set-VoiceButton $false
     } catch {
