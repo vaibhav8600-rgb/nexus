@@ -643,6 +643,13 @@ def voice():
        'a live camera view, like Mira: on screen, a frame to Gemini every 3 s, said or set')
     ok('SetThreadDpiAwarenessContext(new IntPtr(-4))' in cs and 'MonitorFromPoint(p, 2)' in cs,
        'the screen under the mouse, in real pixels whatever the scaling')
+    # @() of a List of hashtables throws "Argument types do not match" in
+    # Windows PowerShell: it stopped every timer, and the window's tick.
+    ok('$script:timers.ToArray()' in window and '$script:oldRuns.ToArray()' in window and
+       '@($script:timers)' not in ps and '@($script:oldRuns)' not in ps,
+       'timer and camera lists are copied with ToArray, never @()')
+    ok('return , $script:cams' not in ps and '\n        , $script:cams\n' not in ps,
+       'the camera list is returned plain, so the settings show every camera')
     stop = between('function Stop-VoiceTalk')
     ok(stop.index('Update-VoiceTimers $b') < stop.index('$script:tiers[$script:tier]'),
        'a timer set just before the conversation was ended is kept')

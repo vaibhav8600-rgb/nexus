@@ -3896,7 +3896,10 @@ if ($Voice) {
         $img = $null
         while ($b -and $b.Shown.TryDequeue([ref]$img)) { Add-VoiceImage $img }
         $now = Get-Date
-        foreach ($t in @($script:timers)) {
+        # ToArray, not @(): @() of a List of hashtables throws "Argument types
+        # do not match" in Windows PowerShell - measured, and it stopped every
+        # timer from firing and the rest of the window's tick with it.
+        foreach ($t in $script:timers.ToArray()) {
             if ($now -lt $t.due) { continue }
             [void]$script:timers.Remove($t)
             Invoke-VoiceTimerDone $t.label
@@ -3987,7 +3990,7 @@ if ($Voice) {
     $script:camName = Get-VoicePref 'camera'
 
     function Get-VoiceCameras {
-        if ($null -ne $script:cams) { return , $script:cams }
+        if ($null -ne $script:cams) { return $script:cams }
         $script:cams = @()
         try {
             [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType = WindowsRuntime] | Out-Null
@@ -3997,7 +4000,9 @@ if ($Voice) {
             $found = @($all | Where-Object { $_.IsEnabled } | ForEach-Object { @{ name = $_.Name; id = $_.Id } })
             $script:cams = @($found | Where-Object { $_.name -notmatch $CAMERA_SKIP }) + @($found | Where-Object { $_.name -match $CAMERA_SKIP })
         } catch {}
-        , $script:cams
+        # Not ", $script:cams": callers wrap it in @(), which then held one
+        # item - the whole list - and the settings showed no camera at all.
+        $script:cams
     }
 
     # The chosen camera first, then the rest in order.
@@ -4070,7 +4075,7 @@ if ($Voice) {
         $script:oldRuns.Add($run)
     }
     function Clear-CameraRuns {
-        foreach ($r in @($script:oldRuns)) {
+        foreach ($r in $script:oldRuns.ToArray()) {
             if (-not $r.handle.IsCompleted) { continue }
             try { $r.ps.Dispose() } catch {}
             [void]$script:oldRuns.Remove($r)
