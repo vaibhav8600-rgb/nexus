@@ -939,7 +939,7 @@ function Get-WeatherReply([string]$text) {
         return @{ reply = "I can't see the weather: $(Get-Reason $_)"; steps = @(, @('E SAD', 'S NO WEATHER...')) }
     }
     $t = $d['today']
-    $reply = [NexusVoice.Weather]::Summary()
+    $reply = [NexusVoice.Weather]::Summary($d)
     $emo = if ("$($d['now'])" -match 'rain|drizzle|thunder|snow') { 'SAD' }
            elseif ("$($d['now'])" -match 'clear') { 'HAPPY' } else { 'NEUTRAL' }
     $line = "$($d['temperature_c'])C $($d['now'])"
@@ -1492,19 +1492,31 @@ public static class Weather {
         return "unknown";
     }
 
+    // The city, looked up once: a place does not move.
+    static string geoCity;
+    static double geoLat, geoLon;
+    static string geoPlace;
+
     public static Dictionary<string, object> Now() {
         JavaScriptSerializer json = new JavaScriptSerializer();
         double lat = Lat, lon = Lon;
         string place = "";
-        if (!string.IsNullOrEmpty(City)) {
-            object[] found = Get(json.DeserializeObject(Get(
-                "https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + Uri.EscapeDataString(City)))
-                as Dictionary<string, object>, "results") as object[];
-            if (found == null || found.Length == 0) throw new Exception("no place called " + City);
-            Dictionary<string, object> f = found[0] as Dictionary<string, object>;
-            lat = Num(Get(f, "latitude"));
-            lon = Num(Get(f, "longitude"));
-            place = Get(f, "name") + (Get(f, "country") != null ? ", " + Get(f, "country") : "");
+        string city = City;
+        if (!string.IsNullOrEmpty(city)) {
+            if (geoCity != city) {
+                object[] found = Get(json.DeserializeObject(Get(
+                    "https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + Uri.EscapeDataString(city)))
+                    as Dictionary<string, object>, "results") as object[];
+                if (found == null || found.Length == 0) throw new Exception("no place called " + city);
+                Dictionary<string, object> f = found[0] as Dictionary<string, object>;
+                geoLat = Num(Get(f, "latitude"));
+                geoLon = Num(Get(f, "longitude"));
+                geoPlace = Get(f, "name") + (Get(f, "country") != null ? ", " + Get(f, "country") : "");
+                geoCity = city;
+            }
+            lat = geoLat;
+            lon = geoLon;
+            place = geoPlace;
         }
         if (double.IsNaN(lat))
             throw new Exception("no location - put \"city\" in gemini.json, or turn on Windows location for desktop apps");
@@ -1535,9 +1547,8 @@ public static class Weather {
         return d;
     }
 
-    // The same, as a sentence for a typed question.
-    public static string Summary() {
-        Dictionary<string, object> d = Now();
+    // A reading as a sentence, for a typed question.
+    public static string Summary(Dictionary<string, object> d) {
         Dictionary<string, object> t = d["today"] as Dictionary<string, object>;
         string s = (d.ContainsKey("place") ? "In " + d["place"] + " it is " : "It is ") + d["now"] + ", " +
             d["temperature_c"] + "C (feels like " + d["feels_like_c"] + "C). Today " + t["sky"] + ", " +
@@ -2054,16 +2065,23 @@ public class BuddyVoice {
         Done = true;
     }
 
-    // Locked, logged off or switched away from: nobody is at the mic.
+    // Locked, logged off or switched away from: nobody is at the mic - or
+    // the camera, which the window turns off when it sees Away.
+    public volatile bool Away;
+
     void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
         if (e.Reason == SessionSwitchReason.SessionLock || e.Reason == SessionSwitchReason.SessionLogoff ||
-            e.Reason == SessionSwitchReason.ConsoleDisconnect || e.Reason == SessionSwitchReason.RemoteDisconnect)
+            e.Reason == SessionSwitchReason.ConsoleDisconnect || e.Reason == SessionSwitchReason.RemoteDisconnect) {
+            Away = true;
             End("This PC was locked - the conversation ended and the mic is off.");
+        }
     }
 
     void OnPowerMode(object sender, PowerModeChangedEventArgs e) {
-        if (e.Mode == PowerModes.Suspend)
+        if (e.Mode == PowerModes.Suspend) {
+            Away = true;
             End("This PC went to sleep - the conversation ended and the mic is off.");
+        }
     }
 
     void Heard() { Interlocked.Exchange(ref heardAt, Now()); }
@@ -3667,7 +3685,32 @@ if ($Voice) {
     try {
         Add-VoiceTypes
         [NexusVoice.Memory]::Path = $MEMORY_FILE
-        if (-not $Shot) { Set-WeatherPlace $gem }
+        # Windows' location can take seconds: looked up off this thread, so
+        # the window is not held back from showing (Weather's statics are
+        # the same in every runspace of this process).
+        if (-not $Shot) {
+            if ($gem.city) {
+                [NexusVoice.Weather]::City = $gem.city
+            } else {
+                $loc = [powershell]::Create()
+                [void]$loc.AddScript({
+                    try {
+                        Add-Type -AssemblyName System.Runtime.WindowsRuntime
+                        $op = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+                            $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+                            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
+                        [Windows.Devices.Geolocation.Geolocator, Windows.Devices.Geolocation, ContentType = WindowsRuntime] | Out-Null
+                        $t = $op.MakeGenericMethod([Windows.Devices.Geolocation.Geoposition]).Invoke($null,
+                            @((New-Object Windows.Devices.Geolocation.Geolocator).GetGeopositionAsync()))
+                        if ($t.Wait(8000)) {
+                            [NexusVoice.Weather]::Lat = $t.Result.Coordinate.Point.Position.Latitude
+                            [NexusVoice.Weather]::Lon = $t.Result.Coordinate.Point.Position.Longitude
+                        }
+                    } catch {}
+                })
+                [void]$loc.BeginInvoke()
+            }
+        }
         $script:mics = @([NexusVoice.BuddyVoice]::Mics())
         [NexusVoice.BuddyVoice]::HalfDuplex = -not $gem.headset
         # Not $chat: PowerShell names ignore case, and that is the -Chat switch.
@@ -3956,18 +3999,20 @@ if ($Voice) {
     }
     function Add-VoiceImage([byte[]]$bytes) {
         try {
-            $img = New-Object Windows.Controls.Image
-            $img.Source = ConvertTo-VoiceBitmap $bytes 400
-            $img.Stretch = 'Uniform'
+            # The frame's background, so its rounded corners clip the picture
+            # (an Image child poked out square - rendered); sized to it.
+            $bi = ConvertTo-VoiceBitmap $bytes 440
             $frame = New-Object Windows.Controls.Border
-            $frame.CornerRadius = New-Object Windows.CornerRadius(12)
-            $frame.ClipToBounds = $true
+            $frame.Width = 220
+            $frame.Height = [math]::Round(220 * $bi.PixelHeight / [math]::Max(1, $bi.PixelWidth))
+            $frame.CornerRadius = New-Object Windows.CornerRadius(14)
             $frame.BorderThickness = New-Object Windows.Thickness(1)
             $frame.BorderBrush = New-VoiceBrush '#3300E0FF'
             $frame.Margin = New-Object Windows.Thickness(36, 2, 0, 6)
-            $frame.MaxWidth = 220
             $frame.HorizontalAlignment = 'Left'
-            $frame.Child = $img
+            $brush = New-Object Windows.Media.ImageBrush $bi
+            $brush.Stretch = 'UniformToFill'
+            $frame.Background = $brush
             [Windows.Automation.AutomationProperties]::SetName($frame, 'What Buddy saw')
             [void]$ui.Talk.Children.Add($frame)
             while ($ui.Talk.Children.Count -gt 40) { $ui.Talk.Children.RemoveAt(0) }
@@ -3985,7 +4030,10 @@ if ($Voice) {
     # the next camera by itself.
     $CAMERA_SKIP = '(?i)\bIR\b|virtual|camo|obs|snap camera|xsplit|droidcam|ndi|iriun'
     $CAMERA_DARK = 0.06       # brightness below which a picture is "black"
-    $CAMERA_EVERY_S = 3       # live view: a frame to Gemini this often (quota)
+    # Live view: a frame to Gemini this often - measured ~200 tokens a frame
+    # at HIGH media resolution, so ~4k tokens a minute of the 65k.
+    $CAMERA_EVERY_S = 3
+    $CAMERA_IDLE_S = 120      # live view off after this long with no conversation
     $script:cams = $null
     $script:camName = Get-VoicePref 'camera'
 
@@ -4134,46 +4182,109 @@ if ($Voice) {
     # while a conversation is on, so Buddy sees what you show it. On and off
     # from the settings, or by saying "turn on the camera" / "camera off".
     $script:view = $null
-    function Set-CameraView([bool]$on, $cam) {
-        if (-not $on) {
-            if (-not $script:view) { return }
-            Stop-CameraRun $script:view.run
-            [void]$ui.Stage.Children.Remove($script:view.box)
-            $script:view = $null
-            Add-VoiceLine 'note' 'Camera off.'
-            if ($script:bv) { [void]$script:bv.Tell('(The owner turned the camera off: you no longer see it.)') }
-            return
-        }
-        $order = @(Get-VoiceCameraOrder)
-        if (-not $order.Count) { Add-VoiceLine 'note' 'No camera found.'; return }
-        if (-not $cam) { $cam = $order[0] }
-        if ($script:view) { Stop-CameraRun $script:view.run; [void]$ui.Stage.Children.Remove($script:view.box) }
-        $img = New-Object Windows.Controls.Image
-        $img.Stretch = 'UniformToFill'
+
+    # The live view: a card between Buddy and the chat, the chat's width -
+    # not over the stage, where it covered Buddy's ear (rendered). The frame
+    # is the card's background, so its rounded corners clip the picture.
+    $CAMERA_CARD_H = 120
+    # While it is on, Buddy's stage is drawn at this scale - all of Buddy, a
+    # little smaller - so the chat under the card keeps room (rendered).
+    $CAMERA_STAGE_SCALE = 0.7
+    function New-CameraBox {
         $box = New-Object Windows.Controls.Border
-        $box.Width = 132
-        $box.Height = 88
-        $box.CornerRadius = New-Object Windows.CornerRadius(12)
-        $box.ClipToBounds = $true
+        $box.Height = $CAMERA_CARD_H
+        $box.CornerRadius = New-Object Windows.CornerRadius(16)
         $box.BorderThickness = New-Object Windows.Thickness(1.5)
         $box.BorderBrush = New-VoiceBrush '#FF4D6A'
         $box.Background = New-VoiceBrush '#0B0B1E'
-        $box.HorizontalAlignment = 'Left'
         $box.VerticalAlignment = 'Top'
-        $box.Margin = New-Object Windows.Thickness(10, 6, 0, 0)
-        $box.Child = $img
-        $box.ToolTip = "Camera: $($cam.name) - Buddy sees this"
+        $box.Margin = New-Object Windows.Thickness(0, 4, 0, 0)
+        $tag = New-Object Windows.Controls.Border
+        $tag.CornerRadius = New-Object Windows.CornerRadius(8)
+        $tag.Background = New-VoiceBrush '#CC0B0B1E'
+        $tag.Padding = New-Object Windows.Thickness(8, 3, 8, 3)
+        $tag.Margin = New-Object Windows.Thickness(8)
+        $tag.HorizontalAlignment = 'Left'
+        $tag.VerticalAlignment = 'Bottom'
+        $label = New-Object Windows.Controls.TextBlock
+        $label.Text = [string][char]0x25CF + ' LIVE - Buddy sees this'
+        $label.FontSize = 11
+        $label.Foreground = New-VoiceBrush '#FF8FA3'
+        $tag.Child = $label
+        $box.Child = $tag
         [Windows.Automation.AutomationProperties]::SetName($box, 'Camera view')
-        [void]$ui.Stage.Children.Add($box)
-        $script:view = @{ run = (Start-CameraRun $cam $false); box = $box; img = $img; seen = 0; darkRun = 0
+        $box
+    }
+
+    # A picture as a brush that fills a rounded frame.
+    function New-VoiceImageBrush([byte[]]$bytes, [int]$width) {
+        $brush = New-Object Windows.Media.ImageBrush (ConvertTo-VoiceBitmap $bytes $width)
+        $brush.Stretch = 'UniformToFill'
+        $brush.Freeze()
+        $brush
+    }
+
+    # The card goes above the chat, which steps down under it while it is on.
+    $script:stageRow = $null
+    function Show-CameraBox($box, [bool]$show) {
+        $grid = $ui.Scroll.Parent
+        if (-not $script:stageRow) {
+            $script:stageRow = $ui.Stage.Parent.RowDefinitions[[Windows.Controls.Grid]::GetRow($ui.Stage)]
+            $script:stageHeight = $script:stageRow.Height
+        }
+        $m = $ui.Scroll.Margin
+        if ($show) {
+            [Windows.Controls.Grid]::SetRow($box, [Windows.Controls.Grid]::GetRow($ui.Scroll))
+            [void]$grid.Children.Add($box)
+            $ui.Scroll.Margin = New-Object Windows.Thickness($m.Left, ($CAMERA_CARD_H + 10), $m.Right, $m.Bottom)
+            $ui.Stage.LayoutTransform = New-Object Windows.Media.ScaleTransform($CAMERA_STAGE_SCALE, $CAMERA_STAGE_SCALE)
+            $script:stageRow.Height = New-Object Windows.GridLength([math]::Round($script:stageHeight.Value * $CAMERA_STAGE_SCALE))
+        } else {
+            [void]$grid.Children.Remove($box)
+            $ui.Scroll.Margin = New-Object Windows.Thickness($m.Left, 4, $m.Right, $m.Bottom)
+            $ui.Stage.LayoutTransform = $null
+            $script:stageRow.Height = $script:stageHeight
+        }
+    }
+
+    # -Said: asked for out loud or typed in a conversation, which Gemini heard
+    # itself - telling it as well made it answer twice.
+    function Set-CameraView([bool]$on, $cam, [switch]$Said, [string]$why = 'Camera off.') {
+        if (-not $on) {
+            if (-not $script:view) { return }
+            Stop-CameraRun $script:view.run
+            Show-CameraBox $script:view.box $false
+            $script:view = $null
+            Add-VoiceLine 'note' $why
+            if ($script:bv -and -not $Said) { [void]$script:bv.Tell('(The owner turned the camera off: you no longer see it.)') }
+            return
+        }
+        # Already on: "camera on" again is not a restart (it flickered).
+        if ($script:view -and -not $cam) { return }
+        $order = @(Get-VoiceCameraOrder)
+        if (-not $order.Count) { Add-VoiceLine 'note' 'No camera found.'; return }
+        if (-not $cam) { $cam = $order[0] }
+        if ($script:view) { Stop-CameraRun $script:view.run; Show-CameraBox $script:view.box $false }
+        $box = New-CameraBox
+        $box.ToolTip = "Camera: $($cam.name) - Buddy sees this"
+        Show-CameraBox $box $true
+        $script:view = @{ run = (Start-CameraRun $cam $false); box = $box; seen = 0; darkRun = 0
                           sentAt = [datetime]::MinValue; checked = $false; tried = @($cam.name) }
-        Add-VoiceLine 'note' "Camera on ($($cam.name)). Buddy sees it every $CAMERA_EVERY_S s while you talk - it uses quota, so turn it off when done."
-        if ($script:bv) { [void]$script:bv.Tell("(The owner turned the camera on: you now see it live, every $CAMERA_EVERY_S seconds. Say hi to what you see.)") }
+        Add-VoiceLine 'note' "Camera on ($($cam.name)). Buddy sees it every $CAMERA_EVERY_S s while you talk. It goes off when the PC locks, or after $CAMERA_IDLE_S s with no conversation."
+        if ($script:bv -and -not $Said) { [void]$script:bv.Tell("(The owner turned the camera on: you now see it live, every $CAMERA_EVERY_S seconds.)") }
     }
 
     function Update-CameraView {
         $v = $script:view
         if (-not $v) { return }
+        # With nobody talking for a while, the camera does not stay on (its
+        # light would, with the window minimised or forgotten).
+        if ($script:bv) { $v.idleSince = $null }
+        elseif (-not $v.idleSince) { $v.idleSince = Get-Date }
+        elseif (((Get-Date) - $v.idleSince).TotalSeconds -ge $CAMERA_IDLE_S) {
+            Set-CameraView $false -why "Camera off - no conversation for $CAMERA_IDLE_S s."
+            return
+        }
         $st = $v.run.state
         if ($st.done -and $st.seq -eq $v.seen) {
             Add-VoiceLine 'note' "The camera stopped: $(if ($st.err) { $st.err } else { 'no picture' })"
@@ -4208,7 +4319,7 @@ if ($Voice) {
                 Add-VoiceLine 'note' 'Every camera is black - check the shutter, or pick one in the settings.'
             }
         }
-        try { $v.img.Source = ConvertTo-VoiceBitmap $bytes 264 } catch {}
+        try { $v.box.Background = New-VoiceImageBrush $bytes 640 } catch {}
         $b = $script:bv
         if ($b -and $b.Ready -and ((Get-Date) - $v.sentAt).TotalSeconds -ge $CAMERA_EVERY_S) {
             if ($b.SendFrame([NexusVoice.Snap]::Jpeg($bytes))) { $v.sentAt = Get-Date }
@@ -4219,8 +4330,8 @@ if ($Voice) {
     $CAMERA_ON = '\b(?:turn|switch|put)\s+on\s+(?:the\s+|my\s+|your\s+)?(?:camera|cam|webcam)\b|\b(?:camera|cam|webcam)\s+on\b|\bopen\s+(?:the\s+|my\s+)?(?:camera|cam|webcam)\b|\bstart\s+(?:the\s+)?(?:camera|cam|webcam)\b'
     $CAMERA_OFF = '\b(?:turn|switch)\s+off\s+(?:the\s+|my\s+|your\s+)?(?:camera|cam|webcam)\b|\b(?:camera|cam|webcam)\s+off\b|\bclose\s+(?:the\s+|my\s+)?(?:camera|cam|webcam)\b|\bstop\s+(?:the\s+)?(?:camera|cam|webcam)\b'
     function Invoke-CameraAsk([string]$text) {
-        if ($text -match $CAMERA_OFF) { Set-CameraView $false; return $true }
-        if ($text -match $CAMERA_ON) { Set-CameraView $true; return $true }
+        if ($text -match $CAMERA_OFF) { Set-CameraView $false -Said; return $true }
+        if ($text -match $CAMERA_ON) { Set-CameraView $true -Said; return $true }
         $false
     }
 
@@ -4376,6 +4487,8 @@ if ($Voice) {
         Read-VoiceLog $b
         # A timer or a picture from its last moments is kept, not lost.
         Update-VoiceTimers $b
+        # Away from the PC (locked, asleep): the camera goes off too.
+        if ($b.Away -and $script:view) { Set-CameraView $false }
         $m = $script:tiers[$script:tier]
         if ($b.ResumeHandle) { $script:resume = @{ model = $m; handle = $b.ResumeHandle } }
         $kind = "$($b.EndKind)"
@@ -4598,7 +4711,9 @@ if ($Voice) {
             [void]$panel.Children.Add($item)
         }
         # The cameras, like the mics: the one chosen is remembered by name and
-        # used first, and the live view goes on and off here too.
+        # used first, and the live view goes on and off here too. Listed
+        # afresh each time, so a webcam plugged in since shows up.
+        $script:cams = $null
         $cams = @(Get-VoiceCameras)
         if ($cams.Count) {
             [void]$panel.Children.Add((New-VoiceMenuHeader 'CAMERA'))

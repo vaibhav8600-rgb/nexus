@@ -613,7 +613,8 @@ def voice():
     ok(all("name = '%s'" % t in setup and 'case "%s"' % t in cs for t in tools),
        'every tool is declared in the setup and handled in BuddyVoice.Tool')
     ok('api.open-meteo.com' in cs and 'geocoding-api.open-meteo.com' in cs and
-       'Set-WeatherPlace (Get-GeminiConfig)' in ps and 'Set-WeatherPlace $gem' in window,
+       'Set-WeatherPlace (Get-GeminiConfig)' in ps and
+       '[NexusVoice.Weather]::City = $gem.city' in window,
        'the weather comes from Open-Meteo (no key, no quota), for the city or Windows location')
     ok('Get-WeatherReply $msg.text' in between('function Get-BuddyLines'),
        'a typed weather question is answered by the companion, like one about the PC')
@@ -650,6 +651,24 @@ def voice():
        'timer and camera lists are copied with ToArray, never @()')
     ok('return , $script:cams' not in ps and '\n        , $script:cams\n' not in ps,
        'the camera list is returned plain, so the settings show every camera')
+    # The deep audit's fixes: privacy, cost, layout.
+    ok('if ($b.Away -and $script:view) { Set-CameraView $false }' in window and
+       'Away = true;' in cs and '$CAMERA_IDLE_S = 120' in window,
+       'the camera goes off when the PC locks or sleeps, or after 2 min with no conversation')
+    ok('static string geoCity;' in cs and 'Summary(Dictionary<string, object> d)' in cs and
+       '[NexusVoice.Weather]::Summary($d)' in ps,
+       'a typed weather question is one request: the city looked up once, one forecast')
+    ok('$loc.BeginInvoke()' in window and 'Set-WeatherPlace $gem' not in window,
+       'Windows location is looked up off the window\'s thread, not before it shows')
+    ok("$script:cams = $null\n        $cams = @(Get-VoiceCameras)" in window,
+       'the camera list is read afresh each time the settings open')
+    ok('if ($script:view -and -not $cam) { return }' in window and
+       'Set-CameraView $true -Said' in window,
+       '"camera on" twice is no restart, and a spoken one is not told to Gemini again')
+    ok('function Show-CameraBox' in window and '$ui.Stage.LayoutTransform' in window and
+       'New-VoiceImageBrush' in window and '$frame.Background = $brush' in window,
+       'the camera card sits above the chat with Buddy drawn smaller, and pictures are '
+       'clipped by their rounded frames (both rendered)')
     stop = between('function Stop-VoiceTalk')
     ok(stop.index('Update-VoiceTimers $b') < stop.index('$script:tiers[$script:tier]'),
        'a timer set just before the conversation was ended is kept')
