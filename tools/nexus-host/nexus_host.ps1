@@ -692,6 +692,22 @@ function Get-BuddyMemory {
     try { @(Get-Content $MEMORY_FILE -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json) | Where-Object { $_ } } catch {}
 }
 
+# The timers and reminders the voice window saved, in a line - for the
+# companion and Flash Lite, which have no list_timers: asked "any reminders?"
+# in chat, Buddy said all clear while the pill one was set.
+function Get-BuddyReminders {
+    $rows = try { Get-Content -LiteralPath $REMINDERS_FILE -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+    $l = foreach ($r in $rows) {
+        try { $due = [datetime]::Parse($r.due, [Globalization.CultureInfo]::InvariantCulture) } catch { continue }
+        $when = if ($r.daily) { 'every day' } elseif ($due.Date -eq (Get-Date).Date) { 'today' } else { $due.ToString('dddd') }
+        "$($r.label) ($when at $($due.ToString('h:mm tt')))"
+    }
+    # The clock too: with only "evening", 7:30 pm was taken for the time now
+    # ("It is 7:30 PM, time for your pill").
+    "It is $((Get-Date).ToString('h:mm tt')) now. Timers and reminders set in the voice window (when they ring, not now): " +
+        "$(if ($l) { $l -join '; ' } else { 'none' })."
+}
+
 # -Spoken: for a voice conversation, which talks rather than writing lines.
 # Its face is read from what it says (BuddyVoice.FaceFor), not asked for.
 function Get-BuddyPrompt($p, [switch]$Spoken) {
@@ -976,6 +992,7 @@ function Start-BuddyAsk([string]$reason, $cpu, $mem, $np, $chat = $null) {
             elseif ($h -lt 18) { 'afternoon' } else { 'evening' }
     $ctx += "Time of day: $part."
     $ctx += "Computer load: CPU $(Get-Bucket $cpu), memory $(Get-Bucket $mem)."
+    $ctx += Get-BuddyReminders
     $ctx += if ($np[2] -and $np[0]) { "Now playing: $($np[0]) by $(if ($np[1]) { $np[1] } else { 'unknown' })." }
             else { 'Now playing: nothing.' }
     if ($script:bud.saidAt) {
@@ -5011,7 +5028,7 @@ if ($Voice) {
         $m = $script:tiers[$i]
         $recent = [string[]]$script:recent.ToArray()
         if ($m -eq 'lite') {
-            $lp = (Get-BuddyPrompt $p -Spoken) + "`n" + $liteHint
+            $lp = (Get-BuddyPrompt $p -Spoken) + "`n" + $liteHint + "`n" + (Get-BuddyReminders)
             if ($recent) { $lp += "`n`nThe conversation so far, which carries on now:`n" + ($recent -join "`n") }
             $b = New-Object NexusVoice.BuddyVoice([string[]]$LITE_MODELS, $gem.key, $lp, "$($p.name)", $faces, $VOICE_PORT)
         } else {

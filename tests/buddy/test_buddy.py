@@ -651,6 +651,11 @@ def voice():
        'timer and camera lists are copied with ToArray, never @()')
     ok('return , $script:cams' not in ps and '\n        , $script:cams\n' not in ps,
        'the camera list is returned plain, so the settings show every camera')
+    # Typed chat (the companion) and Flash Lite have no list_timers: they are
+    # told what is set, and the time now, or they say "all clear".
+    ok('$ctx += Get-BuddyReminders' in ps and '$liteHint + "`n" + (Get-BuddyReminders)' in ps and
+       "It is $((Get-Date).ToString('h:mm tt')) now." in ps,
+       'chat and Flash Lite know the reminders set, and the time, so 7:30 pm is not now')
     # Reminders: daily ones, kept across restarts, listed and cancelled one by one.
     ok("$REMINDERS_FILE = Join-Path $HOME_DIR 'reminders.json'" in ps and
        "daily = @{ type = 'BOOLEAN'" in window and "name = 'list_timers'" in window and
